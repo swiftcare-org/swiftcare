@@ -1,0 +1,43 @@
+name: Infrastructure validation
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  validate-infrastructure:
+    name: Validate repository infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Confirm required files
+        shell: bash
+        run: |
+          required_files=(
+            README.md
+            .env.example
+            .gitignore
+            docker-compose.yml
+            .github/workflows/ci.yml
+          )
+
+          for file in "${required_files[@]}"; do
+            test -f "$file" || { echo "Missing required file: $file"; exit 1; }
+          done
+
+      - name: Prepare safe validation environment
+        run: cp .env.example .env
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
