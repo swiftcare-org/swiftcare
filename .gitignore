@@ -1,0 +1,48 @@
+# Secrets and environment
+.env
+.env.*
+!.env.example
+secrets.json
+
+# .NET and IDEs
+**/bin/
+**/obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# Node and frontend builds
+node_modules/
+dist/
+build/
+.vite/
+
+# Tests and coverage
+TestResults/
+coverage/
+coverage.*
+*.trx
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+
+# Operating systems
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local data and tooling
+*.db
+*.sqlite
+*.sqlite3
+.docker-data/
+.azure/
+azurite/
