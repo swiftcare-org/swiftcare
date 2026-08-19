@@ -1,10 +1,10 @@
 # SwiftCare
 
-SwiftCare is a healthcare queue and medical-record management system built as six independently deployable microservices. It supports authentication, patient administration, clinical records, prescriptions, queue operations, notifications, and reporting.
+SwiftCare is a healthcare queue and medical-record management system built as six independently deployable microservices behind an API Gateway. It supports authentication, patient administration, clinical records, prescriptions, queue operations, notifications, and reporting.
 
 ## Features
 
-- JWT authentication and role-based authorization
+- API Gateway with centralized JWT authentication and role-based authorization
 - Patient registration, search, and profile management
 - Queue creation, check-in, calling, and waiting-room display
 - Medical histories, consultations, allergies, conditions, and vital signs
@@ -15,7 +15,7 @@ SwiftCare is a healthcare queue and medical-record management system built as si
 ## Technology stack
 
 - **Frontend:** React, JavaScript or TypeScript, and npm
-- **Backend:** ASP.NET Core Web API, .NET, REST, JWT, and xUnit
+- **Backend:** ASP.NET Core Web API, .NET, REST, JWT, xUnit, and YARP for the API Gateway
 - **Data:** Entity Framework Core, Pomelo MySQL provider, and MySQL
 - **Messaging:** Apache Kafka and ZooKeeper
 - **DevOps:** GitHub Actions, Docker, Docker Compose, Microsoft Azure, GitHub Environments, and GitHub Actions Secrets
@@ -23,9 +23,11 @@ SwiftCare is a healthcare queue and medical-record management system built as si
 
 ## Microservices
 
+The API Gateway is the single entry point for frontend requests. It validates JWTs, applies CORS, routes requests, removes untrusted forwarding headers, and supplies trusted user identity and gateway-authentication headers to the services.
+
 | Service | Responsibility |
 | --- | --- |
-| AuthService | Accounts, login, logout, JWT authentication, users, and roles |
+| AuthService | Accounts, login, logout, JWT issuance, password management, users, and roles |
 | PatientService | Patient registration, search, profiles, and patient information |
 | QueueService | Queue entry creation, check-in, queue management, calling patients, and public display |
 | MedicalRecordService | Allergies, chronic conditions, consultations, vital signs, and medical history |
@@ -39,6 +41,7 @@ Sprint 1 focuses on AuthService, PatientService, and QueueService.
 ```text
 swiftcare/
 |-- .github/workflows/ci.yml
+|-- ApiGateway/
 |-- frontend/
 |-- services/
 |   |-- AuthService/
@@ -74,6 +77,7 @@ The team must agree on and document exact .NET and Node.js versions when project
 | Component | Port |
 | --- | ---: |
 | React frontend | 5173 |
+| API Gateway | 8000 |
 | AuthService | 5000 |
 | PrescriptionService | 5001 |
 | PatientService | 5002 |
@@ -83,6 +87,8 @@ The team must agree on and document exact .NET and Node.js versions when project
 | MySQL | 3306 |
 | Kafka | 9092 |
 | ZooKeeper | 2181 |
+
+The frontend communicates exclusively with the API Gateway on port `8000`. Individual service ports are reserved for internal Docker network communication and local development access only.
 
 ## Local setup
 
@@ -94,7 +100,7 @@ cd swiftcare
 cp .env.example .env
 ```
 
-Replace the local placeholder passwords and JWT signing key in `.env`. Never commit `.env`.
+Replace the local placeholder passwords, JWT signing material, and gateway internal secret in `.env`. AuthService issues JWTs, while the API Gateway validates them before forwarding protected requests. The gateway and services use `GATEWAY_INTERNAL_SECRET` to reject requests that did not originate from the gateway. Never commit `.env`.
 
 Start and inspect the local infrastructure:
 
@@ -190,6 +196,7 @@ Planned GitHub Actions secrets are:
 - `AZURE_WEBAPP_NAME`
 - `MYSQL_CONNECTION_STRING`
 - `JWT_SIGNING_KEY`
+- `GATEWAY_INTERNAL_SECRET`
 - `KAFKA_BOOTSTRAP_SERVERS`
 
 Create GitHub Environments named `development`, `staging`, and `production` when deployment resources exist. Production must require an authorized reviewer. Do not create fake values merely to reserve secret names.
@@ -198,11 +205,13 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 
 The initial GitHub Actions workflow validates required foundation files and Docker Compose configuration on pushes and pull requests involving `develop` or `main`. It deliberately does not run npm or .NET commands before application projects exist.
 
-CI will later add frontend linting, tests, builds, backend restore/build/xUnit coverage, EF Core migration validation, container image builds, security checks, registry publishing, Azure staging deployment, and post-deployment `/health` checks.
+CI will later run frontend linting, tests, and builds; backend restore, build, xUnit coverage, and EF Core migration validation; container image builds; security checks; registry publishing; Azure staging deployment; and post-deployment `/health` checks. The pipeline will build, image, and deploy the API Gateway with the six microservices, and its `/health` endpoint must pass before a deployment is promoted.
 
 ## Observability policy
 
 Every service must eventually expose `/health`, emit structured logs, measure request failures and latency, record Kafka producer and consumer failures, and propagate correlation IDs through HTTP calls and Kafka events.
+
+The API Gateway must expose `/health`, log incoming requests with correlation IDs, and record JWT validation failures, gateway-authentication failures, and routing errors. It must remove client-supplied identity and gateway-secret headers before attaching trusted forwarding headers.
 
 Logs must never include passwords, JWT tokens, database connection strings, access credentials, or sensitive patient and medical information.
 
