@@ -14,12 +14,23 @@ SwiftCare is a healthcare queue and medical-record management system built as si
 
 ## Technology stack
 
-- **Frontend:** React, JavaScript or TypeScript, and npm
-- **Backend:** ASP.NET Core Web API, .NET, REST, JWT, xUnit, and YARP for the API Gateway
-- **Data:** Entity Framework Core, Pomelo MySQL provider, and MySQL
+- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, React Router 7, and npm
+- **Backend:** ASP.NET Core Web API on .NET 10, REST, JWT, xUnit, and YARP for the API Gateway
+- **Data:** Entity Framework Core 9 (Pomelo MySQL provider), and MySQL
 - **Messaging:** Apache Kafka and ZooKeeper
 - **DevOps:** GitHub Actions, Docker, Docker Compose, Microsoft Azure, GitHub Environments, and GitHub Actions Secrets
 - **Operations:** Health checks, structured logging, correlation IDs, and service-level telemetry
+
+### Pinned framework versions
+
+| Component | Version | Notes |
+| --- | --- | --- |
+| .NET SDK | **10.0** | Only SDK available on the original dev machine at scaffolding time; overrides an earlier .NET 8 LTS assumption |
+| EF Core | **9.0** | Pinned below the SDK's default (10) because Pomelo's MySQL provider has not released `net10` support yet |
+| React | **19** | Scaffolded via `npm create vite@latest -- --template react-ts` |
+| Node.js | **22.x** | Required to run the frontend tooling |
+
+Keep the .NET SDK and EF Core pins in sync across every service — do not let one service drift onto a different EF Core major version than the others.
 
 ## Microservices
 
@@ -61,16 +72,16 @@ swiftcare/
 `-- README.md
 ```
 
-Application projects have not yet been scaffolded. Placeholder directories reserve the agreed layout.
+`ApiGateway/`, `services/AuthService/`, and `frontend/` are scaffolded and implement SWC-6 (user login). The remaining services under `services/` are still placeholder directories reserving the agreed layout.
 
 ## Prerequisites
 
 - Git
 - Docker Desktop with Docker Compose
-- .NET SDK after backend projects are scaffolded
-- Node.js and npm after the frontend project is scaffolded
+- .NET SDK 10.0
+- Node.js 22.x and npm
 
-The team must agree on and document exact .NET and Node.js versions when project scaffolding begins.
+See [Pinned framework versions](#pinned-framework-versions) above.
 
 ## Planned ports
 
@@ -133,7 +144,7 @@ The initial Compose stack starts MySQL, Kafka, and ZooKeeper only. Application c
 - Feature branches start from `develop` and merge back through pull requests.
 - Only `develop` should normally merge into `main`.
 
-Both permanent branches require pull requests, at least one approval, resolved conversations, and blocked force pushes and deletion. CI checks become required only after the workflow has completed successfully at least once.
+Both permanent branches require pull requests, at least two approvals from teammates other than the author, resolved conversations, and blocked force pushes and deletion. Prefer requesting that sprint's DevOps and QA role holders first, but any two teammates may approve. CI checks become required only after the workflow has completed successfully at least once.
 
 Branch names use the exact Jira issue:
 
@@ -143,6 +154,13 @@ fix/SWC-12-fix-patient-search
 refactor/SWC-6-improve-authentication
 docs/SWC-9-update-registration-documentation
 test/SWC-19-add-queue-tests
+```
+
+Branches not tied to a story (repository administration, e.g. CI or documentation housekeeping) may omit the issue key:
+
+```text
+docs/standup-log-template
+chore/ci-dotnet-build-test
 ```
 
 ## Commit convention
@@ -155,12 +173,18 @@ fix(SWC-12): correct patient search validation
 test(SWC-19): add queue event tests
 ```
 
+Commits not tied to a story may omit the scope the same way:
+
+```text
+docs: add daily stand-up log template
+```
+
 ## Pull-request workflow
 
 1. Create a Jira-linked branch from `develop`.
 2. Commit changes using the agreed convention.
 3. Push the branch and open a pull request into `develop`.
-4. Obtain at least one approval, resolve conversations, and pass required CI checks.
+4. Obtain two approvals from teammates other than the author (prefer that sprint's DevOps and QA role holders), resolve conversations, and pass required CI checks.
 5. Merge completed work into `develop`.
 6. Promote reviewed release candidates from `develop` to `main` through a separate pull request.
 
