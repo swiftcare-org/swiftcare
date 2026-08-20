@@ -1,5 +1,6 @@
 using System.Text;
 using AuthService.Data;
+using AuthService.Middleware;
 using AuthService.Models.Configuration;
 using AuthService.Services;
 using Microsoft.EntityFrameworkCore;
@@ -13,31 +14,41 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 
-var authDbConnectionString = builder.Configuration.GetConnectionString("AuthDb")
-    ?? throw new InvalidOperationException(
-        "Connection string 'ConnectionStrings:AuthDb' is not configured. Set it via the " +
-        "ConnectionStrings__AuthDb environment variable.");
-
+// The connection string is read lazily by EF Core when AuthDbContext is first resolved,
+// so a missing value here doesn't crash registration - the explicit check below (after
+// Build()) is what actually fails startup fast.
 builder.Services.AddDbContext<AuthDbContext>(options =>
-    options.UseMySql(authDbConnectionString, new MySqlServerVersion(new Version(8, 4, 0))));
-
-var jwtSecretKey = builder.Configuration["Jwt:SecretKey"]
-    ?? throw new InvalidOperationException(
-        "Jwt:SecretKey is not configured. Set it via the Jwt__SecretKey environment variable.");
-
-if (Encoding.UTF8.GetByteCount(jwtSecretKey) < 32)
-{
-    throw new InvalidOperationException(
-        "Jwt:SecretKey must be at least 32 bytes long to be used with HS256.");
-}
+    options.UseMySql(builder.Configuration.GetConnectionString("AuthDb"), new MySqlServerVersion(new Version(8, 4, 0))));
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 
-// Gateway-secret enforcement middleware and the login controller are wired up in a later stage.
-
 var app = builder.Build();
+
+// Fail fast before serving any request if required configuration is missing. Checked
+// against app.Configuration (post-Build) rather than builder.Configuration so that test
+// hosts which inject configuration during Build() (e.g. WebApplicationFactory) are honored.
+var authDbConnectionString = app.Configuration.GetConnectionString("AuthDb");
+if (string.IsNullOrEmpty(authDbConnectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'ConnectionStrings:AuthDb' is not configured. Set it via the " +
+        "ConnectionStrings__AuthDb environment variable.");
+}
+
+var jwtSecretKey = app.Configuration["Jwt:SecretKey"];
+if (string.IsNullOrEmpty(jwtSecretKey) || Encoding.UTF8.GetByteCount(jwtSecretKey) < 32)
+{
+    throw new InvalidOperationException(
+        "Jwt:SecretKey is not configured or is under 32 bytes. Set it via the Jwt__SecretKey environment variable.");
+}
+
+if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
+{
+    throw new InvalidOperationException(
+        "Gateway:InternalSecret is not configured. Set it via the Gateway__InternalSecret environment variable.");
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -50,9 +61,13 @@ if (app.Environment.IsDevelopment())
     await DevelopmentSeeder.SeedAsync(dbContext, app.Configuration, seederLogger);
 }
 
+app.UseMiddleware<GatewaySecretMiddleware>();
+
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
+
+public partial class Program;
