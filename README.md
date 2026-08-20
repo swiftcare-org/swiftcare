@@ -227,9 +227,15 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 
 ## CI/CD
 
-The initial GitHub Actions workflow validates required foundation files and Docker Compose configuration on pushes and pull requests involving `develop` or `main`. It deliberately does not run npm or .NET commands before application projects exist.
+The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as three jobs:
 
-CI will later run frontend linting, tests, and builds; backend restore, build, xUnit coverage, and EF Core migration validation; container image builds; security checks; registry publishing; Azure staging deployment; and post-deployment `/health` checks. The pipeline will build, image, and deploy the API Gateway with the six microservices, and its `/health` endpoint must pass before a deployment is promoted.
+- **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml`.
+- **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects), with coverage collected via coverlet and uploaded as a build artifact.
+- **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
+
+The .NET and frontend jobs each guard on their respective entry file (`SwiftCare.slnx`, `frontend/package.json`) existing, so they no-op harmlessly on branches that don't have those projects yet rather than failing.
+
+CI will later add EF Core migration validation, container image builds, security checks, registry publishing, Azure staging deployment, and post-deployment `/health` checks. The pipeline will build, image, and deploy the API Gateway with the six microservices, and its `/health` endpoint must pass before a deployment is promoted.
 
 ## Observability policy
 
@@ -238,7 +244,3 @@ Every service must eventually expose `/health`, emit structured logs, measure re
 The API Gateway must expose `/health`, log incoming requests with correlation IDs, and record JWT validation failures, gateway-authentication failures, and routing errors. It must remove client-supplied identity and gateway-secret headers before attaching trusted forwarding headers.
 
 Logs must never include passwords, JWT tokens, database connection strings, access credentials, or sensitive patient and medical information.
-
-## Current status
-
-The repository and local infrastructure foundation are being established. React and ASP.NET Core projects, application containers, service Swagger endpoints, and Azure deployment URLs will be added by the development and DevOps teams as implementation progresses.
