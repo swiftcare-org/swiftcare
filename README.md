@@ -14,9 +14,20 @@ SwiftCare is a healthcare queue and medical-record management system built as si
 
 ## Technology stack
 
-- **Frontend:** React, JavaScript or TypeScript, and npm
-- **Backend:** ASP.NET Core Web API, .NET, REST, JWT, xUnit, and YARP for the API Gateway
-- **Data:** Entity Framework Core, Pomelo MySQL provider, and MySQL
+- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, React Router 7, and npm
+- **Backend:** ASP.NET Core Web API on .NET 10, REST, JWT, xUnit, and YARP for the API Gateway
+- **Data:** Entity Framework Core 9 (Pomelo MySQL provider), and MySQL
+
+### Pinned framework versions
+
+| Component | Version | Notes |
+| --- | --- | --- |
+| .NET SDK | **10.0** | Only SDK available on the original dev machine at scaffolding time; overrides an earlier .NET 8 LTS assumption |
+| EF Core | **9.0** | Pinned below the SDK's default (10) because Pomelo's MySQL provider has not released `net10` support yet |
+| React | **19** | Scaffolded via `npm create vite@latest -- --template react-ts` |
+| Node.js | **22.x** | Required to run the frontend tooling |
+
+Keep the .NET SDK and EF Core pins in sync across every service — do not let one service drift onto a different EF Core major version than the others.
 - **Messaging:** Apache Kafka and ZooKeeper
 - **DevOps:** GitHub Actions, Docker, Docker Compose, Microsoft Azure, GitHub Environments, and GitHub Actions Secrets
 - **Operations:** Health checks, structured logging, correlation IDs, and service-level telemetry
@@ -61,16 +72,16 @@ swiftcare/
 `-- README.md
 ```
 
-Application projects have not yet been scaffolded. Placeholder directories reserve the agreed layout.
+`ApiGateway/`, `services/AuthService/`, and `frontend/` are scaffolded and implement SWC-6 (user login). The remaining services under `services/` are still placeholder directories reserving the agreed layout.
 
 ## Prerequisites
 
 - Git
 - Docker Desktop with Docker Compose
-- .NET SDK after backend projects are scaffolded
-- Node.js and npm after the frontend project is scaffolded
+- .NET SDK 10.0
+- Node.js 22.x and npm
 
-The team must agree on and document exact .NET and Node.js versions when project scaffolding begins.
+See [Pinned framework versions](#pinned-framework-versions) above.
 
 ## Planned ports
 
@@ -217,4 +228,4 @@ Logs must never include passwords, JWT tokens, database connection strings, acce
 
 ## Current status
 
-The repository and local infrastructure foundation are being established. React and ASP.NET Core projects, application containers, service Swagger endpoints, and Azure deployment URLs will be added by the development and DevOps teams as implementation progresses.
+SWC-6 (user login) is implemented end-to-end: AuthService issues JWTs, the API Gateway proxies and enforces the gateway-secret trust boundary, and the frontend has a working login page with role-based routing. See `services/AuthService/README.md`, `ApiGateway/README.md`, and `frontend/README.md` for how to run each piece locally. Application containers, service Swagger endpoints, and Azure deployment URLs will be added by the development and DevOps teams as implementation progresses on the remaining services.
