@@ -144,7 +144,7 @@ The initial Compose stack starts MySQL, Kafka, and ZooKeeper only. Application c
 - Feature branches start from `develop` and merge back through pull requests.
 - Only `develop` should normally merge into `main`.
 
-Both permanent branches require pull requests, at least two approvals from teammates other than the author, resolved conversations, and blocked force pushes and deletion. Prefer requesting that sprint's DevOps and QA role holders first, but any two teammates may approve. CI checks become required only after the workflow has completed successfully at least once.
+Both permanent branches require pull requests, approval from the sprint’s QA role, resolved conversations, and blocked force pushes and deletion. CI checks become required only after the workflow has completed successfully at least once.
 
 Branch names use the exact Jira issue:
 
@@ -184,7 +184,7 @@ docs: add daily stand-up log template
 1. Create a Jira-linked branch from `develop`.
 2. Commit changes using the agreed convention.
 3. Push the branch and open a pull request into `develop`.
-4. Obtain two approvals from teammates other than the author (prefer that sprint's DevOps and QA role holders), resolve conversations, and pass required CI checks.
+4. Obtain approval from that sprint’s QA role, resolve conversations, and pass required CI checks.
 5. Merge completed work into `develop`.
 6. Promote reviewed release candidates from `develop` to `main` through a separate pull request.
 
