@@ -1,0 +1,14 @@
+import { apiRequest } from './client';
+import type { LoginResponseBody } from '../auth/types';
+
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export function login(credentials: LoginCredentials): Promise<LoginResponseBody> {
+  return apiRequest<LoginResponseBody>('/api/auth/login', {
+    method: 'POST',
+    body: credentials,
+  });
+}
