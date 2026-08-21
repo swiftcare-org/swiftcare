@@ -1,5 +1,6 @@
 using System.Text;
 using ApiGateway.Middleware;
+using ApiGateway.Models;
 using ApiGateway.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -24,10 +25,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-var jwtSecretKey = builder.Configuration["Jwt:SecretKey"];
-var jwtIssuer = builder.Configuration["Jwt:Issuer"];
-var jwtAudience = builder.Configuration["Jwt:Audience"];
-
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -37,16 +34,37 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         // downstream claim lookup here and in TokenRevocationMiddleware returns null.
         options.MapInboundClaims = false;
 
+        // Read from builder.Configuration inside this lambda - not into a local variable
+        // above it - because this delegate only runs when JwtBearerOptions is first
+        // resolved (per-request, after the app has started), not at registration time.
+        // Capturing the values into locals here would freeze them at registration time,
+        // before any configuration sources added later (e.g. a test host's in-memory
+        // overrides during Build()) have been layered in.
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = jwtIssuer,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidateAudience = true,
-            ValidAudience = jwtAudience,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey ?? string.Empty)),
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"] ?? string.Empty)),
             ClockSkew = TimeSpan.Zero
+        };
+
+        // Without this, a missing/invalid/expired token produces a bodyless 401 - every
+        // other 401 in the login/logout flow (AuthService's GatewaySecretMiddleware and
+        // AuthController, and TokenRevocationMiddleware below) returns a MessageResponse
+        // body, so this keeps the contract consistent regardless of which layer rejects.
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(new MessageResponse("Unauthorized"));
+            }
         };
     });
 
@@ -56,21 +74,24 @@ builder.Services.AddSingleton<RevokedTokenStore>();
 
 var app = builder.Build();
 
-// Fail fast before serving any request if required configuration is missing, matching
-// the pattern used by AuthService's own startup checks.
+// Fail fast before serving any request if required configuration is missing. Checked
+// against app.Configuration (post-Build) rather than builder.Configuration so that test
+// hosts which inject configuration during Build() (e.g. WebApplicationFactory) are
+// honored - matching the pattern used by AuthService's own startup checks.
+var jwtSecretKey = app.Configuration["Jwt:SecretKey"];
 if (string.IsNullOrEmpty(jwtSecretKey) || Encoding.UTF8.GetByteCount(jwtSecretKey) < 32)
 {
     throw new InvalidOperationException(
         "Jwt:SecretKey is not configured or is under 32 bytes. Set it via the Jwt__SecretKey environment variable.");
 }
 
-if (string.IsNullOrEmpty(jwtIssuer))
+if (string.IsNullOrEmpty(app.Configuration["Jwt:Issuer"]))
 {
     throw new InvalidOperationException(
         "Jwt:Issuer is not configured. Set it via the Jwt__Issuer environment variable.");
 }
 
-if (string.IsNullOrEmpty(jwtAudience))
+if (string.IsNullOrEmpty(app.Configuration["Jwt:Audience"]))
 {
     throw new InvalidOperationException(
         "Jwt:Audience is not configured. Set it via the Jwt__Audience environment variable.");

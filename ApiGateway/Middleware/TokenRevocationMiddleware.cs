@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using ApiGateway.Models;
 using ApiGateway.Security;
 
 namespace ApiGateway.Middleware;
@@ -42,7 +43,7 @@ public sealed class TokenRevocationMiddleware
         if (string.IsNullOrEmpty(jti))
         {
             _logger.LogWarning("Rejected authenticated request with no jti claim: userId={UserId}", userId);
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await WriteUnauthorizedAsync(context);
             return;
         }
 
@@ -52,7 +53,7 @@ public sealed class TokenRevocationMiddleware
         if (_revokedTokenStore.IsRevoked(jti))
         {
             _logger.LogWarning("Rejected revoked token: userId={UserId}", userId);
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await WriteUnauthorizedAsync(context);
             return;
         }
 
@@ -73,4 +74,13 @@ public sealed class TokenRevocationMiddleware
     private static bool IsLogoutRequest(HttpContext context) =>
         HttpMethods.IsPost(context.Request.Method) &&
         context.Request.Path.Equals(LogoutPath, StringComparison.OrdinalIgnoreCase);
+
+    // Matches the MessageResponse contract used everywhere else a 401 is returned in the
+    // login/logout flow (AuthService's GatewaySecretMiddleware/AuthController, and this
+    // Gateway's own JwtBearer OnChallenge handler for missing/invalid/expired tokens).
+    private static Task WriteUnauthorizedAsync(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return context.Response.WriteAsJsonAsync(new MessageResponse("Unauthorized"));
+    }
 }
