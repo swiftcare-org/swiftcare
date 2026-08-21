@@ -11,6 +11,7 @@ public sealed class AuthController : ControllerBase
 {
     private const string InvalidCredentialsMessage = "Invalid username or password";
     private const string AccountDeactivatedMessage = "Your account has been deactivated. Contact your administrator.";
+    private const string UnauthorizedMessage = "Unauthorized";
 
     private readonly IAuthenticationService _authenticationService;
 
@@ -56,5 +57,28 @@ public sealed class AuthController : ControllerBase
                 new MessageResponse(AccountDeactivatedMessage)),
             _ => Unauthorized(new MessageResponse(InvalidCredentialsMessage))
         };
+    }
+
+    [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        // X-User-Id is trusted only because GatewaySecretMiddleware already rejected any
+        // request that didn't originate from the Gateway, which is the sole source of this
+        // header - it derives it from the validated JWT, never from the original client.
+        var userIdHeader = HttpContext.Request.Headers["X-User-Id"].FirstOrDefault();
+        if (!Guid.TryParse(userIdHeader, out var userId))
+        {
+            return Unauthorized(new MessageResponse(UnauthorizedMessage));
+        }
+
+        var correlationId = HttpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        await _authenticationService.LogoutAsync(userId, correlationId, ipAddress, cancellationToken);
+
+        return NoContent();
     }
 }
