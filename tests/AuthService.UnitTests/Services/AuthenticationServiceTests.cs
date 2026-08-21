@@ -183,4 +183,34 @@ public class AuthenticationServiceTests
         Assert.Null(entry.UserId);
         Assert.Equal(LoginOutcome.InvalidCredentials, entry.Outcome);
     }
+
+    [Fact]
+    public async Task LogoutWritesExactlyOneAuditEntryWithMatchingUserIdCorrelationIdAndIpAddress()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+        var userId = Guid.NewGuid();
+
+        await service.LogoutAsync(userId, CorrelationId, IpAddress);
+
+        var entry = Assert.Single(dbContext.LogoutAuditEntries);
+        Assert.Equal(userId, entry.UserId);
+        Assert.Equal(CorrelationId, entry.CorrelationId);
+        Assert.Equal(IpAddress, entry.IpAddress);
+    }
+
+    [Fact]
+    public async Task EachLogoutCallWritesItsOwnAuditEntry()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+        var userId = Guid.NewGuid();
+
+        await service.LogoutAsync(userId, CorrelationId, IpAddress);
+        await service.LogoutAsync(userId, "second-correlation-id", IpAddress);
+
+        var entries = await dbContext.LogoutAuditEntries.ToListAsync();
+        Assert.Equal(2, entries.Count);
+        Assert.All(entries, e => Assert.Equal(userId, e.UserId));
+    }
 }
