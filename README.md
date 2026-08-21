@@ -14,12 +14,23 @@ SwiftCare is a healthcare queue and medical-record management system built as si
 
 ## Technology stack
 
-- **Frontend:** React, JavaScript or TypeScript, and npm
-- **Backend:** ASP.NET Core Web API, .NET, REST, JWT, xUnit, and YARP for the API Gateway
-- **Data:** Entity Framework Core, Pomelo MySQL provider, and MySQL
+- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, React Router 7, and npm
+- **Backend:** ASP.NET Core Web API on .NET 10, REST, JWT, xUnit, and YARP for the API Gateway
+- **Data:** Entity Framework Core 9 (Pomelo MySQL provider), and MySQL
 - **Messaging:** Apache Kafka and ZooKeeper
 - **DevOps:** GitHub Actions, Docker, Docker Compose, Microsoft Azure, GitHub Environments, and GitHub Actions Secrets
 - **Operations:** Health checks, structured logging, correlation IDs, and service-level telemetry
+
+### Pinned framework versions
+
+| Component | Version | Notes |
+| --- | --- | --- |
+| .NET SDK | **10.0** | Only SDK available on the original dev machine at scaffolding time; overrides an earlier .NET 8 LTS assumption |
+| EF Core | **9.0** | Pinned below the SDK's default (10) because Pomelo's MySQL provider has not released `net10` support yet |
+| React | **19** | Scaffolded via `npm create vite@latest -- --template react-ts` |
+| Node.js | **22.x** | Required to run the frontend tooling |
+
+Keep the .NET SDK and EF Core pins in sync across every service — do not let one service drift onto a different EF Core major version than the others.
 
 ## Microservices
 
@@ -61,16 +72,16 @@ swiftcare/
 `-- README.md
 ```
 
-Application projects have not yet been scaffolded. Placeholder directories reserve the agreed layout.
+`ApiGateway/`, `services/AuthService/`, and `frontend/` are scaffolded and implement SWC-6 (user login). The remaining services under `services/` are still placeholder directories reserving the agreed layout.
 
 ## Prerequisites
 
 - Git
 - Docker Desktop with Docker Compose
-- .NET SDK after backend projects are scaffolded
-- Node.js and npm after the frontend project is scaffolded
+- .NET SDK 10.0
+- Node.js 22.x and npm
 
-The team must agree on and document exact .NET and Node.js versions when project scaffolding begins.
+See [Pinned framework versions](#pinned-framework-versions) above.
 
 ## Planned ports
 
@@ -133,7 +144,7 @@ The initial Compose stack starts MySQL, Kafka, and ZooKeeper only. Application c
 - Feature branches start from `develop` and merge back through pull requests.
 - Only `develop` should normally merge into `main`.
 
-Both permanent branches require pull requests, at least one approval, resolved conversations, and blocked force pushes and deletion. CI checks become required only after the workflow has completed successfully at least once.
+Both permanent branches require pull requests, approval from the sprint’s QA role, resolved conversations, and blocked force pushes and deletion. CI checks become required only after the workflow has completed successfully at least once.
 
 Branch names use the exact Jira issue:
 
@@ -143,6 +154,13 @@ fix/SWC-12-fix-patient-search
 refactor/SWC-6-improve-authentication
 docs/SWC-9-update-registration-documentation
 test/SWC-19-add-queue-tests
+```
+
+Branches not tied to a story (repository administration, e.g. CI or documentation housekeeping) may omit the issue key:
+
+```text
+docs/standup-log-template
+chore/ci-dotnet-build-test
 ```
 
 ## Commit convention
@@ -155,12 +173,18 @@ fix(SWC-12): correct patient search validation
 test(SWC-19): add queue event tests
 ```
 
+Commits not tied to a story may omit the scope the same way:
+
+```text
+docs: add daily stand-up log template
+```
+
 ## Pull-request workflow
 
 1. Create a Jira-linked branch from `develop`.
 2. Commit changes using the agreed convention.
 3. Push the branch and open a pull request into `develop`.
-4. Obtain at least one approval, resolve conversations, and pass required CI checks.
+4. Obtain approval from that sprint’s QA role, resolve conversations, and pass required CI checks.
 5. Merge completed work into `develop`.
 6. Promote reviewed release candidates from `develop` to `main` through a separate pull request.
 
@@ -203,9 +227,15 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 
 ## CI/CD
 
-The initial GitHub Actions workflow validates required foundation files and Docker Compose configuration on pushes and pull requests involving `develop` or `main`. It deliberately does not run npm or .NET commands before application projects exist.
+The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as three jobs:
 
-CI will later run frontend linting, tests, and builds; backend restore, build, xUnit coverage, and EF Core migration validation; container image builds; security checks; registry publishing; Azure staging deployment; and post-deployment `/health` checks. The pipeline will build, image, and deploy the API Gateway with the six microservices, and its `/health` endpoint must pass before a deployment is promoted.
+- **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml`.
+- **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects), with coverage collected via coverlet and uploaded as a build artifact.
+- **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
+
+The .NET and frontend jobs each guard on their respective entry file (`SwiftCare.slnx`, `frontend/package.json`) existing, so they no-op harmlessly on branches that don't have those projects yet rather than failing.
+
+CI will later add EF Core migration validation, container image builds, security checks, registry publishing, Azure staging deployment, and post-deployment `/health` checks. The pipeline will build, image, and deploy the API Gateway with the six microservices, and its `/health` endpoint must pass before a deployment is promoted.
 
 ## Observability policy
 
@@ -214,7 +244,3 @@ Every service must eventually expose `/health`, emit structured logs, measure re
 The API Gateway must expose `/health`, log incoming requests with correlation IDs, and record JWT validation failures, gateway-authentication failures, and routing errors. It must remove client-supplied identity and gateway-secret headers before attaching trusted forwarding headers.
 
 Logs must never include passwords, JWT tokens, database connection strings, access credentials, or sensitive patient and medical information.
-
-## Current status
-
-The repository and local infrastructure foundation are being established. React and ASP.NET Core projects, application containers, service Swagger endpoints, and Azure deployment URLs will be added by the development and DevOps teams as implementation progresses.
