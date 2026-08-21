@@ -1,4 +1,4 @@
-name: Infrastructure validation
+name: CI
 
 on:
   push:
@@ -41,3 +41,53 @@ jobs:
 
       - name: Validate Docker Compose
         run: docker compose config --quiet
+
+  build-and-test:
+    name: Build and test .NET projects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        if: hashFiles('SwiftCare.slnx') != ''
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore, build, and test
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: |
+          dotnet restore SwiftCare.slnx
+          dotnet build SwiftCare.slnx --no-restore --configuration Release
+          dotnet test SwiftCare.slnx --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+
+      - name: Upload test results
+        if: always() && hashFiles('SwiftCare.slnx') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults
+
+  build-frontend:
+    name: Build and lint frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: hashFiles('frontend/package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install, lint, and build
+        if: hashFiles('frontend/package.json') != ''
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run build
