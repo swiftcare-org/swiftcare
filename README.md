@@ -137,6 +137,102 @@ docker compose down -v
 
 The initial Compose stack starts MySQL, Kafka, and ZooKeeper only. Application containers will be added after projects and Dockerfiles exist.
 
+## Running the application locally
+
+Compose provides infrastructure only, so the Gateway, AuthService, and frontend each run on the host in their own terminal. Start the infrastructure first with `docker compose up -d`.
+
+### One-time database preparation
+
+MySQL creates only the user named by `MYSQL_USER`, with no privileges on any database. Create the databases and grant access once — the password is read from inside the container, so it never appears on your command line:
+
+```bash
+docker compose exec -T mysql sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "
+  CREATE DATABASE IF NOT EXISTS swiftcare_auth CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  GRANT ALL PRIVILEGES ON swiftcare_auth.* TO \"$MYSQL_USER\"@\"%\";
+  FLUSH PRIVILEGES;"'
+```
+
+Repeat for each service database as those services come online. This step disappears once application containers and an init script land.
+
+### Apply migrations
+
+```bash
+dotnet tool restore
+dotnet ef database update --project services/AuthService --connection "Server=localhost;Port=3306;Database=swiftcare_auth;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
+```
+
+`--connection` is required. `AuthDbContextFactory` supplies placeholder design-time credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
+
+Re-run this after pulling any change that adds a migration.
+
+### Load configuration
+
+Both .NET processes fail fast when configuration is missing, and several values must be **identical** across them — `Jwt__SecretKey`, `Jwt__Issuer`, `Jwt__Audience`, and `Gateway__InternalSecret`. A mismatch produces a `401` that the login page reports as invalid credentials, so derive them all from `.env` rather than typing them.
+
+Run this at the top of each terminal (PowerShell):
+
+```powershell
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
+        Set-Item -Path "Env:$($matches[1])" -Value $matches[2].Trim()
+    }
+}
+
+$env:Jwt__SecretKey          = $env:JWT_SIGNING_KEY
+$env:Jwt__Issuer             = $env:JWT_ISSUER
+$env:Jwt__Audience           = $env:JWT_AUDIENCE
+$env:Gateway__InternalSecret = $env:GATEWAY_INTERNAL_SECRET
+$env:ASPNETCORE_ENVIRONMENT  = "Development"
+```
+
+### Start the processes
+
+**Terminal 1 — AuthService** (port 5000):
+
+```powershell
+$env:ConnectionStrings__AuthDb = "Server=localhost;Port=3306;Database=$env:AUTH_DB_NAME;User Id=$env:MYSQL_USER;Password=$env:MYSQL_PASSWORD;"
+dotnet run --project services/AuthService
+```
+
+**Terminal 2 — API Gateway** (port 8000):
+
+```powershell
+dotnet run --project ApiGateway
+```
+
+**Terminal 3 — frontend** (port 5173). Vite reads env files from `frontend/`, not the repository root, and [`src/api/client.ts`](frontend/src/api/client.ts) throws on load when the value is absent. Create `frontend/.env` containing `VITE_GATEWAY_URL=http://localhost:8000`, then:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+### Verify
+
+```bash
+curl http://localhost:5000/health
+curl http://localhost:8000/health
+```
+
+Open `http://localhost:5173` and sign in. `DevelopmentSeeder` creates four synthetic accounts on first run, all sharing the value of `AUTH_SEED_PASSWORD`:
+
+| Username | Role | Notes |
+| --- | --- | --- |
+| `dr.chen` | Doctor | Room `R-204` |
+| `reception.silva` | Receptionist | |
+| `admin.fernando` | Admin | |
+| `dr.rao` | Doctor | Deactivated — exercises the rejection path |
+
+Seeding is skipped with a warning when `AUTH_SEED_PASSWORD` is unset, which leaves the database empty and makes every login fail. Synthetic data only — never real patient or staff records.
+
+### Running tests
+
+```bash
+dotnet test SwiftCare.slnx
+cd frontend && npm run lint && npm run build
+```
+
 ## Branching strategy
 
 - `main` contains stable, reviewed, releasable code.
@@ -227,15 +323,28 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 
 ## CI/CD
 
-The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as three jobs:
+The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as four parallel jobs. Any failing job blocks the merge.
 
-- **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml`.
-- **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects), with coverage collected via coverlet and uploaded as a build artifact.
+- **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml` parses.
+- **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage.
 - **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
+- **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
 
-The .NET and frontend jobs each guard on their respective entry file (`SwiftCare.slnx`, `frontend/package.json`) existing, so they no-op harmlessly on branches that don't have those projects yet rather than failing.
+Every job guards on its entry file (`SwiftCare.slnx`, `frontend/package.json`, `frontend/package-lock.json`) existing, so each no-ops harmlessly on branches without those projects rather than failing.
 
-CI will later add EF Core migration validation, container image builds, security checks, registry publishing, Azure staging deployment, and post-deployment `/health` checks. The pipeline will build, image, and deploy the API Gateway with the six microservices, and its `/health` endpoint must pass before a deployment is promoted.
+### Coverage
+
+Coverage is collected with coverlet, rendered by ReportGenerator into the run's job summary, and published as a build artifact alongside the TRX test results.
+
+The build fails when line coverage drops below `MINIMUM_LINE_COVERAGE`, defined in the workflow and currently `55`. Generated EF migration files are excluded from the calculation — they are neither hand-written nor directly tested, and including them reports 37.6% where service code actually sits at 59.6%. Raise the threshold as services land with tests; it exists to catch regression, not to be aspirational.
+
+### Security
+
+Both scans currently report clean, so they gate against regression rather than flagging existing debt. `dotnet list package` exits `0` even when it finds vulnerabilities, so that step matches on its output instead of its exit code. `npm audit` is pinned to `--audit-level=high` so that low and moderate advisories in build-time tooling, which never ship to production, do not block merges.
+
+### Not yet implemented
+
+EF Core migration validation, container image builds, registry publishing, Azure deployment, and post-deployment `/health` verification. Delivery will build, image, and deploy the API Gateway with the six microservices, and the gateway's `/health` endpoint must pass before any deployment is promoted.
 
 ## Observability policy
 
