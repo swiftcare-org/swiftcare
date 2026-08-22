@@ -243,3 +243,38 @@ jobs:
       - name: Check for model changes without a migration
         if: hashFiles('services/AuthService/AuthService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/AuthService
+
+  code-analysis:
+    name: Analyze code (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [csharp, javascript-typescript]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      # Must run after init so the CodeQL extractor can trace the compilation.
+      - name: Build .NET projects
+        if: matrix.language == 'csharp'
+        run: dotnet build SwiftCare.slnx --configuration Release
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

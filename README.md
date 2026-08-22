@@ -323,13 +323,14 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 
 ## CI/CD
 
-The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as five parallel jobs. Any failing job blocks the merge.
+The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as six parallel jobs. Any failing job blocks the merge.
 
 - **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml` parses.
 - **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage.
 - **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
 - **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
 - **Validate EF Core migrations** — applies every migration to a clean MySQL 8.4 service container, then fails when the model has changed without a corresponding migration.
+- **Analyze code** — CodeQL static analysis over C# and TypeScript, reporting into the repository's Security tab.
 
 Runs are grouped by workflow and ref with `cancel-in-progress`, so pushing twice in quick succession cancels the superseded run instead of executing both. NuGet packages are cached across runs, keyed on the project files and `dotnet-tools.json`.
 
@@ -343,7 +344,9 @@ The build fails when line coverage drops below `MINIMUM_LINE_COVERAGE`, defined 
 
 ### Security
 
-Both scans currently report clean, so they gate against regression rather than flagging existing debt. `dotnet list package` exits `0` even when it finds vulnerabilities, so that step matches on its output instead of its exit code. `npm audit` is pinned to `--audit-level=high` so that low and moderate advisories in build-time tooling, which never ship to production, do not block merges.
+Two layers run independently. **Dependency scanning** checks third-party packages: `dotnet list package` exits `0` even when it finds vulnerabilities, so that step matches on its output instead of its exit code, and `npm audit` is pinned to `--audit-level=high` so that low and moderate advisories in build-time tooling, which never ship to production, do not block merges. Both currently report clean, so they gate against regression rather than flagging existing debt.
+
+**CodeQL** analyses first-party source instead — injection flaws, unsafe patterns, and hardcoded credentials in code we wrote. The C# build runs after CodeQL initialises so the extractor can trace the compilation; reordering those steps silently produces an empty analysis. Findings appear under the repository's Security tab.
 
 ### Not yet implemented
 
