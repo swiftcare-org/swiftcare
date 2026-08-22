@@ -89,6 +89,24 @@ public sealed class AuthenticationService : IAuthenticationService
         };
     }
 
+    public async Task LogoutAsync(
+        Guid userId,
+        string correlationId,
+        string ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        _dbContext.LogoutAuditEntries.Add(new LogoutAuditEntry
+        {
+            UserId = userId,
+            CorrelationId = correlationId,
+            IpAddress = ipAddress,
+            OccurredAt = DateTime.UtcNow
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Logout recorded: userId={UserId}", userId);
+    }
+
     private async Task WriteAuditEntryAsync(
         Guid? userId,
         LoginOutcome outcome,

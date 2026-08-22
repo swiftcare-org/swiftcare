@@ -12,3 +12,9 @@ export function login(credentials: LoginCredentials): Promise<LoginResponseBody>
     body: credentials,
   });
 }
+
+export function logout(): Promise<void> {
+  return apiRequest<void>('/api/auth/logout', {
+    method: 'POST',
+  });
+}

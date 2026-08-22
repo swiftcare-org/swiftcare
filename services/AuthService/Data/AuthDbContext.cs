@@ -7,6 +7,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<LoginAuditEntry> LoginAuditEntries => Set<LoginAuditEntry>();
+    public DbSet<LogoutAuditEntry> LogoutAuditEntries => Set<LogoutAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,6 +26,14 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
         {
             entity.Property(e => e.Id).ValueGeneratedNever();
             entity.Property(e => e.Outcome).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(e => e.CorrelationId).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.IpAddress).HasMaxLength(45).IsRequired();
+        });
+
+        modelBuilder.Entity<LogoutAuditEntry>(entity =>
+        {
+            entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.HasIndex(e => e.UserId);
             entity.Property(e => e.CorrelationId).HasMaxLength(64).IsRequired();
             entity.Property(e => e.IpAddress).HasMaxLength(45).IsRequired();
         });

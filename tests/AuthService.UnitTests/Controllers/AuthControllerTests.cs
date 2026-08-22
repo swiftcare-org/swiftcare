@@ -138,4 +138,83 @@ public class AuthControllerTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task LogoutWithValidGatewaySecretAndUserIdReturns204AndInvokesService()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        var userId = Guid.NewGuid();
+
+        factory.AuthenticationServiceMock
+            .Setup(s => s.LogoutAsync(userId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(GatewaySecretHeaderName, AuthServiceWebApplicationFactory.ValidGatewaySecret);
+        client.DefaultRequestHeaders.Add("X-User-Id", userId.ToString());
+
+        var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        factory.AuthenticationServiceMock.Verify(
+            s => s.LogoutAsync(userId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task LogoutWithoutGatewaySecretHeaderReturns401AndNeverInvokesService()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString());
+
+        var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.AuthenticationServiceMock.Verify(
+            s => s.LogoutAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task LogoutWithoutUserIdHeaderReturns401WithExactMessageAndNeverInvokesService()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(GatewaySecretHeaderName, AuthServiceWebApplicationFactory.ValidGatewaySecret);
+
+        var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Unauthorized", body!.Message);
+        factory.AuthenticationServiceMock.Verify(
+            s => s.LogoutAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("")]
+    [InlineData("00000000-0000-0000-0000-00000000000Z")]
+    public async Task LogoutWithMalformedUserIdHeaderReturns401AndNeverInvokesService(string userIdHeaderValue)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(GatewaySecretHeaderName, AuthServiceWebApplicationFactory.ValidGatewaySecret);
+        if (userIdHeaderValue.Length > 0)
+        {
+            client.DefaultRequestHeaders.Add("X-User-Id", userIdHeaderValue);
+        }
+
+        var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.AuthenticationServiceMock.Verify(
+            s => s.LogoutAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

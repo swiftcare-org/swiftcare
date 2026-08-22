@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
+import { logout } from '../api/auth';
 import swiftcareLogo from '../assets/swiftcare-logo.svg';
 
 interface DashboardShellProps {
@@ -13,6 +14,11 @@ export function DashboardShell({ sectionLabel, children }: DashboardShellProps) 
   const navigate = useNavigate();
 
   function handleSignOut() {
+    // logout() is fired before the token is cleared, since it needs the still-present
+    // bearer token to authenticate the audit-log call. It's deliberately not awaited:
+    // ending the local session must never depend on the network or on AuthService being
+    // reachable, so a rejected request here is swallowed and the audit row is simply lost.
+    logout().catch(() => {});
     signOut();
     navigate('/login', { replace: true });
   }

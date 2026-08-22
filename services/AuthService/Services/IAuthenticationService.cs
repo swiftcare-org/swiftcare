@@ -10,4 +10,10 @@ public interface IAuthenticationService
         string correlationId,
         string ipAddress,
         CancellationToken cancellationToken = default);
+
+    Task LogoutAsync(
+        Guid userId,
+        string correlationId,
+        string ipAddress,
+        CancellationToken cancellationToken = default);
 }

@@ -6,9 +6,11 @@ The single entry point for the React frontend. Every client request goes through
 
 - Reverse-proxies requests to backend services via [YARP](https://microsoft.github.io/reverse-proxy/).
 - `CorrelationIdMiddleware` — generates `X-Correlation-ID` when a client omits it, sets it on both the request and response, and logs every incoming request under a correlation-scoped logger.
-- `GatewayForwardingMiddleware` — strips any client-supplied `X-Gateway-Secret`, `X-User-Id`, `X-User-Role`, `X-User-Name`, or `X-Room-Number` header (a client must never be able to forge identity), then attaches the trusted `X-Gateway-Secret` before proxying.
+- JWT bearer authentication — validates tokens issued by AuthService (signature, issuer, audience, lifetime) against the `Jwt:*` configuration below. Routes are protected per-route via `appsettings.json`'s `AuthorizationPolicy` (`Anonymous` or `Default`), not globally.
+- `TokenRevocationMiddleware` — maintains an in-memory revoked-`jti` denylist. Revokes the caller's token on `POST /api/auth/logout` *before* forwarding, so logout always terminates the session locally even if AuthService is unreachable. Rejects any request bearing an already-revoked token with `401`. In-memory and per-instance — does not survive a Gateway restart and is not shared across multiple Gateway instances; acceptable for a single-instance Sprint 1 deployment only.
+- `GatewayForwardingMiddleware` — strips any client-supplied `X-Gateway-Secret`, `X-User-Id`, `X-User-Role`, `X-User-Name`, or `X-Room-Number` header (a client must never be able to forge identity), then attaches the trusted `X-Gateway-Secret` and, for authenticated requests, identity headers derived from the validated JWT's claims.
 - CORS restricted to the frontend's dev origin (`http://localhost:5173`).
-- `GET /health` — liveness/readiness check.
+- `GET /health` — liveness/readiness check, open to anonymous requests.
 
 ## Port
 
@@ -18,19 +20,23 @@ The single entry point for the React frontend. Every client request goes through
 
 Configured in `appsettings.json` under `ReverseProxy`:
 
-| Route | Match | Destination |
-| --- | --- | --- |
-| `auth-route` | `/api/auth/{**catch-all}` | `http://localhost:5000` (AuthService) |
+| Route | Match | `AuthorizationPolicy` | Destination |
+| --- | --- | --- | --- |
+| `auth-login-route` | `POST /api/auth/login` | `Anonymous` | `http://localhost:5000` (AuthService) |
+| `auth-route` | `/api/auth/{**catch-all}` | `Default` (requires a valid, non-revoked JWT) | `http://localhost:5000` (AuthService) |
 
-As more services come online (PatientService, QueueService, etc.), add a route + cluster entry per service rather than a shared routing abstraction — each route maps one URL prefix to one service's base address.
+As more services come online (PatientService, QueueService, etc.), add a route + cluster entry per service rather than a shared routing abstraction — each route maps one URL prefix to one service's base address. Give each new protected route an explicit `AuthorizationPolicy` rather than relying on an implicit default.
 
 ## Required environment variables
 
-The Gateway fails fast at startup if this is missing — it will not silently start unable to authenticate its own outbound calls.
+The Gateway fails fast at startup if any of these are missing — it will not silently start unable to authenticate its own outbound calls or validate inbound tokens.
 
 | Variable | Purpose | Notes |
 | --- | --- | --- |
 | `Gateway__InternalSecret` | Shared secret attached to every proxied request | Required, must match the value configured on every backend service (currently AuthService's `Gateway__InternalSecret`) |
+| `Jwt__SecretKey` | HMAC-SHA256 key used to validate AuthService-issued tokens | Required, must be at least 32 bytes and **must exactly match** AuthService's `Jwt__SecretKey`. A mismatch fails closed — every authenticated route returns 401 — rather than open. |
+| `Jwt__Issuer` | Expected token issuer | Required, must exactly match AuthService's `Jwt__Issuer` |
+| `Jwt__Audience` | Expected token audience | Required, must exactly match AuthService's `Jwt__Audience` |
 
 ## Running locally
 
@@ -38,6 +44,9 @@ The Gateway fails fast at startup if this is missing — it will not silently st
 cd ApiGateway
 
 export Gateway__InternalSecret="<shared value, must match every backend service>"
+export Jwt__SecretKey="<shared value, must match AuthService's Jwt__SecretKey>"
+export Jwt__Issuer="<shared value, must match AuthService's Jwt__Issuer>"
+export Jwt__Audience="<shared value, must match AuthService's Jwt__Audience>"
 export ASPNETCORE_ENVIRONMENT=Development
 
 dotnet run
@@ -47,7 +56,17 @@ Start the backend services it proxies to (currently AuthService on port 5000) be
 
 ## Testing
 
-No automated test project exists for the Gateway yet (SWC-6 covers routing/middleware configuration only; AuthService carries the story's test coverage). Verify manually:
+`tests/ApiGateway.UnitTests/`:
+
+- `Middleware/` — pure unit tests over `TokenRevocationMiddleware` and `GatewayForwardingMiddleware` in isolation (no HTTP pipeline).
+- `Security/` — `RevokedTokenStore` lookup/eviction behavior.
+- `Routing/` — boots the real Gateway pipeline (`WebApplicationFactory<Program>`) against the actual `appsettings.json` route configuration, so a wrong `AuthorizationPolicy` value or route `Order` is caught by a test rather than only by manual verification.
+
+```bash
+dotnet test tests/ApiGateway.UnitTests
+```
+
+Manual verification:
 
 ```bash
 curl http://localhost:8000/health
@@ -56,7 +75,9 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 
 ## Endpoints
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/health` | Health check |
-| `*` | `/api/auth/{**catch-all}` | Proxied to AuthService |
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `GET` | `/health` | none | Health check |
+| `POST` | `/api/auth/login` | none | Proxied to AuthService |
+| `POST` | `/api/auth/logout` | Bearer JWT | Revokes the token's `jti`, then proxies to AuthService |
+| `*` | `/api/auth/{**catch-all}` | Bearer JWT | Proxied to AuthService |
