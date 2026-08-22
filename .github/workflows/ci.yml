@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-infrastructure:
     name: Validate repository infrastructure
@@ -57,6 +61,14 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Cache NuGet packages
+        if: hashFiles('SwiftCare.slnx') != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Restore, build, and test
         if: hashFiles('SwiftCare.slnx') != ''
         run: |
@@ -64,6 +76,31 @@ jobs:
           dotnet restore SwiftCare.slnx
           dotnet build SwiftCare.slnx --no-restore --configuration Release
           dotnet test SwiftCare.slnx --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+
+      - name: Publish test summary
+        if: always() && hashFiles('SwiftCare.slnx') != ''
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, os, xml.etree.ElementTree as ET
+          ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          rows = []
+          for path in sorted(glob.glob("TestResults/**/*.trx", recursive=True)):
+              root = ET.parse(path).getroot()
+              counters = root.find("t:ResultSummary/t:Counters", ns)
+              if counters is None:
+                  continue
+              unit_test = root.find("t:TestDefinitions/t:UnitTest", ns)
+              name = os.path.basename(unit_test.get("storage", path)) if unit_test is not None else os.path.basename(path)
+              rows.append((name, counters.get("total"), counters.get("passed"), counters.get("failed")))
+          print("## Test results\n")
+          if not rows:
+              print("No test results were produced.")
+          else:
+              print("| Suite | Total | Passed | Failed |")
+              print("| --- | ---: | ---: | ---: |")
+              for row in rows:
+                  print("| {} | {} | {} | {} |".format(*row))
+          PY
 
       - name: Generate coverage report
         if: hashFiles('SwiftCare.slnx') != ''
@@ -155,3 +192,54 @@ jobs:
         if: hashFiles('frontend/package-lock.json') != ''
         working-directory: frontend
         run: npm audit --audit-level=high
+
+  validate-migrations:
+    name: Validate EF Core migrations
+    runs-on: ubuntu-latest
+    env:
+      MYSQL_ROOT_PASSWORD: ci-only-root-password
+      AUTH_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_auth;User Id=root;Password=ci-only-root-password;"
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-root-password
+          MYSQL_DATABASE: swiftcare_auth
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -pci-only-root-password --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        if: hashFiles('SwiftCare.slnx') != ''
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Cache NuGet packages
+        if: hashFiles('SwiftCare.slnx') != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore tools
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: dotnet tool restore
+
+      # AuthDbContextFactory supplies placeholder design-time credentials and EF prefers it
+      # over the application host, so the connection string must be passed explicitly.
+      - name: Apply migrations to a clean database
+        if: hashFiles('services/AuthService/AuthService.csproj') != ''
+        run: dotnet ef database update --project services/AuthService --connection "$AUTH_DB_CONNECTION"
+
+      - name: Check for model changes without a migration
+        if: hashFiles('services/AuthService/AuthService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/AuthService
