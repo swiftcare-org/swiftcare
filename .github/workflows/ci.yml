@@ -117,3 +117,41 @@ jobs:
           npm ci
           npm run lint
           npm run build
+
+  security-scan:
+    name: Scan dependencies for vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        if: hashFiles('SwiftCare.slnx') != ''
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Audit NuGet packages
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: |
+          dotnet restore SwiftCare.slnx
+          report=$(dotnet list SwiftCare.slnx package --vulnerable --include-transitive)
+          echo "$report"
+          # dotnet list exits 0 even when it finds vulnerabilities, so match on its output.
+          if echo "$report" | grep -q "has the following vulnerable packages"; then
+            echo "::error::Vulnerable NuGet packages detected"
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        if: hashFiles('frontend/package-lock.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Audit npm packages
+        if: hashFiles('frontend/package-lock.json') != ''
+        working-directory: frontend
+        run: npm audit --audit-level=high
