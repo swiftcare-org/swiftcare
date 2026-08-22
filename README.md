@@ -326,7 +326,7 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as six parallel jobs. Any failing job blocks the merge.
 
 - **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml` parses.
-- **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage.
+- **Build and test .NET projects** — verifies formatting with `dotnet format`, then builds and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage. The formatting check runs before the build so a style failure reports in seconds rather than after the full test run.
 - **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
 - **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
 - **Validate EF Core migrations** — applies every migration to a clean MySQL 8.4 service container, then fails when the model has changed without a corresponding migration.

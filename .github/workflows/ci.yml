@@ -69,11 +69,19 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
-      - name: Restore, build, and test
+      - name: Restore
         if: hashFiles('SwiftCare.slnx') != ''
         run: |
           dotnet tool restore
           dotnet restore SwiftCare.slnx
+
+      - name: Verify formatting
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: dotnet format SwiftCare.slnx --verify-no-changes --no-restore --verbosity minimal
+
+      - name: Build and test
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: |
           dotnet build SwiftCare.slnx --no-restore --configuration Release
           dotnet test SwiftCare.slnx --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
