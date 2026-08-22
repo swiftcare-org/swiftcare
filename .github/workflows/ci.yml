@@ -238,9 +238,11 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
-      - name: Restore tools
+      - name: Restore
         if: hashFiles('SwiftCare.slnx') != ''
-        run: dotnet tool restore
+        run: |
+          dotnet tool restore
+          dotnet restore SwiftCare.slnx
 
       # AuthDbContextFactory supplies placeholder design-time credentials and EF prefers it
       # over the application host, so the connection string must be passed explicitly.
