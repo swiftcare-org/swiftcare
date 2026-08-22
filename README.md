@@ -323,18 +323,21 @@ Create GitHub Environments named `development`, `staging`, and `production` when
 
 ## CI/CD
 
-The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as four parallel jobs. Any failing job blocks the merge.
+The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as five parallel jobs. Any failing job blocks the merge.
 
 - **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml` parses.
 - **Build and test .NET projects** — restores, builds, and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage.
 - **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
 - **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
+- **Validate EF Core migrations** — applies every migration to a clean MySQL 8.4 service container, then fails when the model has changed without a corresponding migration.
+
+Runs are grouped by workflow and ref with `cancel-in-progress`, so pushing twice in quick succession cancels the superseded run instead of executing both. NuGet packages are cached across runs, keyed on the project files and `dotnet-tools.json`.
 
 Every job guards on its entry file (`SwiftCare.slnx`, `frontend/package.json`, `frontend/package-lock.json`) existing, so each no-ops harmlessly on branches without those projects rather than failing.
 
 ### Coverage
 
-Coverage is collected with coverlet, rendered by ReportGenerator into the run's job summary, and published as a build artifact alongside the TRX test results.
+Test counts per suite are parsed from the TRX output into the run's job summary. Coverage is collected with coverlet, rendered by ReportGenerator into the same summary, and published as a build artifact alongside the TRX results.
 
 The build fails when line coverage drops below `MINIMUM_LINE_COVERAGE`, defined in the workflow and currently `55`. Generated EF migration files are excluded from the calculation — they are neither hand-written nor directly tested, and including them reports 37.6% where service code actually sits at 59.6%. Raise the threshold as services land with tests; it exists to catch regression, not to be aspirational.
 
@@ -344,7 +347,7 @@ Both scans currently report clean, so they gate against regression rather than f
 
 ### Not yet implemented
 
-EF Core migration validation, container image builds, registry publishing, Azure deployment, and post-deployment `/health` verification. Delivery will build, image, and deploy the API Gateway with the six microservices, and the gateway's `/health` endpoint must pass before any deployment is promoted.
+Frontend unit tests, container image builds, registry publishing, Azure deployment, and post-deployment `/health` verification. Delivery will build, image, and deploy the API Gateway with the six microservices, and the gateway's `/health` endpoint must pass before any deployment is promoted.
 
 ## Observability policy
 
