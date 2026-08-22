@@ -45,6 +45,8 @@ jobs:
   build-and-test:
     name: Build and test .NET projects
     runs-on: ubuntu-latest
+    env:
+      MINIMUM_LINE_COVERAGE: "55"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -58,9 +60,33 @@ jobs:
       - name: Restore, build, and test
         if: hashFiles('SwiftCare.slnx') != ''
         run: |
+          dotnet tool restore
           dotnet restore SwiftCare.slnx
           dotnet build SwiftCare.slnx --no-restore --configuration Release
           dotnet test SwiftCare.slnx --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+
+      - name: Generate coverage report
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: |
+          dotnet reportgenerator \
+            -reports:"TestResults/**/coverage.cobertura.xml" \
+            -targetdir:"TestResults/coverage-report" \
+            -reporttypes:"MarkdownSummaryGithub;JsonSummary;Html" \
+            -filefilters:"-*/Migrations/*"
+
+      - name: Publish coverage summary
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: cat TestResults/coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce coverage threshold
+        if: hashFiles('SwiftCare.slnx') != ''
+        run: |
+          coverage=$(jq -r '.summary.linecoverage' TestResults/coverage-report/Summary.json)
+          echo "Line coverage: ${coverage}% (minimum ${MINIMUM_LINE_COVERAGE}%)"
+          if awk -v c="$coverage" -v m="$MINIMUM_LINE_COVERAGE" 'BEGIN { exit !(c < m) }'; then
+            echo "::error::Line coverage ${coverage}% is below the ${MINIMUM_LINE_COVERAGE}% minimum"
+            exit 1
+          fi
 
       - name: Upload test results
         if: always() && hashFiles('SwiftCare.slnx') != ''
