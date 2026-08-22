@@ -24,15 +24,15 @@ public class AuthenticationServiceTests
         bool isActive = true,
         bool isDeleted = false,
         string? roomNumber = "R-204") => new()
-    {
-        Username = "dr.chen",
-        PasswordHash = BCrypt.Net.BCrypt.HashPassword(ValidPassword),
-        FullName = "Dr. Amara Chen",
-        Role = role,
-        RoomNumber = roomNumber,
-        IsActive = isActive,
-        IsDeleted = isDeleted
-    };
+        {
+            Username = "dr.chen",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(ValidPassword),
+            FullName = "Dr. Amara Chen",
+            Role = role,
+            RoomNumber = roomNumber,
+            IsActive = isActive,
+            IsDeleted = isDeleted
+        };
 
     private static AuthenticationService CreateService(AuthDbContext dbContext, IJwtTokenService? jwtTokenService = null)
     {
