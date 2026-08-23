@@ -8,10 +8,17 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      AUTH_DB_NAME: ${AUTH_DB_NAME}
+      PATIENT_DB_NAME: ${PATIENT_DB_NAME}
+      QUEUE_DB_NAME: ${QUEUE_DB_NAME}
+      MEDICAL_RECORD_DB_NAME: ${MEDICAL_RECORD_DB_NAME}
+      PRESCRIPTION_DB_NAME: ${PRESCRIPTION_DB_NAME}
+      NOTIFICATION_DB_NAME: ${NOTIFICATION_DB_NAME}
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./deployment/docker/mysql-init:/docker-entrypoint-initdb.d:ro
     networks:
       - swiftcare-network
     healthcheck:
@@ -47,6 +54,9 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Containers reach the broker on kafka:29092, host tools on localhost:9092.
+      # Both must be bound here, not only advertised.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_EXTERNAL_PORT:-9092}
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -63,6 +73,79 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for topic in patient-checked-in patient-called consultation-completed; do
+          kafka-topics --bootstrap-server kafka:29092 \
+            --create --if-not-exists \
+            --topic "$$topic" --partitions 1 --replication-factor 1
+        done
+    networks:
+      - swiftcare-network
+    restart: "no"
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: swiftcare-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    ports:
+      - "${KAFKA_UI_PORT:-8080}:8080"
+    networks:
+      - swiftcare-network
+
+  authservice:
+    build:
+      context: .
+      dockerfile: services/AuthService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__AuthDb: "Server=mysql;Port=3306;Database=${AUTH_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Jwt__SecretKey: ${JWT_SIGNING_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      Kafka__BootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
+      AUTH_SEED_PASSWORD: ${AUTH_SEED_PASSWORD:-}
+    ports:
+      - "${AUTH_SERVICE_PORT:-5000}:5000"
+    networks:
+      - swiftcare-network
+
+  apigateway:
+    build:
+      context: .
+      dockerfile: ApiGateway/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      authservice:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      Jwt__SecretKey: ${JWT_SIGNING_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address: http://authservice:5000
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    networks:
+      - swiftcare-network
 
 volumes:
   mysql-data:
