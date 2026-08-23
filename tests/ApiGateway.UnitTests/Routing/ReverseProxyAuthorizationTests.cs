@@ -94,4 +94,21 @@ public class ReverseProxyAuthorizationTests
 
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public async Task ConfiguredFrontendOriginReceivesCorsHeader()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/auth/login");
+        request.Headers.Add("Origin", ApiGatewayWebApplicationFactory.TestFrontendOrigin);
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(
+            ApiGatewayWebApplicationFactory.TestFrontendOrigin,
+            response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+    }
 }
