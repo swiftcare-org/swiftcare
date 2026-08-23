@@ -1,0 +1,744 @@
+name: CD
+
+run-name: >-
+  Deploy ${{ github.event_name == 'workflow_run'
+    && github.event.workflow_run.head_sha
+    || github.sha }} to Azure development
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bootstrap_admin:
+        description: Create the initial production administrator, then remove the bootstrap job
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Every branch deploys to the same development resources. Serializing the whole
+# environment prevents two manually selected branches from racing each other.
+concurrency:
+  group: azure-development-deployment
+  cancel-in-progress: false
+
+env:
+  DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+  GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-gateway
+  AUTH_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-auth
+
+jobs:
+  manual-quality-gate:
+    name: Run CI for a manually selected branch
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    name: Build and publish immutable images
+    needs: manual-quality-gate
+    if: >-
+      always() &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+       (github.event_name == 'workflow_dispatch' && needs.manual-quality-gate.result == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the deployment commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the gateway
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ApiGateway/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.GATEWAY_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-gateway
+          cache-to: type=gha,mode=max,scope=swiftcare-gateway
+
+      - name: Build and push AuthService
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/AuthService/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.AUTH_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-auth
+          cache-to: type=gha,mode=max,scope=swiftcare-auth
+
+  deploy-backend:
+    name: Migrate and deploy backend
+    needs: images
+    runs-on: ubuntu-latest
+    environment: azure-development
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      gateway_url: ${{ steps.gateway.outputs.url }}
+    env:
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
+      AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
+      MIGRATE_JOB: ${{ vars.AZURE_MIGRATE_JOB }}
+      BOOTSTRAP_JOB: ${{ vars.AZURE_BOOTSTRAP_JOB }}
+      MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
+      MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
+      AUTH_DB_USER: ${{ vars.AUTH_DB_USER }}
+      KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
+      KAFKA_CONTAINER: ${{ vars.KAFKA_CONTAINER_NAME }}
+      ZOOKEEPER_CONTAINER: ${{ vars.ZOOKEEPER_CONTAINER_NAME }}
+      KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
+      STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
+      JWT_ISSUER: ${{ vars.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
+      FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      AUTH_DB_PASSWORD: ${{ secrets.AUTH_DB_PASSWORD }}
+      JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
+      GATEWAY_INTERNAL_SECRET: ${{ secrets.GATEWAY_INTERNAL_SECRET }}
+    steps:
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            AZURE_LOCATION AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID
+            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP
+            MIGRATE_JOB BOOTSTRAP_JOB
+            MYSQL_SERVER_NAME MYSQL_FQDN AUTH_DB_USER AUTH_DB_PASSWORD
+            KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
+            KAFKA_BOOTSTRAP_SERVERS STATIC_WEB_APP_NAME
+            JWT_ISSUER JWT_AUDIENCE JWT_SIGNING_KEY GATEWAY_INTERNAL_SECRET
+            FRONTEND_ORIGIN GHCR_USERNAME GHCR_TOKEN
+          )
+
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing required deployment configuration: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          if [[ "$FRONTEND_ORIGIN" == */ ]]; then
+            echo "::error::FRONTEND_ORIGIN must not end with a slash"
+            exit 1
+          fi
+
+          if [[ "$FRONTEND_ORIGIN" != https://* ]]; then
+            echo "::error::FRONTEND_ORIGIN must be the HTTPS origin of the Azure Static Web App"
+            exit 1
+          fi
+
+          if [[ "$KAFKA_BOOTSTRAP_SERVERS" == *localhost* ]] ||
+             [[ "$KAFKA_BOOTSTRAP_SERVERS" == *127.0.0.1* ]] ||
+             [[ "$KAFKA_BOOTSTRAP_SERVERS" == *kafka:29092* ]]; then
+            echo "::error::KAFKA_BOOTSTRAP_SERVERS must be reachable from Container Apps, not a local Docker address"
+            exit 1
+          fi
+
+          if [ "${#JWT_SIGNING_KEY}" -lt 32 ]; then
+            echo "::error::JWT_SIGNING_KEY must be at least 32 characters"
+            exit 1
+          fi
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify the Azure target
+        shell: bash
+        run: |
+          set -euo pipefail
+          az extension add --name containerapp --upgrade --only-show-errors
+
+          normalize_location() {
+            printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' '
+          }
+
+          require_location() {
+            local resource_name="$1"
+            local actual_location
+            local expected_location
+            actual_location=$(normalize_location "$2")
+            expected_location=$(normalize_location "$AZURE_LOCATION")
+            if [ "$actual_location" != "$expected_location" ]; then
+              echo "::error::$resource_name is in $actual_location; expected $expected_location"
+              exit 1
+            fi
+          }
+
+          actual_subscription=$(az account show --query id --output tsv)
+          if [ "$actual_subscription" != "$AZURE_SUBSCRIPTION_ID" ]; then
+            echo "::error::OIDC selected an unexpected Azure subscription"
+            exit 1
+          fi
+
+          group_state=$(az group show --name "$RESOURCE_GROUP" \
+            --query properties.provisioningState --output tsv)
+          if [ "$group_state" != "Succeeded" ]; then
+            echo "::error::Resource group state is $group_state"
+            exit 1
+          fi
+
+          environment_state=$(az containerapp env show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CONTAINERAPPS_ENVIRONMENT" \
+            --query properties.provisioningState --output tsv)
+          if [ "$environment_state" != "Succeeded" ]; then
+            echo "::error::Container Apps environment state is $environment_state"
+            exit 1
+          fi
+
+          environment_location=$(az containerapp env show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CONTAINERAPPS_ENVIRONMENT" \
+            --query location --output tsv)
+          require_location "Container Apps environment" "$environment_location"
+
+          mysql_state=$(az mysql flexible-server show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$MYSQL_SERVER_NAME" \
+            --query state --output tsv)
+          if [ "$mysql_state" != "Ready" ]; then
+            echo "::error::MySQL state is $mysql_state"
+            exit 1
+          fi
+
+          mysql_location=$(az mysql flexible-server show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$MYSQL_SERVER_NAME" \
+            --query location --output tsv)
+          require_location "MySQL flexible server" "$mysql_location"
+
+          actual_mysql_fqdn=$(az mysql flexible-server show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$MYSQL_SERVER_NAME" \
+            --query fullyQualifiedDomainName --output tsv)
+          if [ "$actual_mysql_fqdn" != "$MYSQL_FQDN" ]; then
+            echo "::error::MYSQL_FQDN does not match $MYSQL_SERVER_NAME"
+            exit 1
+          fi
+
+          public_access=$(az mysql flexible-server show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$MYSQL_SERVER_NAME" \
+            --query network.publicNetworkAccess --output tsv)
+          if [ "$public_access" != "Disabled" ]; then
+            echo "::error::MySQL public access is $public_access; expected Disabled"
+            exit 1
+          fi
+
+          messaging_state=$(az container show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$KAFKA_CONTAINER_GROUP" \
+            --query instanceView.state --output tsv)
+          if [ "$messaging_state" != "Running" ]; then
+            echo "::error::Kafka/ZooKeeper container group state is $messaging_state"
+            exit 1
+          fi
+
+          messaging_location=$(az container show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$KAFKA_CONTAINER_GROUP" \
+            --query location --output tsv)
+          require_location "Kafka/ZooKeeper container group" "$messaging_location"
+
+          messaging_ip_type=$(az container show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$KAFKA_CONTAINER_GROUP" \
+            --query ipAddress.type --output tsv)
+          if [ "$messaging_ip_type" != "Private" ]; then
+            echo "::error::Kafka/ZooKeeper must use a private VNet address; found $messaging_ip_type"
+            exit 1
+          fi
+
+          for container_name in "$ZOOKEEPER_CONTAINER" "$KAFKA_CONTAINER"; do
+            container_state=$(az container show \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$KAFKA_CONTAINER_GROUP" \
+              --query "containers[?name=='$container_name'].instanceView.currentState.state | [0]" \
+              --output tsv)
+            if [ "$container_state" != "Running" ]; then
+              echo "::error::$container_name container state is ${container_state:-Missing}; expected Running"
+              exit 1
+            fi
+          done
+
+          kafka_zookeeper=$(az container show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$KAFKA_CONTAINER_GROUP" \
+            --query "containers[?name=='$KAFKA_CONTAINER'] | [0].environmentVariables[?name=='KAFKA_ZOOKEEPER_CONNECT'].value | [0]" \
+            --output tsv)
+          if [ "$kafka_zookeeper" != "localhost:2181" ]; then
+            echo "::error::Kafka must use the ZooKeeper container at localhost:2181; found ${kafka_zookeeper:-no setting}"
+            exit 1
+          fi
+
+          static_app_location=$(az staticwebapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$STATIC_WEB_APP_NAME" \
+            --query location --output tsv)
+          require_location "Static Web App" "$static_app_location"
+
+      - name: Resolve protected configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_auth;User Id=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD};SslMode=Required;"
+
+          echo "::add-mask::$connection"
+          echo "AUTH_DB_CONNECTION=$connection" >> "$GITHUB_ENV"
+
+      - name: Configure the migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$AUTH_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" >/dev/null 2>&1; then
+            az containerapp job registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp job secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --secrets "auth-db=$AUTH_DB_CONNECTION" \
+              --only-show-errors >/dev/null
+            az containerapp job update \
+              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --image "$image" --args "--migrate" \
+              --cpu 0.25 --memory 0.5Gi \
+              --set-env-vars "ConnectionStrings__AuthDb=secretref:auth-db" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp job create \
+              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --trigger-type Manual \
+              --replica-timeout 600 --replica-retry-limit 1 \
+              --replica-completion-count 1 --parallelism 1 \
+              --image "$image" --args "--migrate" \
+              --cpu 0.25 --memory 0.5Gi \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --secrets "auth-db=$AUTH_DB_CONNECTION" \
+              --env-vars "ConnectionStrings__AuthDb=secretref:auth-db" \
+              --only-show-errors >/dev/null
+          fi
+
+      - name: Apply database migrations inside the VNet
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+            --query name --output tsv)
+          echo "Started migration execution $execution"
+
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            case "$status" in
+              Succeeded)
+                echo "Migration succeeded."
+                exit 0
+                ;;
+              Failed|Degraded)
+                echo "::error::Migration execution ended with $status"
+                exit 1
+                ;;
+              *)
+                echo "Migration status: ${status:-Pending} (attempt $attempt/60)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::Migration execution timed out after 10 minutes"
+          exit 1
+
+      - name: Bootstrap the initial administrator
+        if: github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
+        shell: bash
+        env:
+          INITIAL_ADMIN_USERNAME: ${{ secrets.INITIAL_ADMIN_USERNAME }}
+          INITIAL_ADMIN_PASSWORD: ${{ secrets.INITIAL_ADMIN_PASSWORD }}
+          INITIAL_ADMIN_FULL_NAME: ${{ vars.INITIAL_ADMIN_FULL_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$INITIAL_ADMIN_USERNAME" ] || [ -z "$INITIAL_ADMIN_PASSWORD" ]; then
+            echo "::error::INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD are required for bootstrap"
+            exit 1
+          fi
+
+          if [ "${#INITIAL_ADMIN_PASSWORD}" -lt 8 ]; then
+            echo "::error::INITIAL_ADMIN_PASSWORD must be at least 8 characters"
+            exit 1
+          fi
+
+          cleanup_bootstrap_job() {
+            if az containerapp job show \
+              --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+              >/dev/null 2>&1; then
+              az containerapp job delete \
+                --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+                --yes --only-show-errors
+            fi
+          }
+
+          # Delete the one-time credentials even if creation, execution, or polling fails.
+          trap cleanup_bootstrap_job EXIT
+          cleanup_bootstrap_job
+
+          az containerapp job create \
+            --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+            --environment "$CONTAINERAPPS_ENVIRONMENT" \
+            --trigger-type Manual \
+            --replica-timeout 600 --replica-retry-limit 0 \
+            --replica-completion-count 1 --parallelism 1 \
+            --image "$AUTH_IMAGE:$DEPLOY_SHA" --args "--bootstrap-admin" \
+            --cpu 0.25 --memory 0.5Gi \
+            --registry-server ghcr.io \
+            --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+            --secrets \
+              "auth-db=$AUTH_DB_CONNECTION" \
+              "admin-username=$INITIAL_ADMIN_USERNAME" \
+              "admin-password=$INITIAL_ADMIN_PASSWORD" \
+            --env-vars \
+              "ConnectionStrings__AuthDb=secretref:auth-db" \
+              "INITIAL_ADMIN_USERNAME=secretref:admin-username" \
+              "INITIAL_ADMIN_PASSWORD=secretref:admin-password" \
+              "INITIAL_ADMIN_FULL_NAME=$INITIAL_ADMIN_FULL_NAME" \
+            --only-show-errors >/dev/null
+
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+            --query name --output tsv)
+          result=TimedOut
+
+          for _ in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            if [ "$status" = "Succeeded" ]; then
+              result=Succeeded
+              break
+            fi
+            if [ "$status" = "Failed" ] || [ "$status" = "Degraded" ]; then
+              result="$status"
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$result" != "Succeeded" ]; then
+            echo "::error::Administrator bootstrap ended with $result"
+            exit 1
+          fi
+
+          cleanup_bootstrap_job
+          trap - EXIT
+          echo "Initial administrator is present. Bootstrap job removed."
+
+      - name: Deploy AuthService with internal ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$AUTH_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+              --secrets \
+                "auth-db=$AUTH_DB_CONNECTION" \
+                "jwt-key=$JWT_SIGNING_KEY" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5000" \
+                "ConnectionStrings__AuthDb=secretref:auth-db" \
+                "Jwt__SecretKey=secretref:jwt-key" \
+                "Jwt__Issuer=$JWT_ISSUER" \
+                "Jwt__Audience=$JWT_AUDIENCE" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --ingress internal --target-port 5000 \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --secrets \
+                "auth-db=$AUTH_DB_CONNECTION" \
+                "jwt-key=$JWT_SIGNING_KEY" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5000" \
+                "ConnectionStrings__AuthDb=secretref:auth-db" \
+                "Jwt__SecretKey=secretref:jwt-key" \
+                "Jwt__Issuer=$JWT_ISSUER" \
+                "Jwt__Audience=$JWT_AUDIENCE" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp ingress enable \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+            --type internal --target-port 5000 --transport auto \
+            --only-show-errors >/dev/null
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          external=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+            --query properties.configuration.ingress.external --output tsv)
+          if [ "$external" != "false" ]; then
+            echo "::error::AuthService ingress is not internal"
+            exit 1
+          fi
+
+      - name: Deploy the gateway last
+        id: gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth_fqdn=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
+            --query properties.configuration.ingress.fqdn --output tsv)
+          if [ -z "$auth_fqdn" ]; then
+            echo "::error::AuthService has no internal ingress FQDN"
+            exit 1
+          fi
+
+          image="$GATEWAY_IMAGE:$DEPLOY_SHA"
+          proxy_address="https://${auth_fqdn}"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+              --secrets \
+                "jwt-key=$JWT_SIGNING_KEY" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:8000" \
+                "Jwt__SecretKey=secretref:jwt-key" \
+                "Jwt__Issuer=$JWT_ISSUER" \
+                "Jwt__Audience=$JWT_AUDIENCE" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN" \
+                "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$proxy_address" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --ingress external --target-port 8000 \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --secrets \
+                "jwt-key=$JWT_SIGNING_KEY" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:8000" \
+                "Jwt__SecretKey=secretref:jwt-key" \
+                "Jwt__Issuer=$JWT_ISSUER" \
+                "Jwt__Audience=$JWT_AUDIENCE" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN" \
+                "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$proxy_address" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp ingress enable \
+            --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+            --type external --target-port 8000 --transport auto \
+            --only-show-errors >/dev/null
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          fqdn=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
+            --query properties.configuration.ingress.fqdn --output tsv)
+          if [ -z "$fqdn" ]; then
+            echo "::error::Gateway has no public ingress FQDN"
+            exit 1
+          fi
+
+          echo "url=https://$fqdn" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test health and AuthService routing
+        shell: bash
+        env:
+          GATEWAY_URL: ${{ steps.gateway.outputs.url }}
+        run: |
+          set -euo pipefail
+          health_ok=false
+          for attempt in $(seq 1 30); do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --max-time 20 "$GATEWAY_URL/health" || true)
+            if [ "$code" = "200" ]; then
+              health_ok=true
+              break
+            fi
+            echo "Gateway health returned ${code:-no response}; attempt $attempt/30"
+            sleep 10
+          done
+
+          if [ "$health_ok" != "true" ]; then
+            echo "::error::Gateway health check never returned 200"
+            exit 1
+          fi
+
+          auth_ok=false
+          for attempt in $(seq 1 30); do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --max-time 20 \
+              --header 'Content-Type: application/json' \
+              --data '{"username":"deployment-smoke-test","password":"invalid"}' \
+              "$GATEWAY_URL/api/auth/login" || true)
+            if [ "$code" = "401" ]; then
+              auth_ok=true
+              break
+            fi
+            echo "Auth route returned ${code:-no response}; attempt $attempt/30"
+            sleep 10
+          done
+
+          if [ "$auth_ok" != "true" ]; then
+            echo "::error::Gateway could not reach a healthy AuthService"
+            exit 1
+          fi
+
+          echo "Gateway health and AuthService routing passed."
+
+  deploy-frontend:
+    name: Build and deploy frontend
+    needs: deploy-backend
+    runs-on: ubuntu-latest
+    environment: azure-development
+    steps:
+      - name: Check out the deployment commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build against the deployed gateway
+        working-directory: frontend
+        env:
+          VITE_GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VITE_GATEWAY_URL" ]; then
+            echo "::error::The backend job did not publish the gateway URL"
+            exit 1
+          fi
+          npm ci
+          npm run build
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: frontend/dist
+          output_location: ""
+          skip_app_build: true
+          skip_api_build: true
+
+      - name: Publish deployment summary
+        env:
+          GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+        run: |
+          {
+            echo "## Azure development deployment"
+            echo
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Gateway: $GATEWAY_URL"
+            echo "- Frontend: $FRONTEND_ORIGIN"
+            echo "- Gateway and AuthService images use the same immutable commit tag."
+          } >> "$GITHUB_STEP_SUMMARY"
