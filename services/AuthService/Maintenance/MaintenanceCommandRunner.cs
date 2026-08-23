@@ -1,4 +1,5 @@
 using AuthService.Data;
+using AuthService.Models.Configuration;
 using AuthService.Models.Entities;
 using AuthService.Models.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,6 @@ public static class MaintenanceCommandRunner
 {
     public const int Success = 0;
     public const int Failure = 1;
-    public const int MinimumPasswordLength = 8;
 
     public static async Task<int> RunAsync(MaintenanceCommand command, CancellationToken cancellationToken = default)
     {
@@ -87,9 +87,9 @@ public static class MaintenanceCommandRunner
             return Failure;
         }
 
-        if (password.Length < MinimumPasswordLength)
+        if (password.Length < PasswordPolicy.MinimumLength)
         {
-            Console.Error.WriteLine($"INITIAL_ADMIN_PASSWORD must be at least {MinimumPasswordLength} characters.");
+            Console.Error.WriteLine($"INITIAL_ADMIN_PASSWORD must be at least {PasswordPolicy.MinimumLength} characters.");
             return Failure;
         }
 
