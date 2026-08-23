@@ -1,9 +1,6 @@
 name: CD
 
-run-name: >-
-  Deploy ${{ github.event_name == 'workflow_run'
-    && github.event.workflow_run.head_sha
-    || github.sha }} to Azure development
+run-name: Deploy SwiftCare to Azure development
 
 on:
   workflow_run:
@@ -96,6 +93,7 @@ jobs:
   deploy-backend:
     name: Migrate and deploy backend
     needs: images
+    if: always() && needs.images.result == 'success'
     runs-on: ubuntu-latest
     environment: azure-development
     permissions:
@@ -348,7 +346,7 @@ jobs:
               --only-show-errors >/dev/null
             az containerapp job update \
               --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
-              --image "$image" --args "--migrate" \
+              --image "$image" --args=--migrate \
               --cpu 0.25 --memory 0.5Gi \
               --set-env-vars "ConnectionStrings__AuthDb=secretref:auth-db" \
               --only-show-errors >/dev/null
@@ -359,7 +357,7 @@ jobs:
               --trigger-type Manual \
               --replica-timeout 600 --replica-retry-limit 1 \
               --replica-completion-count 1 --parallelism 1 \
-              --image "$image" --args "--migrate" \
+              --image "$image" --args=--migrate \
               --cpu 0.25 --memory 0.5Gi \
               --registry-server ghcr.io \
               --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
@@ -440,7 +438,7 @@ jobs:
             --trigger-type Manual \
             --replica-timeout 600 --replica-retry-limit 0 \
             --replica-completion-count 1 --parallelism 1 \
-            --image "$AUTH_IMAGE:$DEPLOY_SHA" --args "--bootstrap-admin" \
+            --image "$AUTH_IMAGE:$DEPLOY_SHA" --args=--bootstrap-admin \
             --cpu 0.25 --memory 0.5Gi \
             --registry-server ghcr.io \
             --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
@@ -691,6 +689,7 @@ jobs:
   deploy-frontend:
     name: Build and deploy frontend
     needs: deploy-backend
+    if: always() && needs.deploy-backend.result == 'success'
     runs-on: ubuntu-latest
     environment: azure-development
     steps:
