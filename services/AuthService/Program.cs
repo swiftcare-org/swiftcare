@@ -1,9 +1,17 @@
 using System.Text;
 using AuthService.Data;
+using AuthService.Maintenance;
 using AuthService.Middleware;
 using AuthService.Models.Configuration;
 using AuthService.Services;
 using Microsoft.EntityFrameworkCore;
+
+// Maintenance commands run to completion and exit; they never start the web host.
+var maintenanceCommand = MaintenanceCommandParser.Parse(args);
+if (maintenanceCommand != MaintenanceCommand.None)
+{
+    return await MaintenanceCommandRunner.RunAsync(maintenanceCommand);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,5 +77,7 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
+
+return 0;
 
 public partial class Program;
