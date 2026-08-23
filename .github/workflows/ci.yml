@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -14,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,8 +33,11 @@ jobs:
             README.md
             .env.example
             .gitignore
+            .dockerignore
             docker-compose.yml
             .github/workflows/ci.yml
+            ApiGateway/Dockerfile
+            services/AuthService/Dockerfile
           )
 
           for file in "${required_files[@]}"; do
@@ -158,10 +162,42 @@ jobs:
       - name: Install, lint, and build
         if: hashFiles('frontend/package.json') != ''
         working-directory: frontend
+        env:
+          VITE_GATEWAY_URL: http://localhost:8000
         run: |
           npm ci
           npm run lint
           npm run build
+
+  build-images:
+    name: Build deployable images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ApiGateway/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-gateway
+          cache-to: type=gha,mode=max,scope=swiftcare-gateway
+
+      - name: Build the AuthService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/AuthService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-auth
+          cache-to: type=gha,mode=max,scope=swiftcare-auth
 
   security-scan:
     name: Scan dependencies for vulnerabilities
