@@ -27,6 +27,7 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
     private const string TestSigningKey = "integration-test-gateway-signing-key-must-be-at-least-32-bytes";
     private const string TestIssuer = "SwiftCare.ApiGateway.Tests";
     private const string TestAudience = "SwiftCare.Tests";
+    public const string TestFrontendOrigin = "https://frontend.swiftcare.test";
     public const string TestGatewaySecret = "integration-test-gateway-secret-value";
 
     public RevokedTokenStore RevokedTokenStore => Services.GetRequiredService<RevokedTokenStore>();
@@ -43,6 +44,7 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
                 ["Jwt:Issuer"] = TestIssuer,
                 ["Jwt:Audience"] = TestAudience,
                 ["Gateway:InternalSecret"] = TestGatewaySecret,
+                ["Cors:AllowedOrigins:0"] = TestFrontendOrigin,
                 // A port nothing binds to in a test environment - see class comment above.
                 ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999"
             });

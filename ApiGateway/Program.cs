@@ -5,8 +5,6 @@ using ApiGateway.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
-const string FrontendCorsPolicy = "FrontendCorsPolicy";
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHealthChecks();
@@ -14,16 +12,7 @@ builder.Services.AddHealthChecks();
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
-builder.Services.AddCors(options =>
-{
-    // The React frontend (port 5173) is the only client permitted to call the Gateway directly.
-    options.AddPolicy(FrontendCorsPolicy, policy =>
-    {
-        policy.WithOrigins("http://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
+builder.Services.AddCors();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -97,13 +86,29 @@ if (string.IsNullOrEmpty(app.Configuration["Jwt:Audience"]))
         "Jwt:Audience is not configured. Set it via the Jwt__Audience environment variable.");
 }
 
+var allowedOrigins = app.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()?
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray() ?? [];
+
+if (allowedOrigins.Length == 0)
+{
+    throw new InvalidOperationException(
+        "Cors:AllowedOrigins is not configured. Set it via Cors__AllowedOrigins__0 (and __1, __2 ...).");
+}
+
 if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
 {
     throw new InvalidOperationException(
         "Gateway:InternalSecret is not configured. Set it via the Gateway__InternalSecret environment variable.");
 }
 
-app.UseCors(FrontendCorsPolicy);
+app.UseCors(policy => policy
+    .WithOrigins(allowedOrigins)
+    .AllowAnyHeader()
+    .AllowAnyMethod());
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 
