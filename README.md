@@ -52,6 +52,7 @@ Sprint 1 focuses on AuthService, PatientService, and QueueService.
 ```text
 swiftcare/
 |-- .github/workflows/ci.yml
+|-- .github/workflows/cd.yml
 |-- ApiGateway/
 |-- frontend/
 |-- services/
@@ -135,24 +136,15 @@ docker compose down -v
 
 **Warning:** `docker compose down -v` permanently deletes local database data stored in Compose volumes.
 
-The initial Compose stack starts MySQL, Kafka, and ZooKeeper only. Application containers will be added after projects and Dockerfiles exist.
+The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 7.6.1, Kafka UI, AuthService, and the API Gateway. The frontend still runs through Vite on the host. Kafka uses `kafka:29092` inside the Compose network and `localhost:9092` for host tools.
 
 ## Running the application locally
 
-Compose provides infrastructure only, so the Gateway, AuthService, and frontend each run on the host in their own terminal. Start the infrastructure first with `docker compose up -d`.
+For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
 
 ### One-time database preparation
 
-MySQL creates only the user named by `MYSQL_USER`, with no privileges on any database. Create the databases and grant access once — the password is read from inside the container, so it never appears on your command line:
-
-```bash
-docker compose exec -T mysql sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "
-  CREATE DATABASE IF NOT EXISTS swiftcare_auth CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  GRANT ALL PRIVILEGES ON swiftcare_auth.* TO \"$MYSQL_USER\"@\"%\";
-  FLUSH PRIVILEGES;"'
-```
-
-Repeat for each service database as those services come online. This step disappears once application containers and an init script land.
+On an empty MySQL volume, `deployment/docker/mysql-init/01-create-databases.sh` creates all six service-owned databases and grants the local `MYSQL_USER` access to them. The script runs automatically through `/docker-entrypoint-initdb.d`; it does not run again against an existing volume.
 
 ### Apply migrations
 
@@ -305,25 +297,13 @@ A service must never query or modify another service's database. Local and CI mi
 
 `.env.example` contains safe local placeholders. Real passwords, tokens, JWT keys, Azure credentials, and connection strings must remain in local `.env` files or approved secret stores.
 
-Planned GitHub Actions secrets are:
+The CD workflow reads deployment configuration from the `azure-development` GitHub Environment. Non-sensitive Azure resource identifiers, region, application/job/container names, endpoints, JWT issuer/audience, database username, frontend origin, and initial administrator display name belong in environment variables. Passwords, registry credentials, JWT signing material, gateway trust material, the Static Web Apps deployment token, and optional bootstrap credentials belong in environment secrets.
 
-- `AZURE_CREDENTIALS`
-- `AZURE_SUBSCRIPTION_ID`
-- `AZURE_RESOURCE_GROUP`
-- `AZURE_CONTAINER_REGISTRY`
-- `AZURE_REGISTRY_USERNAME`
-- `AZURE_REGISTRY_PASSWORD`
-- `AZURE_WEBAPP_NAME`
-- `MYSQL_CONNECTION_STRING`
-- `JWT_SIGNING_KEY`
-- `GATEWAY_INTERNAL_SECRET`
-- `KAFKA_BOOTSTRAP_SERVERS`
-
-Create GitHub Environments named `development`, `staging`, and `production` when deployment resources exist. Production must require an authorized reviewer. Do not create fake values merely to reserve secret names.
+Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. AuthService uses a non-administrator MySQL account restricted to `swiftcare_auth`, never the flexible-server administrator account. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
 
 ## CI/CD
 
-The GitHub Actions workflow runs on pushes and pull requests involving `develop` or `main`, as six parallel jobs. Any failing job blocks the merge.
+The CI workflow runs on pushes and pull requests involving `develop` or `main`, as seven parallel jobs. Any failing job blocks the merge.
 
 - **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml` parses.
 - **Build and test .NET projects** — verifies formatting with `dotnet format`, then builds and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage. The formatting check runs before the build so a style failure reports in seconds rather than after the full test run.
@@ -331,6 +311,7 @@ The GitHub Actions workflow runs on pushes and pull requests involving `develop`
 - **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
 - **Validate EF Core migrations** — applies every migration to a clean MySQL 8.4 service container, then fails when the model has changed without a corresponding migration.
 - **Analyze code** — CodeQL static analysis over C# and TypeScript, reporting into the repository's Security tab.
+- **Build deployable images** — builds the API Gateway and AuthService Dockerfiles without publishing them, catching container-only failures before deployment.
 
 Runs are grouped by workflow and ref with `cancel-in-progress`, so pushing twice in quick succession cancels the superseded run instead of executing both. NuGet packages are cached across runs, keyed on the project files and `dotnet-tools.json`.
 
@@ -348,9 +329,13 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 **CodeQL** analyses first-party source instead — injection flaws, unsafe patterns, and hardcoded credentials in code we wrote. The C# build runs after CodeQL initialises so the extractor can trace the compilation; reordering those steps silently produces an empty analysis. Findings appear under the repository's Security tab.
 
-### Not yet implemented
+### Continuous deployment
 
-Frontend unit tests, container image builds, registry publishing, Azure deployment, and post-deployment `/health` verification. Delivery will build, image, and deploy the API Gateway with the six microservices, and the gateway's `/health` endpoint must pass before any deployment is promoted.
+A successful CI run for `main` automatically deploys the current Sprint 1 application slice to the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway and AuthService images to GHCR, run AuthService migrations as a finite Container Apps job, deploy AuthService behind internal ingress, deploy the public Gateway last, smoke-test health and login routing, and deploy the frontend to Azure Static Web Apps.
+
+The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. The five placeholder services are not fabricated or deployed until their projects exist.
+
+Application Insights is not configured by CD yet because the current .NET projects have no Application Insights or OpenTelemetry instrumentation package. Adding telemetry is an application change and should be completed with the observability work below rather than represented by unused environment variables.
 
 ## Observability policy
 
