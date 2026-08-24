@@ -28,7 +28,10 @@ public static class MaintenanceCommandRunner
         }
 
         var options = new DbContextOptionsBuilder<AuthDbContext>()
-            .UseMySql(connectionString, new MySqlServerVersion(new Version(8, 4, 0)))
+            .UseMySql(
+                connectionString,
+                new MySqlServerVersion(new Version(8, 4, 0)),
+                mySqlOptions => mySqlOptions.EnableRetryOnFailure())
             .Options;
 
         await using var dbContext = new AuthDbContext(options);
