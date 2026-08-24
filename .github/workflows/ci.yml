@@ -220,9 +220,29 @@ jobs:
         run: docker compose build authservice apigateway
 
       - name: Start MySQL and apply migrations
+        shell: bash
         run: |
+          set -euo pipefail
+
           docker compose up --detach --wait mysql
-          docker compose run --rm --no-deps authservice --migrate
+
+          migration_succeeded=false
+          for attempt in {1..5}; do
+            echo "Applying AuthService migrations (attempt ${attempt}/5)..."
+            if docker compose run --rm --no-deps authservice --migrate; then
+              migration_succeeded=true
+              break
+            fi
+
+            if [[ "$attempt" -lt 5 ]]; then
+              sleep "$((attempt * 5))"
+            fi
+          done
+
+          if [[ "$migration_succeeded" != "true" ]]; then
+            echo "AuthService migrations failed after 5 attempts."
+            exit 1
+          fi
 
       - name: Start AuthService and API Gateway
         run: docker compose up --detach --no-build --wait authservice apigateway
@@ -366,10 +386,11 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -pci-only-root-password --silent"
+          --health-cmd="mysqladmin ping --protocol=tcp -h 127.0.0.1 -u root -pci-only-root-password --silent"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+          --health-start-period=30s
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
