@@ -8,11 +8,17 @@ if (!GATEWAY_URL) {
 
 export class ApiError extends Error {
   readonly status: number;
+  // Keyed by lowercased field name. Populated only when the server responded with
+  // ASP.NET's ValidationProblemDetails shape ({ errors: { Field: ["message"] } });
+  // empty for every other error response, including the plain MessageResponse shape
+  // login/logout use.
+  readonly fieldErrors: Readonly<Record<string, string>>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, fieldErrors: Record<string, string> = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.fieldErrors = fieldErrors;
   }
 }
 
@@ -43,13 +49,25 @@ export async function apiRequest<TResponse>(path: string, options: RequestOption
 
   if (!response.ok) {
     let message = 'Request failed';
+    let fieldErrors: Record<string, string> = {};
     try {
-      const body = (await response.json()) as { message?: string };
+      const body = (await response.json()) as { message?: string; errors?: Record<string, string[]> };
       message = body.message ?? message;
+      if (body.errors) {
+        // [ApiController]'s ValidationProblemDetails keys errors by C# property name
+        // (e.g. "Username") or, for a body-binding failure, a JSON path (e.g. "$.role").
+        // Lowercasing lets the form look field errors up without caring which shape the
+        // server produced, and only the first message per field is kept for display.
+        fieldErrors = Object.fromEntries(
+          Object.entries(body.errors)
+            .filter(([, messages]) => messages.length > 0)
+            .map(([field, messages]) => [field.replace(/^\$\.?/, '').toLowerCase(), messages[0]]),
+        );
+      }
     } catch {
       // No JSON body on this error response - fall back to the generic message.
     }
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, fieldErrors);
   }
 
   if (response.status === 204) {

@@ -96,6 +96,67 @@ public class ReverseProxyAuthorizationTests
     }
 
     [Fact]
+    public async Task UsersRouteWithoutABearerTokenIsRejectedWith401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/users");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Unauthorized", body!.Message);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    public async Task UsersRouteWithANonAdminTokenIsRejectedWith403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync("/api/users");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Forbidden", body!.Message);
+    }
+
+    [Fact]
+    public async Task UsersRouteWithATokenCarryingNoRoleClaimIsRejectedWith403()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken());
+
+        var response = await client.GetAsync("/api/users");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UsersRouteWithAnAdminTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Admin"));
+
+        var response = await client.GetAsync("/api/users");
+
+        // AuthService isn't running in this environment, so a successful proxy attempt
+        // fails downstream rather than succeeding - what this asserts is only that the
+        // Gateway itself did not block an admin token for lacking the required role.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ConfiguredFrontendOriginReceivesCorsHeader()
     {
         using var factory = new ApiGatewayWebApplicationFactory();

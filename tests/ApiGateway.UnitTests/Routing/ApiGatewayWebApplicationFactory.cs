@@ -53,13 +53,18 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
 
     // Mints a token with the same signing key/issuer/audience the test host validates
     // against, mirroring AuthService's JwtTokenService claim shape.
-    public string CreateSignedToken(string? jti = null, DateTime? expiresAtUtc = null)
+    public string CreateSignedToken(string? jti = null, DateTime? expiresAtUtc = null, string? role = null)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, jti ?? Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Jti, jti ?? Guid.NewGuid().ToString())
         };
+
+        if (role is not null)
+        {
+            claims.Add(new Claim("role", role));
+        }
 
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
