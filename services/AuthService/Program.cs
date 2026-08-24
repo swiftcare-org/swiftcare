@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using AuthService.Data;
 using AuthService.Maintenance;
 using AuthService.Middleware;
@@ -17,7 +18,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+// CreateUserRequest.Role is bound from a JSON string ("Doctor"/"Receptionist"/"Admin"),
+// matching how AuthController already serializes Role via .ToString() in responses.
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
@@ -31,6 +35,7 @@ builder.Services.AddDbContext<AuthDbContext>(options =>
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<IUserAccountService, UserAccountService>();
 
 var app = builder.Build();
 
