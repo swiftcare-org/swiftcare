@@ -22,7 +22,9 @@ services:
     networks:
       - swiftcare-network
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      # The official image runs a temporary socket-only server while executing init
+      # scripts. Probe TCP so Compose cannot mark MySQL healthy before that finishes.
+      test: ["CMD-SHELL", "mysqladmin ping --protocol=tcp -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
