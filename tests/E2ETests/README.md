@@ -14,7 +14,9 @@ running, over HTTP.
 1. Backend stack, from the repo root:
 
    ```bash
-   docker-compose up -d mysql authservice apigateway
+   docker compose up -d mysql
+   docker compose run --rm authservice --migrate
+   docker compose up -d authservice apigateway
    ```
 
 2. Frontend dev server:

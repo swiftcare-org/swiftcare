@@ -39,6 +39,7 @@ jobs:
             .github/workflows/cd.yml
             ApiGateway/Dockerfile
             services/AuthService/Dockerfile
+            tests/E2ETests/E2ETests.csproj
           )
 
           for file in "${required_files[@]}"; do
@@ -88,7 +89,8 @@ jobs:
         if: hashFiles('SwiftCare.slnx') != ''
         run: |
           dotnet build SwiftCare.slnx --no-restore --configuration Release
-          dotnet test SwiftCare.slnx --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/AuthService.UnitTests/AuthService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
@@ -169,6 +171,117 @@ jobs:
           npm ci
           npm run lint
           npm run build
+
+  e2e-tests:
+    name: Run login and logout E2E tests
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-test
+      - build-frontend
+    env:
+      AUTH_SEED_PASSWORD: ci-only-e2e-seed-password
+      E2E_BASE_URL: http://localhost:5173
+      E2E_HEADLESS: "true"
+      VITE_GATEWAY_URL: http://localhost:8000
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore E2E test dependencies
+        run: dotnet restore tests/E2ETests/E2ETests.csproj
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Prepare E2E environment
+        run: cp .env.example .env
+
+      - name: Build backend images
+        run: docker compose build authservice apigateway
+
+      - name: Start MySQL and apply migrations
+        run: |
+          docker compose up --detach --wait mysql
+          docker compose run --rm --no-deps authservice --migrate
+
+      - name: Start AuthService and API Gateway
+        run: docker compose up --detach --no-build --wait authservice apigateway
+
+      - name: Run Selenium E2E tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p TestResults/E2E
+          npm --prefix frontend run dev -- --host 127.0.0.1 > TestResults/E2E/frontend.log 2>&1 &
+          frontend_pid=$!
+          trap 'kill "$frontend_pid" 2>/dev/null || true' EXIT
+
+          frontend_ready=false
+          for _ in {1..30}; do
+            if curl --fail --silent http://localhost:5173 >/dev/null; then
+              frontend_ready=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "$frontend_ready" != "true" ]]; then
+            echo "Frontend did not become ready within 60 seconds."
+            exit 1
+          fi
+
+          google-chrome --version
+          dotnet test tests/E2ETests/E2ETests.csproj \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=e2e.trx" \
+            --results-directory TestResults/E2E
+
+      - name: Collect E2E diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p TestResults/E2E
+          if [[ -f .env ]]; then
+            docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
+            docker compose logs --no-color mysql authservice apigateway > TestResults/E2E/docker-compose.log 2>&1 || true
+          fi
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: TestResults/E2E
+
+      - name: Stop E2E environment
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f .env ]]; then
+            docker compose down --volumes --remove-orphans
+          fi
 
   build-images:
     name: Build deployable images
