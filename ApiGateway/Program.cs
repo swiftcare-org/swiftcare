@@ -39,7 +39,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"] ?? string.Empty)),
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.Zero,
+
+            // JwtTokenService issues the role claim under the raw "role" name, and
+            // MapInboundClaims = false above keeps it that way instead of remapping it to
+            // the long ClaimTypes.Role URI. RequireRole(...) below resolves through
+            // ClaimsIdentity.RoleClaimType, which defaults to that URI - without this,
+            // RequireRole("Admin") would find no role claim at all and reject every admin.
+            RoleClaimType = "role"
         };
 
         // Without this, a missing/invalid/expired token produces a bodyless 401 - every
@@ -53,11 +60,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 context.HandleResponse();
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(new MessageResponse("Unauthorized"));
+            },
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new MessageResponse("Forbidden"));
             }
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Role-based authorization is centralized here at the Gateway; services enforce only
+    // resource-level rules (e.g. ownership) on top of the identity headers this forwards.
+    options.AddPolicy("AdminOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
+});
 
 builder.Services.AddSingleton<RevokedTokenStore>();
 
