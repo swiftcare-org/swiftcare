@@ -27,6 +27,12 @@ public sealed class UserAccountService : IUserAccountService
         if (request.Password.Length < PasswordPolicy.MinimumLength)
         {
             LogRejection(CreateUserOutcome.PasswordTooShort, actingAdminId);
+
+            // lgtm[cs/cleartext-storage-of-sensitive-information]
+            // CreateUserOutcome.PasswordTooShort is an outcome discriminator, not password
+            // data: the submitted password itself is never assigned to any field, logged,
+            // or persisted anywhere. The scanner's name-based heuristic matches on
+            // "Password" in the enum member name alone.
             return new CreateUserResult { Outcome = CreateUserOutcome.PasswordTooShort };
         }
 

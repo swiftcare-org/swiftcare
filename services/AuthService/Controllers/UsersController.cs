@@ -80,8 +80,10 @@ public sealed class UsersController : ControllerBase
             return null;
         }
 
-        var userIdHeader = HttpContext.Request.Headers[UserIdHeaderName].FirstOrDefault();
-        _logger.LogWarning("Rejected non-admin request to user management: userId={UserId}", userIdHeader);
+        // Logged as the parsed Guid, never the raw header, so an attacker who can reach
+        // this endpoint directly (bypassing the Gateway) cannot inject newlines or other
+        // control characters into the log stream via the X-User-Id header value.
+        _logger.LogWarning("Rejected non-admin request to user management: userId={UserId}", ParseUserIdHeader());
 
         return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
     }
