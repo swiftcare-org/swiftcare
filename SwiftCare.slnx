@@ -6,6 +6,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/AuthService.UnitTests/AuthService.UnitTests.csproj" />
     <Project Path="tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj" />
+    <Project Path="tests/PatientService.UnitTests/PatientService.UnitTests.csproj" />
     <Project Path="tests/E2ETests/E2ETests.csproj" />
   </Folder>
   <Project Path="ApiGateway/ApiGateway.csproj" />
