@@ -169,13 +169,15 @@ public class ReverseProxyAuthorizationTests
         Assert.Equal("Unauthorized", body!.Message);
     }
 
-    [Fact]
-    public async Task PatientsRouteWithADoctorTokenIsRejectedWith403()
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task PatientsRouteWithANonReceptionistTokenIsRejectedWith403(string role)
     {
         using var factory = new ApiGatewayWebApplicationFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+            "Bearer", factory.CreateSignedToken(role: role));
 
         var response = await client.PostAsync("/api/patients", new StringContent("{}"));
 
@@ -198,21 +200,6 @@ public class ReverseProxyAuthorizationTests
         // PatientService isn't running in this environment, so a successful proxy attempt
         // fails downstream rather than succeeding - what this asserts is only that the
         // Gateway itself did not block a receptionist token for lacking the required role.
-        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task PatientsRouteWithAnAdminTokenPassesGatewayAuthorization()
-    {
-        using var factory = new ApiGatewayWebApplicationFactory();
-        using var client = factory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(5);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer", factory.CreateSignedToken(role: "Admin"));
-
-        var response = await client.PostAsync("/api/patients", new StringContent("{}"));
-
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
     }

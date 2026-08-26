@@ -74,7 +74,7 @@ builder.Services.AddAuthorization(options =>
     // Role-based authorization is centralized here at the Gateway; services enforce only
     // resource-level rules (e.g. ownership) on top of the identity headers this forwards.
     options.AddPolicy("AdminOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
-    options.AddPolicy("ReceptionistOrAdmin", policy => policy.RequireAuthenticatedUser().RequireRole("Receptionist", "Admin"));
+    options.AddPolicy("ReceptionistOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Receptionist"));
 });
 
 builder.Services.AddSingleton<RevokedTokenStore>();
