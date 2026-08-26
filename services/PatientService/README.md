@@ -49,6 +49,10 @@ dotnet ef database update
 dotnet run
 ```
 
+## API documentation
+
+With `ASPNETCORE_ENVIRONMENT=Development`, an interactive API explorer (Scalar) is served at [`http://localhost:5002/scalar/v1`](http://localhost:5002/scalar/v1), reading the raw OpenAPI document at `/openapi/v1.json`. Both are reachable without an `X-Gateway-Secret` header — `GatewaySecretMiddleware` exempts them the same way it exempts `/health` — but they do not exist at all outside Development, since `MapOpenApi()`/`MapScalarApiReference()` are only registered inside that environment guard.
+
 ## Kafka
 
 PatientService validates only that `Kafka:BootstrapServers` is *configured* at startup, never that the broker is *reachable* — the service must start and serve `/health` even when Kafka is down, per SwiftCare's independent-deployability rule. If the broker is unreachable when a patient is registered, the publish is bounded by `Kafka:MessageTimeoutMs` (default 5000ms) so the request cannot hang, the failure is logged at `Error` with the patient ID and correlation ID, and the registration request still returns `201 Created` — the patient record is the source of truth and is not rolled back. A transactional outbox for guaranteed event delivery is a future story; today, a lost event means the patient exists but was never queued, with no automatic reconciliation.

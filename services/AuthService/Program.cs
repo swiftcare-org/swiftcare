@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using AuthService.Data;
+using Scalar.AspNetCore;
 using AuthService.Maintenance;
 using AuthService.Middleware;
 using AuthService.Models.Configuration;
@@ -67,6 +68,10 @@ if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // Interactive API docs at /scalar/v1, reading the /openapi/v1.json document MapOpenApi
+    // above serves. Development-only, matching MapOpenApi's own guard - never expose an
+    // API explorer against a production service.
+    app.MapScalarApiReference();
 
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();

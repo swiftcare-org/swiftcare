@@ -23,7 +23,7 @@ public sealed class GatewaySecretMiddleware
 
     public async Task InvokeAsync(HttpContext context, IConfiguration configuration)
     {
-        if (context.Request.Path.Equals("/health", StringComparison.OrdinalIgnoreCase))
+        if (IsUnauthenticatedPath(context.Request.Path))
         {
             await _next(context);
             return;
@@ -48,6 +48,15 @@ public sealed class GatewaySecretMiddleware
 
         await _next(context);
     }
+
+    // /openapi and /scalar are only ever mapped inside the Development environment guard in
+    // Program.cs, so this exemption has no effect in Production - there is nothing there to
+    // exempt. Without it, the interactive API docs would need a hand-crafted
+    // X-Gateway-Secret header on every request, making them unusable from a plain browser tab.
+    private static bool IsUnauthenticatedPath(PathString path) =>
+        path.Equals("/health", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase);
 
     // Constant-time comparison so response timing cannot be used to brute-force the secret.
     private static bool SecretsMatch(string expected, string provided)

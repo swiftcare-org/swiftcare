@@ -24,6 +24,9 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | --- | --- | --- | --- |
 | `auth-login-route` | `POST /api/auth/login` | `Anonymous` | `http://localhost:5000` (AuthService) |
 | `auth-route` | `/api/auth/{**catch-all}` | `Default` (requires a valid, non-revoked JWT) | `http://localhost:5000` (AuthService) |
+| `users-route` | `GET, POST /api/users` | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `patients-route` | `POST /api/patients` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
+| `patients-search-route` | `GET /api/patients/search` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
 
 As more services come online (PatientService, QueueService, etc.), add a route + cluster entry per service rather than a shared routing abstraction — each route maps one URL prefix to one service's base address. Give each new protected route an explicit `AuthorizationPolicy` rather than relying on an implicit default.
 
@@ -81,3 +84,6 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 | `POST` | `/api/auth/login` | none | Proxied to AuthService |
 | `POST` | `/api/auth/logout` | Bearer JWT | Revokes the token's `jti`, then proxies to AuthService |
 | `*` | `/api/auth/{**catch-all}` | Bearer JWT | Proxied to AuthService |
+| `GET`, `POST` | `/api/users` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `POST` | `/api/patients` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
+| `GET` | `/api/patients/search` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
