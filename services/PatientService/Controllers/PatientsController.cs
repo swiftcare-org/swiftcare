@@ -15,13 +15,16 @@ public sealed class PatientsController : ControllerBase
     private const string CorrelationIdHeaderName = "X-Correlation-ID";
 
     private readonly IPatientRegistrationService _patientRegistrationService;
+    private readonly IPatientSearchService _patientSearchService;
     private readonly ILogger<PatientsController> _logger;
 
     public PatientsController(
         IPatientRegistrationService patientRegistrationService,
+        IPatientSearchService patientSearchService,
         ILogger<PatientsController> logger)
     {
         _patientRegistrationService = patientRegistrationService;
+        _patientSearchService = patientSearchService;
         _logger = logger;
     }
 
@@ -55,6 +58,31 @@ public sealed class PatientsController : ControllerBase
         // No Location header: there is no GET /api/patients/{id} endpoint to point at, and
         // inventing an unrouted URL would be misleading.
         return StatusCode(StatusCodes.Status201Created, result.Patient);
+    }
+
+    [HttpGet("search")]
+    [ProducesResponseType(typeof(IReadOnlyList<PatientSearchResultResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SearchPatients(
+        [FromQuery] string? q,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfNotReceptionist() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        var results = await _patientSearchService.SearchPatientsAsync(q, cancellationToken);
+
+        // The search term is PHI - it is a patient's name, NIC, or phone number - so it is
+        // never logged, at any level. Only the acting user and the result count are.
+        _logger.LogInformation(
+            "Patient search executed: resultCount={ResultCount} by userId={UserId}",
+            results.Count,
+            ParseUserIdHeader());
+
+        return Ok(results);
     }
 
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
