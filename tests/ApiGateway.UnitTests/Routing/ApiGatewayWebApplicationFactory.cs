@@ -46,7 +46,8 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
                 ["Gateway:InternalSecret"] = TestGatewaySecret,
                 ["Cors:AllowedOrigins:0"] = TestFrontendOrigin,
                 // A port nothing binds to in a test environment - see class comment above.
-                ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999"
+                ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999"
             });
         });
     }

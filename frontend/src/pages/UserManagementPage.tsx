@@ -345,19 +345,19 @@ export function UserManagementPage() {
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
                     Username
                   </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
                     Full Name
                   </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
                     Role
                   </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
                     Room
                   </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
                     Status
                   </th>
                 </tr>

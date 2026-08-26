@@ -5,7 +5,7 @@ import { roleRoutes } from './roleRoutes';
 import type { UserRole } from './types';
 
 interface ProtectedRouteProps {
-  allowedRole: UserRole;
+  allowedRole: UserRole | UserRole[];
   children: ReactNode;
 }
 
@@ -16,7 +16,8 @@ export function ProtectedRoute({ allowedRole, children }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  if (user.role !== allowedRole) {
+  const allowedRoles = Array.isArray(allowedRole) ? allowedRole : [allowedRole];
+  if (!allowedRoles.includes(user.role)) {
     return <Navigate to={roleRoutes[user.role]} replace />;
   }
 
