@@ -1,7 +1,11 @@
 using System.Text.Json.Serialization;
+using Confluent.Kafka;
 using PatientService.Data;
 using PatientService.Middleware;
+using PatientService.Models.Configuration;
+using PatientService.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +24,22 @@ builder.Services.AddHealthChecks();
 // Build()) is what actually fails startup fast.
 builder.Services.AddDbContext<PatientDbContext>(options =>
     options.UseMySql(builder.Configuration.GetConnectionString("PatientDb"), new MySqlServerVersion(new Version(8, 4, 0))));
+
+builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+
+// Registered as a singleton - IProducer is thread-safe and expensive to construct, so one
+// is built per process rather than per request. Registered as its own service (rather than
+// built inline inside KafkaPatientEventPublisher) so tests can substitute a fake producer.
+builder.Services.AddSingleton<IProducer<string, string>>(sp =>
+{
+    var kafkaOptions = sp.GetRequiredService<IOptions<KafkaOptions>>().Value;
+    return new ProducerBuilder<string, string>(new ProducerConfig
+    {
+        BootstrapServers = kafkaOptions.BootstrapServers,
+        MessageTimeoutMs = kafkaOptions.MessageTimeoutMs
+    }).Build();
+});
+builder.Services.AddSingleton<IPatientEventPublisher, KafkaPatientEventPublisher>();
 
 var app = builder.Build();
 
@@ -41,11 +61,27 @@ if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
         "Gateway:InternalSecret is not configured. Set it via the Gateway__InternalSecret environment variable.");
 }
 
+// Checked for presence only, never reachability: PatientService must start and serve
+// /health even when Kafka is down, matching independent deployability - a lost broker
+// degrades registration (see PatientRegistrationService) rather than blocking startup.
+if (string.IsNullOrEmpty(app.Configuration["Kafka:BootstrapServers"]))
+{
+    throw new InvalidOperationException(
+        "Kafka:BootstrapServers is not configured. Set it via the Kafka__BootstrapServers environment variable.");
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Bounded so a slow or unreachable broker cannot hang application shutdown - the default
+// IProducer.Dispose() flush has no such bound.
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    app.Services.GetRequiredService<IProducer<string, string>>().Flush(TimeSpan.FromSeconds(5));
+});
 
 app.UseMiddleware<GatewaySecretMiddleware>();
 
