@@ -40,6 +40,7 @@ builder.Services.AddSingleton<IProducer<string, string>>(sp =>
     }).Build();
 });
 builder.Services.AddSingleton<IPatientEventPublisher, KafkaPatientEventPublisher>();
+builder.Services.AddScoped<IPatientRegistrationService, PatientRegistrationService>();
 
 var app = builder.Build();
 
