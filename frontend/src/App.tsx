@@ -46,7 +46,7 @@ function App() {
       <Route
         path="/reception/patients/new"
         element={
-          <ProtectedRoute allowedRole={['Receptionist', 'Admin']}>
+          <ProtectedRoute allowedRole="Receptionist">
             <PatientRegistrationPage />
           </ProtectedRoute>
         }
