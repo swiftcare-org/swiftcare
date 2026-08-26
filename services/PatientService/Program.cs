@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Confluent.Kafka;
 using PatientService.Data;
+using Scalar.AspNetCore;
 using PatientService.Middleware;
 using PatientService.Models.Configuration;
 using PatientService.Services;
@@ -75,6 +76,10 @@ if (string.IsNullOrEmpty(app.Configuration["Kafka:BootstrapServers"]))
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // Interactive API docs at /scalar/v1, reading the /openapi/v1.json document MapOpenApi
+    // above serves. Development-only, matching MapOpenApi's own guard - never expose an
+    // API explorer against a production service.
+    app.MapScalarApiReference();
 }
 
 // Bounded so a slow or unreachable broker cannot hang application shutdown - the default
