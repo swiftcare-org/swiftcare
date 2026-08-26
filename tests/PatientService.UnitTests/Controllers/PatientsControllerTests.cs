@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Moq;
 using PatientService.Models.Dtos;
 using PatientService.Models.Enums;
@@ -10,6 +11,14 @@ namespace PatientService.UnitTests.Controllers;
 
 public class PatientsControllerTests
 {
+    // Mirrors the JsonStringEnumConverter registered in Program.cs - ReadFromJsonAsync with
+    // default options would fail to parse "A+" back into the BloodGroup enum.
+    private static readonly JsonSerializerOptions StringEnumOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     private const string GatewaySecretHeaderName = "X-Gateway-Secret";
     private const string UserRoleHeaderName = "X-User-Role";
     private const string UserIdHeaderName = "X-User-Id";
@@ -194,6 +203,116 @@ public class PatientsControllerTests
         var response = await client.PostAsJsonAsync("/api/patients", ValidRegisterPatientBody());
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    private static PatientSearchResultResponse SampleSearchResult() => new()
+    {
+        PatientId = Guid.NewGuid(),
+        FullName = "Test Patient",
+        Nic = "199012345678",
+        PhoneNumber = "0771234567",
+        BloodGroup = BloodGroup.APositive
+    };
+
+    [Fact]
+    public async Task SearchPatientsWithReceptionistRoleReturns200WithResults()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var expected = SampleSearchResult();
+        factory.PatientSearchServiceMock
+            .Setup(s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([expected]);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.GetAsync("/api/patients/search?q=Test");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<List<PatientSearchResultResponse>>(StringEnumOptions);
+        Assert.NotNull(body);
+        Assert.Single(body!);
+        Assert.Equal(expected.PatientId, body![0].PatientId);
+    }
+
+    [Fact]
+    public async Task SearchPatientsWithNoMatchesReturns200WithEmptyArray()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        factory.PatientSearchServiceMock
+            .Setup(s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.GetAsync("/api/patients/search?q=nobody-matches-this");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<List<PatientSearchResultResponse>>();
+        Assert.NotNull(body);
+        Assert.Empty(body!);
+    }
+
+    [Fact]
+    public async Task SearchPatientsWithoutQueryParameterReturns200WithEmptyArray()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        factory.PatientSearchServiceMock
+            .Setup(s => s.SearchPatientsAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.GetAsync("/api/patients/search");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<List<PatientSearchResultResponse>>();
+        Assert.NotNull(body);
+        Assert.Empty(body!);
+    }
+
+    [Fact]
+    public async Task SearchPatientsWithoutGatewaySecretReturns401()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(UserRoleHeaderName, "Receptionist");
+
+        var response = await client.GetAsync("/api/patients/search?q=Test");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.PatientSearchServiceMock.Verify(
+            s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task SearchPatientsWithNonReceptionistRoleReturns403(string role)
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var client = CreateClientWithRole(factory, role);
+
+        var response = await client.GetAsync("/api/patients/search?q=Test");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Forbidden", body!.Message);
+        factory.PatientSearchServiceMock.Verify(
+            s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SearchPatientsResponseContainsNoUnnecessaryPhi()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        factory.PatientSearchServiceMock
+            .Setup(s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SampleSearchResult()]);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.GetAsync("/api/patients/search?q=Test");
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("dateOfBirth", rawBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("address", rawBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("gender", rawBody, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<Dictionary<string, string[]>> ReadValidationErrorsAsync(HttpResponseMessage response)

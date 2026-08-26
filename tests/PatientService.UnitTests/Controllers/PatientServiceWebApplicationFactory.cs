@@ -12,14 +12,16 @@ namespace PatientService.UnitTests.Controllers;
 
 // Boots the real ASP.NET Core pipeline (routing, model validation, GatewaySecretMiddleware)
 // so controller tests exercise the actual request path instead of calling the action in
-// isolation. The database is swapped for EF Core InMemory, IPatientRegistrationService is
-// swapped for a mock (its own behavior is covered by PatientRegistrationServiceTests), and
+// isolation. The database is swapped for EF Core InMemory, IPatientRegistrationService and
+// IPatientSearchService are swapped for mocks (their own behavior is covered by
+// PatientRegistrationServiceTests and PatientSearchServiceTests respectively), and
 // IPatientEventPublisher is swapped for a mock so no real Kafka producer is constructed.
 public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<Program>
 {
     public const string ValidGatewaySecret = "integration-test-gateway-secret-value";
 
     public Mock<IPatientRegistrationService> PatientRegistrationServiceMock { get; } = new();
+    public Mock<IPatientSearchService> PatientSearchServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -44,6 +46,9 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
 
             services.RemoveAll<IPatientRegistrationService>();
             services.AddScoped(_ => PatientRegistrationServiceMock.Object);
+
+            services.RemoveAll<IPatientSearchService>();
+            services.AddScoped(_ => PatientSearchServiceMock.Object);
 
             services.RemoveAll<Confluent.Kafka.IProducer<string, string>>();
             services.AddSingleton(_ => new Mock<Confluent.Kafka.IProducer<string, string>>().Object);
