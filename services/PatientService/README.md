@@ -5,6 +5,7 @@ Registers and stores patient records for SwiftCare. PatientService owns the `swi
 ## What it does
 
 - `POST /api/patients` — registers a new patient (NIC, full name, date of birth, gender, address, phone number, blood group), rejecting duplicate NICs. Publishes a `patient-checked-in` Kafka event on success.
+- `GET /api/patients/search?q=` — searches patients by partial or full name, NIC, or phone number, case insensitive. Returns up to 20 matches (name, NIC, phone, blood group only), ordered by name. A term shorter than 2 characters, or no term at all, returns an empty array rather than a validation error.
 - `GET /health` — liveness/readiness check.
 - Enforces the Gateway trust boundary: every request except `/health` must carry a valid `X-Gateway-Secret` header.
 
@@ -59,13 +60,14 @@ PatientService validates only that `Kafka:BootstrapServers` is *configured* at s
 dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj
 ```
 
-Tests use EF Core InMemory and Moq exclusively — no real database, network connection, or Kafka broker is required to run them. Coverage includes DTO validation (NIC/phone formats, blood group, date-of-birth bounds), the Kafka publisher (topic, key, payload shape, no-PHI assertion, timeout/failure handling), the registration service (duplicate NIC including soft-deleted rows, NIC normalization, publish-failure tolerance), and the full controller pipeline via `WebApplicationFactory` (201/400/401/403 paths).
+Tests use EF Core InMemory and Moq exclusively — no real database, network connection, or Kafka broker is required to run them. Coverage includes DTO validation (NIC/phone formats, blood group, date-of-birth bounds), the Kafka publisher (topic, key, payload shape, no-PHI assertion, timeout/failure handling), the registration service (duplicate NIC including soft-deleted rows, NIC normalization, publish-failure tolerance), patient search (partial/case-insensitive matching across name/NIC/phone, soft-delete exclusion, result cap and ordering, empty-result and below-minimum-length handling, no-unnecessary-PHI response shape), and the full controller pipeline via `WebApplicationFactory` (200/201/400/401/403 paths).
 
 ## Endpoints
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `POST` | `/api/patients` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Registers a patient, returns `{ patientId, createdAt }` on success |
+| `GET` | `/api/patients/search?q=` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Searches by name/NIC/phone, returns an array of `{ patientId, fullName, nic, phoneNumber, bloodGroup }` (possibly empty) |
 | `GET` | `/health` | none | Health check |
 
 See `Controllers/PatientsController.cs` for the exact request/response contract and status-code mapping.
@@ -73,6 +75,7 @@ See `Controllers/PatientsController.cs` for the exact request/response contract 
 ## Known scope bounds
 
 - No queue number is returned or assigned. QueueService owns queue numbering and does not exist yet.
-- No `GET /api/patients`, patient search, update, or delete endpoints.
-- The duplicate-NIC error does not include a search link — patient search does not exist yet.
+- No `GET /api/patients/{id}`, patient profile view, update, or delete endpoints. Search results are not clickable this story.
+- No phone-number normalization: a patient stored as `+94771234567` is not found by a search for `0771234567`, or vice versa, unless the shared digits are typed.
+- Patient search is not audited — nothing records who searched for what. If searches must be audit-logged for compliance, that is a separate story.
 - Nothing consumes `patient-checked-in` yet; verify publication via Kafka UI (`localhost:8080` in the local compose stack).
