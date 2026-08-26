@@ -18,16 +18,16 @@ public class PatientSearchServiceTests
         string fullName,
         string phoneNumber,
         bool isDeleted = false) => new()
-    {
-        Nic = nic,
-        FullName = fullName,
-        DateOfBirth = new DateOnly(1990, 4, 17),
-        Gender = Gender.Male,
-        Address = "123 Test Road, Colombo",
-        PhoneNumber = phoneNumber,
-        BloodGroup = BloodGroup.APositive,
-        IsDeleted = isDeleted
-    };
+        {
+            Nic = nic,
+            FullName = fullName,
+            DateOfBirth = new DateOnly(1990, 4, 17),
+            Gender = Gender.Male,
+            Address = "123 Test Road, Colombo",
+            PhoneNumber = phoneNumber,
+            BloodGroup = BloodGroup.APositive,
+            IsDeleted = isDeleted
+        };
 
     [Fact]
     public async Task SearchByPartialNameReturnsMatchingPatient()
