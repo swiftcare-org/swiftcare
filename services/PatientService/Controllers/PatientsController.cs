@@ -34,7 +34,7 @@ public sealed class PatientsController : ControllerBase
         [FromBody] RegisterPatientRequest request,
         CancellationToken cancellationToken)
     {
-        if (RejectIfNotReceptionistOrAdmin() is { } forbidden)
+        if (RejectIfNotReceptionist() is { } forbidden)
         {
             return forbidden;
         }
@@ -62,10 +62,10 @@ public sealed class PatientsController : ControllerBase
     // header - it derives it from the validated JWT, never from the original client.
     // PatientService registers no authentication scheme, so [Authorize(Roles = ...)]
     // would compile and enforce nothing; this header check is the actual enforcement.
-    private IActionResult? RejectIfNotReceptionistOrAdmin()
+    private IActionResult? RejectIfNotReceptionist()
     {
         var role = HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault();
-        if (role is "Receptionist" or "Admin")
+        if (role is "Receptionist")
         {
             return null;
         }
@@ -73,7 +73,7 @@ public sealed class PatientsController : ControllerBase
         // Logged as the parsed Guid, never the raw header, so an attacker who can reach
         // this endpoint directly (bypassing the Gateway) cannot inject newlines or other
         // control characters into the log stream via the X-User-Id header value.
-        _logger.LogWarning("Rejected non-receptionist/admin request to patient registration: userId={UserId}", ParseUserIdHeader());
+        _logger.LogWarning("Rejected non-receptionist request to patient registration: userId={UserId}", ParseUserIdHeader());
 
         return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
     }

@@ -36,7 +36,6 @@ public class PatientsControllerTests
 
     [Theory]
     [InlineData("Receptionist")]
-    [InlineData("Admin")]
     public async Task RegisterPatientWithValidRequestReturns201WithNoPhi(string role)
     {
         using var factory = new PatientServiceWebApplicationFactory();
@@ -156,6 +155,23 @@ public class PatientsControllerTests
     {
         using var factory = new PatientServiceWebApplicationFactory();
         var client = CreateClientWithRole(factory, "Doctor");
+
+        var response = await client.PostAsJsonAsync("/api/patients", ValidRegisterPatientBody());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Forbidden", body!.Message);
+        factory.PatientRegistrationServiceMock.Verify(
+            s => s.RegisterPatientAsync(
+                It.IsAny<RegisterPatientRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RegisterPatientWithAdminRoleHeaderReturns403()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var client = CreateClientWithRole(factory, "Admin");
 
         var response = await client.PostAsJsonAsync("/api/patients", ValidRegisterPatientBody());
 

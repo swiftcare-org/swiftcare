@@ -65,7 +65,7 @@ Tests use EF Core InMemory and Moq exclusively — no real database, network con
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/patients` | `X-Gateway-Secret`, `X-User-Role: Receptionist` or `Admin` | Registers a patient, returns `{ patientId, createdAt }` on success |
+| `POST` | `/api/patients` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Registers a patient, returns `{ patientId, createdAt }` on success |
 | `GET` | `/health` | none | Health check |
 
 See `Controllers/PatientsController.cs` for the exact request/response contract and status-code mapping.
