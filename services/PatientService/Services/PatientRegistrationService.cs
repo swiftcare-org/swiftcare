@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PatientService.Data;
+using PatientService.Logging;
 using PatientService.Models.Dtos;
 using PatientService.Models.Entities;
 using PatientService.Models.Enums;
@@ -76,10 +77,13 @@ public sealed class PatientRegistrationService : IPatientRegistrationService
 
         if (!published)
         {
+            // Sanitized because correlationId is client-supplied (it travels via the
+            // X-Correlation-ID header): without stripping CR/LF here, a crafted header
+            // value could forge additional, fake log lines.
             _logger.LogError(
                 "patient-checked-in event failed to publish after patient was persisted: patientId={PatientId} correlationId={CorrelationId}",
                 patient.Id,
-                correlationId);
+                LogSanitizer.Sanitize(correlationId));
         }
 
         _logger.LogInformation(
