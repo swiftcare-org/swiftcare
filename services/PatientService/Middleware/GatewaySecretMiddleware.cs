@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using PatientService.Logging;
 using PatientService.Models.Dtos;
 
 namespace PatientService.Middleware;
@@ -35,7 +36,11 @@ public sealed class GatewaySecretMiddleware
             string.IsNullOrEmpty(providedSecret) ||
             !SecretsMatch(expectedSecret, providedSecret))
         {
-            _logger.LogWarning("Rejected request without a valid gateway secret: path={Path}", context.Request.Path);
+            // Sanitized because the request path is client-supplied: without stripping
+            // CR/LF here, a crafted path could forge additional, fake log lines.
+            _logger.LogWarning(
+                "Rejected request without a valid gateway secret: path={Path}",
+                LogSanitizer.Sanitize(context.Request.Path.Value));
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new MessageResponse("Unauthorized"));
             return;
