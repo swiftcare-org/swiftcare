@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
 using Microsoft.Extensions.Options;
+using PatientService.Logging;
 using PatientService.Models.Configuration;
 using PatientService.Models.Events;
 
@@ -57,6 +58,11 @@ public sealed class KafkaPatientEventPublisher : IPatientEventPublisher
         using var timeoutSource = new CancellationTokenSource(_options.MessageTimeoutMs);
         using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
 
+        // Sanitized once and reused below: correlationId is client-supplied (it travels via
+        // the X-Correlation-ID header), so every log statement that includes it must strip
+        // CR/LF first to prevent a crafted header value from forging additional log lines.
+        var sanitizedCorrelationId = LogSanitizer.Sanitize(correlationId);
+
         try
         {
             await _producer.ProduceAsync(_options.PatientCheckedInTopic, message, linkedSource.Token);
@@ -68,7 +74,7 @@ public sealed class KafkaPatientEventPublisher : IPatientEventPublisher
                 exception,
                 "Failed to publish patient-checked-in event: patientId={PatientId} correlationId={CorrelationId}",
                 patientId,
-                correlationId);
+                sanitizedCorrelationId);
             return false;
         }
         catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
@@ -76,7 +82,7 @@ public sealed class KafkaPatientEventPublisher : IPatientEventPublisher
             _logger.LogError(
                 "Timed out publishing patient-checked-in event: patientId={PatientId} correlationId={CorrelationId}",
                 patientId,
-                correlationId);
+                sanitizedCorrelationId);
             return false;
         }
     }
