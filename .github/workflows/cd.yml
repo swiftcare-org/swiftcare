@@ -647,6 +647,72 @@ jobs:
             exit 1
           fi
 
+      - name: Deploy PatientService with internal ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$PATIENT_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --secrets \
+                "patient-db=$PATIENT_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5002" \
+                "ConnectionStrings__PatientDb=secretref:patient-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --ingress internal --target-port 5002 \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --secrets \
+                "patient-db=$PATIENT_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5002" \
+                "ConnectionStrings__PatientDb=secretref:patient-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp ingress enable \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --type internal --target-port 5002 --transport auto \
+            --only-show-errors >/dev/null
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          external=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --query properties.configuration.ingress.external --output tsv)
+          if [ "$external" != "false" ]; then
+            echo "::error::PatientService ingress is not internal"
+            exit 1
+          fi
+
       - name: Deploy the gateway last
         id: gateway
         shell: bash
