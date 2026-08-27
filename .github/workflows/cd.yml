@@ -349,7 +349,7 @@ jobs:
           echo "AUTH_DB_CONNECTION=$auth_connection" >> "$GITHUB_ENV"
           echo "PATIENT_DB_CONNECTION=$patient_connection" >> "$GITHUB_ENV"
 
-      - name: Configure the migration job
+      - name: Configure the AuthService migration job
         shell: bash
         run: |
           set -euo pipefail
@@ -386,7 +386,7 @@ jobs:
               --only-show-errors >/dev/null
           fi
 
-      - name: Apply database migrations inside the VNet
+      - name: Apply AuthService database migrations inside the VNet
         shell: bash
         run: |
           set -euo pipefail
@@ -402,21 +402,91 @@ jobs:
               --query properties.status --output tsv 2>/dev/null || true)
             case "$status" in
               Succeeded)
-                echo "Migration succeeded."
+                echo "AuthService migration succeeded."
                 exit 0
                 ;;
               Failed|Degraded)
-                echo "::error::Migration execution ended with $status"
+                echo "::error::AuthService migration execution ended with $status"
                 exit 1
                 ;;
               *)
-                echo "Migration status: ${status:-Pending} (attempt $attempt/60)"
+                echo "AuthService migration status: ${status:-Pending} (attempt $attempt/60)"
                 sleep 10
                 ;;
             esac
           done
 
-          echo "::error::Migration execution timed out after 10 minutes"
+          echo "::error::AuthService migration execution timed out after 10 minutes"
+          exit 1
+
+      - name: Configure the PatientService migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$PATIENT_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" >/dev/null 2>&1; then
+            az containerapp job registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp job secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --secrets "patient-db=$PATIENT_DB_CONNECTION" \
+              --only-show-errors >/dev/null
+            az containerapp job update \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --set-env-vars "ConnectionStrings__PatientDb=secretref:patient-db" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp job create \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --trigger-type Manual \
+              --replica-timeout 600 --replica-retry-limit 1 \
+              --replica-completion-count 1 --parallelism 1 \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --secrets "patient-db=$PATIENT_DB_CONNECTION" \
+              --env-vars "ConnectionStrings__PatientDb=secretref:patient-db" \
+              --only-show-errors >/dev/null
+          fi
+
+      - name: Apply PatientService database migrations inside the VNet
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+            --query name --output tsv)
+          echo "Started PatientService migration execution $execution"
+
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            case "$status" in
+              Succeeded)
+                echo "PatientService migration succeeded."
+                exit 0
+                ;;
+              Failed|Degraded)
+                echo "::error::PatientService migration execution ended with $status"
+                exit 1
+                ;;
+              *)
+                echo "PatientService migration status: ${status:-Pending} (attempt $attempt/60)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::PatientService migration execution timed out after 10 minutes"
           exit 1
 
       - name: Bootstrap the initial administrator
