@@ -138,6 +138,8 @@ jobs:
       JWT_ISSUER: ${{ vars.JWT_ISSUER }}
       JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+      FRONTEND_WWW_ORIGIN: ${{ vars.FRONTEND_WWW_ORIGIN }}
+      GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       AUTH_DB_PASSWORD: ${{ secrets.AUTH_DB_PASSWORD }}
@@ -158,7 +160,8 @@ jobs:
             KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
             KAFKA_BOOTSTRAP_SERVERS STATIC_WEB_APP_NAME
             JWT_ISSUER JWT_AUDIENCE JWT_SIGNING_KEY GATEWAY_INTERNAL_SECRET
-            FRONTEND_ORIGIN GHCR_USERNAME GHCR_TOKEN
+            FRONTEND_ORIGIN FRONTEND_WWW_ORIGIN GATEWAY_ORIGIN
+            GHCR_USERNAME GHCR_TOKEN
           )
 
           missing=()
@@ -173,13 +176,21 @@ jobs:
             exit 1
           fi
 
-          if [[ "$FRONTEND_ORIGIN" == */ ]]; then
-            echo "::error::FRONTEND_ORIGIN must not end with a slash"
-            exit 1
-          fi
+          for origin_name in FRONTEND_ORIGIN FRONTEND_WWW_ORIGIN GATEWAY_ORIGIN; do
+            origin="${!origin_name}"
+            if [[ "$origin" == */ ]]; then
+              echo "::error::$origin_name must not end with a slash"
+              exit 1
+            fi
 
-          if [[ "$FRONTEND_ORIGIN" != https://* ]]; then
-            echo "::error::FRONTEND_ORIGIN must be the HTTPS origin of the Azure Static Web App"
+            if [[ "$origin" != https://* ]]; then
+              echo "::error::$origin_name must be an HTTPS origin"
+              exit 1
+            fi
+          done
+
+          if [ "$FRONTEND_ORIGIN" = "$FRONTEND_WWW_ORIGIN" ]; then
+            echo "::error::FRONTEND_ORIGIN and FRONTEND_WWW_ORIGIN must be different origins"
             exit 1
           fi
 
@@ -802,6 +813,7 @@ jobs:
                 "Jwt__Audience=$JWT_AUDIENCE" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
                 "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN" \
+                "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN" \
                 "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$auth_proxy_address" \
                 "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
               --only-show-errors >/dev/null
@@ -826,6 +838,7 @@ jobs:
                 "Jwt__Audience=$JWT_AUDIENCE" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
                 "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN" \
+                "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN" \
                 "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$auth_proxy_address" \
                 "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
               --only-show-errors >/dev/null
@@ -973,11 +986,11 @@ jobs:
       - name: Build against the deployed gateway
         working-directory: frontend
         env:
-          VITE_GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          VITE_GATEWAY_URL: ${{ vars.GATEWAY_ORIGIN }}
         run: |
           set -euo pipefail
           if [ -z "$VITE_GATEWAY_URL" ]; then
-            echo "::error::The backend job did not publish the gateway URL"
+            echo "::error::GATEWAY_ORIGIN is not configured"
             exit 1
           fi
           npm ci
@@ -995,14 +1008,18 @@ jobs:
 
       - name: Publish deployment summary
         env:
-          GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          AZURE_GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}
           FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+          FRONTEND_WWW_ORIGIN: ${{ vars.FRONTEND_WWW_ORIGIN }}
         run: |
           {
             echo "## Azure development deployment"
             echo
             echo "- Commit: \`$DEPLOY_SHA\`"
-            echo "- Gateway: $GATEWAY_URL"
+            echo "- Gateway: $GATEWAY_ORIGIN"
+            echo "- Azure Gateway endpoint: $AZURE_GATEWAY_URL"
             echo "- Frontend: $FRONTEND_ORIGIN"
+            echo "- Frontend (www): $FRONTEND_WWW_ORIGIN"
             echo "- Gateway, AuthService, and PatientService images use the same immutable commit tag."
           } >> "$GITHUB_STEP_SUMMARY"
