@@ -7,6 +7,11 @@ public static class TestConfig
 {
     public static string BaseUrl => Environment.GetEnvironmentVariable("E2E_BASE_URL") ?? "http://localhost:5173";
 
+    // The API Gateway, used by SeedClient to set up preconditions over HTTP
+    // (register a patient, add an allergy, create a user) without driving the
+    // browser. Matches the frontend's VITE_GATEWAY_URL default.
+    public static string GatewayUrl => Environment.GetEnvironmentVariable("E2E_GATEWAY_URL") ?? "http://localhost:8000";
+
     public static string SeedPassword =>
         Environment.GetEnvironmentVariable("AUTH_SEED_PASSWORD")
         ?? throw new InvalidOperationException(
