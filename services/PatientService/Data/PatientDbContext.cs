@@ -6,6 +6,7 @@ namespace PatientService.Data;
 public sealed class PatientDbContext(DbContextOptions<PatientDbContext> options) : DbContext(options)
 {
     public DbSet<Patient> Patients => Set<Patient>();
+    public DbSet<Allergy> Allergies => Set<Allergy>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,6 +20,21 @@ public sealed class PatientDbContext(DbContextOptions<PatientDbContext> options)
             entity.Property(p => p.Address).HasMaxLength(256).IsRequired();
             entity.Property(p => p.PhoneNumber).HasMaxLength(16).IsRequired();
             entity.Property(p => p.BloodGroup).HasConversion<string>().HasMaxLength(16).IsRequired();
+        });
+
+        modelBuilder.Entity<Allergy>(entity =>
+        {
+            entity.Property(a => a.Id).ValueGeneratedNever();
+            // Every read is "live allergies for one patient", so this composite index
+            // serves it directly rather than filtering after a PatientId-only seek.
+            entity.HasIndex(a => new { a.PatientId, a.IsDeleted });
+            entity.Property(a => a.AllergyName).HasMaxLength(128).IsRequired();
+            entity.Property(a => a.Severity).HasConversion<string>().HasMaxLength(16).IsRequired();
+            entity.Property(a => a.Notes).HasMaxLength(512);
+            entity.HasOne<Patient>()
+                .WithMany()
+                .HasForeignKey(a => a.PatientId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 
