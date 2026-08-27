@@ -1,12 +1,21 @@
 using System.Text.Json.Serialization;
 using Confluent.Kafka;
 using PatientService.Data;
+using PatientService.Maintenance;
 using Scalar.AspNetCore;
 using PatientService.Middleware;
 using PatientService.Models.Configuration;
 using PatientService.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+
+// Azure Container Apps Jobs run maintenance commands to completion without
+// starting Kestrel or exposing an application endpoint.
+var maintenanceCommand = MaintenanceCommandParser.Parse(args);
+if (maintenanceCommand != MaintenanceCommand.None)
+{
+    return await MaintenanceCommandRunner.RunAsync(maintenanceCommand);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -98,5 +107,7 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
+
+return 0;
 
 public partial class Program;

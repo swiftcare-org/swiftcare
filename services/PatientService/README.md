@@ -50,6 +50,16 @@ dotnet ef database update
 dotnet run
 ```
 
+For controlled deployments, the published service image can apply migrations and
+exit without starting the web host:
+
+```bash
+dotnet PatientService.dll --migrate
+```
+
+The command reads `ConnectionStrings__PatientDb`, retries transient MySQL failures,
+returns a non-zero exit code on failure, and is safe to run repeatedly.
+
 ## API documentation
 
 With `ASPNETCORE_ENVIRONMENT=Development`, an interactive API explorer (Scalar) is served at [`http://localhost:5002/scalar/v1`](http://localhost:5002/scalar/v1), reading the raw OpenAPI document at `/openapi/v1.json`. Both are reachable without an `X-Gateway-Secret` header — `GatewaySecretMiddleware` exempts them the same way it exempts `/health` — but they do not exist at all outside Development, since `MapOpenApi()`/`MapScalarApiReference()` are only registered inside that environment guard.
