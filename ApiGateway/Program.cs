@@ -75,6 +75,14 @@ builder.Services.AddAuthorization(options =>
     // resource-level rules (e.g. ownership) on top of the identity headers this forwards.
     options.AddPolicy("AdminOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
     options.AddPolicy("ReceptionistOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Receptionist"));
+    // SWC-17: patient search, patient profile, and allergy reads are open to all clinical
+    // staff, since a doctor's only route to a patient's allergy alert is through search.
+    options.AddPolicy("PatientSearchAndReadPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Doctor", "Receptionist", "Admin"));
+    // Admin is read-only for allergies by stakeholder decision - only Doctor and
+    // Receptionist may record, update, or remove one.
+    options.AddPolicy("AllergyWritePolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Doctor", "Receptionist"));
 });
 
 builder.Services.AddSingleton<RevokedTokenStore>();

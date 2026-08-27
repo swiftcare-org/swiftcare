@@ -26,7 +26,13 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `auth-route` | `/api/auth/{**catch-all}` | `Default` (requires a valid, non-revoked JWT) | `http://localhost:5000` (AuthService) |
 | `users-route` | `GET, POST /api/users` | `AdminOnly` | `http://localhost:5000` (AuthService) |
 | `patients-route` | `POST /api/patients` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
-| `patients-search-route` | `GET /api/patients/search` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
+| `patients-search-route` | `GET /api/patients/search` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
+| `patient-allergies-read-route` | `GET /api/patients/{id:guid}/allergies` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
+| `patient-allergies-write-route` | `POST /api/patients/{id:guid}/allergies` | `AllergyWritePolicy` | `http://localhost:5002` (PatientService) |
+| `patient-allergy-item-route` | `PUT, DELETE /api/patients/{id:guid}/allergies/{aid:guid}` | `AllergyWritePolicy` | `http://localhost:5002` (PatientService) |
+| `patient-read-route` | `GET /api/patients/{id:guid}` (`Order: 2`) | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
+
+`patient-read-route` is deliberately constrained to `{id:guid}` and ordered after `patients-search-route`: this guarantees `/api/patients/search` can never be shadowed by the parameterized route regardless of Order, since `"search"` fails the guid constraint outright. `PatientSearchAndReadPolicy` (Doctor, Receptionist, Admin) and `AllergyWritePolicy` (Doctor, Receptionist — Admin is read-only for allergies by stakeholder decision) are defined alongside `AdminOnly` and `ReceptionistOnly` in `Program.cs`.
 
 As more services come online (PatientService, QueueService, etc.), add a route + cluster entry per service rather than a shared routing abstraction — each route maps one URL prefix to one service's base address. Give each new protected route an explicit `AuthorizationPolicy` rather than relying on an implicit default.
 
@@ -86,4 +92,8 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 | `*` | `/api/auth/{**catch-all}` | Bearer JWT | Proxied to AuthService |
 | `GET`, `POST` | `/api/users` | Bearer JWT, `Admin` role | Proxied to AuthService |
 | `POST` | `/api/patients` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
-| `GET` | `/api/patients/search` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
+| `GET` | `/api/patients/search` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
+| `GET` | `/api/patients/{id}` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
+| `GET` | `/api/patients/{id}/allergies` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
+| `POST` | `/api/patients/{id}/allergies` | Bearer JWT, `Doctor`\|`Receptionist` role | Proxied to PatientService |
+| `PUT`, `DELETE` | `/api/patients/{id}/allergies/{allergyId}` | Bearer JWT, `Doctor`\|`Receptionist` role | Proxied to PatientService |

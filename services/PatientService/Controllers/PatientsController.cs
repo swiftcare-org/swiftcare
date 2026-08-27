@@ -16,15 +16,18 @@ public sealed class PatientsController : ControllerBase
 
     private readonly IPatientRegistrationService _patientRegistrationService;
     private readonly IPatientSearchService _patientSearchService;
+    private readonly IPatientProfileService _patientProfileService;
     private readonly ILogger<PatientsController> _logger;
 
     public PatientsController(
         IPatientRegistrationService patientRegistrationService,
         IPatientSearchService patientSearchService,
+        IPatientProfileService patientProfileService,
         ILogger<PatientsController> logger)
     {
         _patientRegistrationService = patientRegistrationService;
         _patientSearchService = patientSearchService;
+        _patientProfileService = patientProfileService;
         _logger = logger;
     }
 
@@ -37,7 +40,7 @@ public sealed class PatientsController : ControllerBase
         [FromBody] RegisterPatientRequest request,
         CancellationToken cancellationToken)
     {
-        if (RejectIfNotReceptionist() is { } forbidden)
+        if (RejectIfRoleNotIn("Receptionist") is { } forbidden)
         {
             return forbidden;
         }
@@ -68,7 +71,11 @@ public sealed class PatientsController : ControllerBase
         [FromQuery] string? q,
         CancellationToken cancellationToken)
     {
-        if (RejectIfNotReceptionist() is { } forbidden)
+        // Widened from Receptionist-only (SWC-12) to also admit Doctor and Admin: SWC-17
+        // gives all three roles access to a patient's profile and allergies, and search is
+        // the only navigation path to a profile - without this a doctor could never reach
+        // one.
+        if (RejectIfRoleNotIn("Doctor", "Receptionist", "Admin") is { } forbidden)
         {
             return forbidden;
         }
@@ -85,15 +92,37 @@ public sealed class PatientsController : ControllerBase
         return Ok(results);
     }
 
+    [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(PatientProfileResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPatient(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfRoleNotIn("Doctor", "Receptionist", "Admin") is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        var profile = await _patientProfileService.GetPatientAsync(id, cancellationToken);
+
+        if (profile is null)
+        {
+            return NotFound(new MessageResponse("Patient not found"));
+        }
+
+        return Ok(profile);
+    }
+
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
     // request that didn't originate from the Gateway, which is the sole source of this
     // header - it derives it from the validated JWT, never from the original client.
     // PatientService registers no authentication scheme, so [Authorize(Roles = ...)]
     // would compile and enforce nothing; this header check is the actual enforcement.
-    private IActionResult? RejectIfNotReceptionist()
+    private IActionResult? RejectIfRoleNotIn(params string[] allowedRoles)
     {
         var role = HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault();
-        if (role is "Receptionist")
+        if (role is not null && allowedRoles.Contains(role))
         {
             return null;
         }
@@ -101,7 +130,7 @@ public sealed class PatientsController : ControllerBase
         // Logged as the parsed Guid, never the raw header, so an attacker who can reach
         // this endpoint directly (bypassing the Gateway) cannot inject newlines or other
         // control characters into the log stream via the X-User-Id header value.
-        _logger.LogWarning("Rejected non-receptionist request to patient registration: userId={UserId}", ParseUserIdHeader());
+        _logger.LogWarning("Rejected request from a disallowed role: userId={UserId}", ParseUserIdHeader());
 
         return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
     }

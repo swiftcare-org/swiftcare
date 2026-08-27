@@ -3,6 +3,7 @@ import { LoginPage } from './pages/LoginPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
+import { PatientProfilePage } from './pages/PatientProfilePage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -53,10 +54,18 @@ function App() {
         }
       />
       <Route
-        path="/reception/patients/search"
+        path="/patients/search"
         element={
-          <ProtectedRoute allowedRole="Receptionist">
+          <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
             <PatientSearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/patients/:patientId"
+        element={
+          <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
+            <PatientProfilePage />
           </ProtectedRoute>
         }
       />

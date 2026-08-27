@@ -23,6 +23,8 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
 
     public Mock<IPatientRegistrationService> PatientRegistrationServiceMock { get; } = new();
     public Mock<IPatientSearchService> PatientSearchServiceMock { get; } = new();
+    public Mock<IPatientProfileService> PatientProfileServiceMock { get; } = new();
+    public Mock<IAllergyService> AllergyServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -54,6 +56,12 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
 
             services.RemoveAll<IPatientSearchService>();
             services.AddScoped(_ => PatientSearchServiceMock.Object);
+
+            services.RemoveAll<IPatientProfileService>();
+            services.AddScoped(_ => PatientProfileServiceMock.Object);
+
+            services.RemoveAll<IAllergyService>();
+            services.AddScoped(_ => AllergyServiceMock.Object);
 
             services.RemoveAll<Confluent.Kafka.IProducer<string, string>>();
             services.AddSingleton(_ => new Mock<Confluent.Kafka.IProducer<string, string>>().Object);

@@ -214,8 +214,11 @@ public class PatientsControllerTests
         BloodGroup = BloodGroup.APositive
     };
 
-    [Fact]
-    public async Task SearchPatientsWithReceptionistRoleReturns200WithResults()
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task SearchPatientsWithAuthorizedRoleReturns200WithResults(string role)
     {
         using var factory = new PatientServiceWebApplicationFactory();
         var expected = SampleSearchResult();
@@ -223,7 +226,7 @@ public class PatientsControllerTests
             .Setup(s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([expected]);
 
-        var client = CreateClientWithRole(factory, "Receptionist");
+        var client = CreateClientWithRole(factory, role);
         var response = await client.GetAsync("/api/patients/search?q=Test");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -281,13 +284,11 @@ public class PatientsControllerTests
             s => s.SearchPatientsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Theory]
-    [InlineData("Doctor")]
-    [InlineData("Admin")]
-    public async Task SearchPatientsWithNonReceptionistRoleReturns403(string role)
+    [Fact]
+    public async Task SearchPatientsWithUnknownRoleReturns403()
     {
         using var factory = new PatientServiceWebApplicationFactory();
-        var client = CreateClientWithRole(factory, role);
+        var client = CreateClientWithRole(factory, "Nurse");
 
         var response = await client.GetAsync("/api/patients/search?q=Test");
 
@@ -313,6 +314,79 @@ public class PatientsControllerTests
         Assert.DoesNotContain("dateOfBirth", rawBody, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("address", rawBody, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("gender", rawBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static PatientProfileResponse SampleProfile(Guid patientId) => new()
+    {
+        PatientId = patientId,
+        FullName = "Test Patient",
+        Nic = "199012345678",
+        DateOfBirth = new DateOnly(1990, 4, 17),
+        Gender = Gender.Male,
+        Address = "123 Test Road, Colombo",
+        PhoneNumber = "0771234567",
+        BloodGroup = BloodGroup.APositive,
+        RegisteredAt = DateTime.UtcNow
+    };
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task GetPatientWithAuthorizedRoleReturns200(string role)
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientProfileServiceMock
+            .Setup(s => s.GetPatientAsync(patientId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SampleProfile(patientId));
+
+        var client = CreateClientWithRole(factory, role);
+        var response = await client.GetAsync($"/api/patients/{patientId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<PatientProfileResponse>(StringEnumOptions);
+        Assert.Equal(patientId, body!.PatientId);
+    }
+
+    [Fact]
+    public async Task GetPatientForUnknownIdReturns404()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientProfileServiceMock
+            .Setup(s => s.GetPatientAsync(patientId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PatientProfileResponse?)null);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.GetAsync($"/api/patients/{patientId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPatientWithUnknownRoleReturns403()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = CreateClientWithRole(factory, "Nurse");
+
+        var response = await client.GetAsync($"/api/patients/{patientId}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPatientWithoutGatewaySecretReturns401()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(UserRoleHeaderName, "Receptionist");
+
+        var response = await client.GetAsync($"/api/patients/{patientId}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private static async Task<Dictionary<string, string[]>> ReadValidationErrorsAsync(HttpResponseMessage response)
