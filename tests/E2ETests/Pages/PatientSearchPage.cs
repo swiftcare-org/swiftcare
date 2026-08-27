@@ -43,7 +43,7 @@ public class PatientSearchPage
     // The "register" prompt is shown only to receptionists on the empty state.
     public bool HasRegisterLink => _driver.FindElements(RegisterLink).Count > 0;
 
-    public string RegisterLinkHref => _driver.FindElement(RegisterLink).GetAttribute("href");
+    public string RegisterLinkHref => _driver.FindElement(RegisterLink).GetDomProperty("href");
 
     private static By ResultLink(string fullName) =>
         By.XPath($"//table//td//a[normalize-space()='{fullName}']");
