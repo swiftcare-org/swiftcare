@@ -1,0 +1,38 @@
+# Optional override for load/stress runs. It does NOT change the system - it
+# pins each service to a fixed CPU/memory budget so a stress run's breaking
+# point is attributable to a specific service rather than "the laptop ran out".
+#
+# Use:
+#   docker compose -f docker-compose.yml -f tests/PerformanceTest/docker-compose.perf.yml up -d
+#
+# Adjust the numbers to your machine; record whatever you used in the report.
+# Compose (v2, non-swarm) honours deploy.resources.limits.
+
+services:
+  mysql:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+  authservice:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  patientservice:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  apigateway:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
