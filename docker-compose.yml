@@ -129,6 +129,26 @@ services:
     networks:
       - swiftcare-network
 
+  patientservice:
+    build:
+      context: .
+      dockerfile: services/PatientService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__PatientDb: "Server=mysql;Port=3306;Database=${PATIENT_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      Kafka__BootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
+    ports:
+      - "${PATIENT_SERVICE_PORT:-5002}:5002"
+    networks:
+      - swiftcare-network
+
   apigateway:
     build:
       context: .
@@ -137,6 +157,8 @@ services:
     depends_on:
       authservice:
         condition: service_healthy
+      patientservice:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       Jwt__SecretKey: ${JWT_SIGNING_KEY}
@@ -144,6 +166,7 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE}
       Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
       ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address: http://authservice:5000
+      ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address: http://patientservice:5002
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     networks:
