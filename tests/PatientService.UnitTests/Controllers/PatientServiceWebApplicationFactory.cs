@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using PatientService.Data;
 using PatientService.Services;
@@ -26,6 +27,10 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        // The default Windows Event Log provider requires elevated permissions and can
+        // turn an expected warning into a test failure. Tests do not assert log output.
+        builder.ConfigureLogging(logging => logging.ClearProviders());
 
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {

@@ -39,6 +39,7 @@ jobs:
             .github/workflows/cd.yml
             ApiGateway/Dockerfile
             services/AuthService/Dockerfile
+            services/PatientService/Dockerfile
             tests/E2ETests/E2ETests.csproj
           )
 
@@ -91,6 +92,7 @@ jobs:
           dotnet build SwiftCare.slnx --no-restore --configuration Release
           dotnet test tests/AuthService.UnitTests/AuthService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
@@ -245,7 +247,11 @@ jobs:
           fi
 
       - name: Start AuthService and API Gateway
-        run: docker compose up --detach --no-build --wait authservice apigateway
+        run: |
+          # These browser tests cover the auth journey only. Avoid starting the
+          # PatientService dependency and its Kafka stack in this focused job.
+          docker compose up --detach --no-build --no-deps --wait authservice
+          docker compose up --detach --no-build --no-deps --wait apigateway
 
       - name: Run Selenium E2E tests
         shell: bash
@@ -333,6 +339,16 @@ jobs:
           cache-from: type=gha,scope=swiftcare-auth
           cache-to: type=gha,mode=max,scope=swiftcare-auth
 
+      - name: Build the PatientService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/PatientService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-patient
+          cache-to: type=gha,mode=max,scope=swiftcare-patient
+
   security-scan:
     name: Scan dependencies for vulnerabilities
     runs-on: ubuntu-latest
@@ -377,6 +393,7 @@ jobs:
     env:
       MYSQL_ROOT_PASSWORD: ci-only-root-password
       AUTH_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_auth;User Id=root;Password=ci-only-root-password;"
+      PATIENT_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_patient;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -424,6 +441,14 @@ jobs:
       - name: Check for model changes without a migration
         if: hashFiles('services/AuthService/AuthService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/AuthService
+
+      - name: Apply PatientService migrations to a clean database
+        if: hashFiles('services/PatientService/PatientService.csproj') != ''
+        run: dotnet ef database update --project services/PatientService --connection "$PATIENT_DB_CONNECTION"
+
+      - name: Check PatientService for model changes without a migration
+        if: hashFiles('services/PatientService/PatientService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/PatientService
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})
