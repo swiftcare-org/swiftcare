@@ -1,0 +1,18 @@
+# Copy this file to terraform.tfvars and replace the placeholders. The copied
+# file is ignored by Git and must never contain passwords.
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location        = "eastasia"
+sprint_name     = "sprint-1"
+
+# Keep the existing names unless Azure reports that a globally unique name is
+# unavailable in a new subscription.
+resource_group_name = "swiftcare-rg"
+mysql_server_name   = "swiftcare-mysql"
+static_web_app_name = "swiftcare-web"
+
+# Enable only after the custom domains are validated in Azure.
+frontend_custom_domains_enabled = false
+
+# Set false to remove the paid NAT Gateway, public IP and ephemeral
+# Kafka/ZooKeeper group while retaining their reusable network configuration.
+messaging_enabled = true

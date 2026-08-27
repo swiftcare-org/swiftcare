@@ -41,6 +41,8 @@ jobs:
             services/AuthService/Dockerfile
             services/PatientService/Dockerfile
             tests/E2ETests/E2ETests.csproj
+            deployment/terraform/versions.tf
+            deployment/terraform/.terraform.lock.hcl
           )
 
           for file in "${required_files[@]}"; do
@@ -52,6 +54,18 @@ jobs:
 
       - name: Validate Docker Compose
         run: docker compose config --quiet
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Validate Terraform configuration
+        shell: bash
+        run: |
+          terraform -chdir=deployment/terraform fmt -check -recursive
+          terraform -chdir=deployment/terraform init -backend=false -input=false
+          terraform -chdir=deployment/terraform validate
 
   build-and-test:
     name: Build and test .NET projects

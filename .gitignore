@@ -46,3 +46,20 @@ Desktop.ini
 .docker-data/
 .azure/
 azurite/
+
+# Terraform local state and generated files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+*.hcl
+!.terraform.lock.hcl
+!*.hcl.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
