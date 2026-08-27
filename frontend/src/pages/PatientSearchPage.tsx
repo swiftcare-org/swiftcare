@@ -104,13 +104,19 @@ export function PatientSearchPage() {
 
         {status === 'empty' && (
           <div className="border-t-4 border-b border-slate-400 bg-slate-50 px-6 py-3">
-            <p className="text-sm text-slate-700">No patients found. Would you like to register?</p>
-            <Link
-              to="/reception/patients/new"
-              className="mt-2 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-            >
-              Register a new patient
-            </Link>
+            {user?.role === 'Receptionist' ? (
+              <>
+                <p className="text-sm text-slate-700">No patients found. Would you like to register?</p>
+                <Link
+                  to="/reception/patients/new"
+                  className="mt-2 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
+                >
+                  Register a new patient
+                </Link>
+              </>
+            ) : (
+              <p className="text-sm text-slate-700">No patients found.</p>
+            )}
           </div>
         )}
 
@@ -136,7 +142,14 @@ export function PatientSearchPage() {
               <tbody className="divide-y divide-slate-200">
                 {results.map((result) => (
                   <tr key={result.patientId}>
-                    <td className="px-4 py-2 text-slate-900">{result.fullName}</td>
+                    <td className="px-4 py-2">
+                      <Link
+                        to={`/patients/${result.patientId}`}
+                        className="text-brand-blue hover:text-brand-blue-dark hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                      >
+                        {result.fullName}
+                      </Link>
+                    </td>
                     <td className="px-4 py-2 text-slate-700">{result.nic}</td>
                     <td className="px-4 py-2 text-slate-700">{result.phoneNumber}</td>
                     <td className="px-4 py-2 text-slate-700">{result.bloodGroup}</td>

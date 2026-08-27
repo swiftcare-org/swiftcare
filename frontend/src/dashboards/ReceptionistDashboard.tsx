@@ -12,7 +12,7 @@ export function ReceptionistDashboard() {
           Register Patient
         </Link>
         <Link
-          to="/reception/patients/search"
+          to="/patients/search"
           className="inline-block border-2 border-slate-400 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
         >
           Search Patients

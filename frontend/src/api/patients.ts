@@ -37,3 +37,19 @@ export interface PatientSearchResult {
 export function searchPatients(term: string): Promise<PatientSearchResult[]> {
   return apiRequest<PatientSearchResult[]>(`/api/patients/search?q=${encodeURIComponent(term)}`);
 }
+
+export interface PatientProfile {
+  patientId: string;
+  fullName: string;
+  nic: string;
+  dateOfBirth: string;
+  gender: Gender;
+  address: string;
+  phoneNumber: string;
+  bloodGroup: BloodGroup;
+  registeredAt: string;
+}
+
+export function getPatient(patientId: string): Promise<PatientProfile> {
+  return apiRequest<PatientProfile>(`/api/patients/${encodeURIComponent(patientId)}`);
+}
