@@ -122,11 +122,14 @@ jobs:
       CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
+      PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
       MIGRATE_JOB: ${{ vars.AZURE_MIGRATE_JOB }}
+      PATIENT_MIGRATE_JOB: ${{ vars.AZURE_PATIENT_MIGRATE_JOB }}
       BOOTSTRAP_JOB: ${{ vars.AZURE_BOOTSTRAP_JOB }}
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
       AUTH_DB_USER: ${{ vars.AUTH_DB_USER }}
+      PATIENT_DB_USER: ${{ vars.PATIENT_DB_USER }}
       KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
       KAFKA_CONTAINER: ${{ vars.KAFKA_CONTAINER_NAME }}
       ZOOKEEPER_CONTAINER: ${{ vars.ZOOKEEPER_CONTAINER_NAME }}
@@ -138,6 +141,7 @@ jobs:
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       AUTH_DB_PASSWORD: ${{ secrets.AUTH_DB_PASSWORD }}
+      PATIENT_DB_PASSWORD: ${{ secrets.PATIENT_DB_PASSWORD }}
       JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
       GATEWAY_INTERNAL_SECRET: ${{ secrets.GATEWAY_INTERNAL_SECRET }}
     steps:
@@ -147,9 +151,10 @@ jobs:
           set -euo pipefail
           required=(
             AZURE_LOCATION AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID
-            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP
-            MIGRATE_JOB BOOTSTRAP_JOB
-            MYSQL_SERVER_NAME MYSQL_FQDN AUTH_DB_USER AUTH_DB_PASSWORD
+            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP
+            MIGRATE_JOB PATIENT_MIGRATE_JOB BOOTSTRAP_JOB
+            MYSQL_SERVER_NAME MYSQL_FQDN
+            AUTH_DB_USER AUTH_DB_PASSWORD PATIENT_DB_USER PATIENT_DB_PASSWORD
             KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
             KAFKA_BOOTSTRAP_SERVERS STATIC_WEB_APP_NAME
             JWT_ISSUER JWT_AUDIENCE JWT_SIGNING_KEY GATEWAY_INTERNAL_SECRET
@@ -336,10 +341,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_auth;User Id=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD};SslMode=Required;"
+          auth_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_auth;User Id=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD};SslMode=Required;"
+          patient_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_patient;User Id=${PATIENT_DB_USER};Password=${PATIENT_DB_PASSWORD};SslMode=Required;"
 
-          echo "::add-mask::$connection"
-          echo "AUTH_DB_CONNECTION=$connection" >> "$GITHUB_ENV"
+          echo "::add-mask::$auth_connection"
+          echo "::add-mask::$patient_connection"
+          echo "AUTH_DB_CONNECTION=$auth_connection" >> "$GITHUB_ENV"
+          echo "PATIENT_DB_CONNECTION=$patient_connection" >> "$GITHUB_ENV"
 
       - name: Configure the migration job
         shell: bash
