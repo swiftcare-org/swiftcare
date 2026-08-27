@@ -39,6 +39,10 @@ resource "azurerm_mysql_flexible_server" "swiftcare" {
 
   lifecycle {
     prevent_destroy = true
+
+    # The write-only value is used when creating the server. Later rotations are
+    # triggered explicitly by incrementing mysql_administrator_password_version.
+    ignore_changes = [administrator_password_wo]
   }
 }
 

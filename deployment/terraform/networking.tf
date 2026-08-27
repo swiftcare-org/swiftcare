@@ -13,7 +13,8 @@ resource "azurerm_subnet" "container_apps" {
   address_prefixes     = var.container_apps_subnet_prefixes
 
   delegation {
-    name = "container-apps-delegation"
+    # Retain the delegation name assigned when the existing subnet was created.
+    name = "0"
 
     service_delegation {
       name = "Microsoft.App/environments"
@@ -31,7 +32,8 @@ resource "azurerm_subnet" "mysql" {
   address_prefixes     = var.mysql_subnet_prefixes
 
   delegation {
-    name = "mysql-flexible-server-delegation"
+    # Retain the delegation name assigned when the existing subnet was created.
+    name = "0"
 
     service_delegation {
       name = "Microsoft.DBforMySQL/flexibleServers"
@@ -49,7 +51,8 @@ resource "azurerm_subnet" "messaging" {
   address_prefixes     = var.messaging_subnet_prefixes
 
   delegation {
-    name = "container-instances-delegation"
+    # Retain the delegation name assigned when the existing subnet was created.
+    name = "0"
 
     service_delegation {
       name = "Microsoft.ContainerInstance/containerGroups"

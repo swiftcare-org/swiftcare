@@ -91,9 +91,9 @@ variable "mysql_administrator_password" {
 }
 
 variable "mysql_administrator_password_version" {
-  description = "Increment only when rotating the write-only MySQL administrator password."
+  description = "Write-only MySQL administrator password version. Increment from zero only when intentionally rotating the password."
   type        = number
-  default     = 1
+  default     = 0
 }
 
 variable "mysql_sku_name" {
