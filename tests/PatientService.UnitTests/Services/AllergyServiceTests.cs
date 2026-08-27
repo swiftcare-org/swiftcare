@@ -38,23 +38,23 @@ public class AllergyServiceTests
         AllergySeverity severity = AllergySeverity.Severe,
         string? notes = null,
         bool isDeleted = false) => new()
-    {
-        PatientId = patientId,
-        AllergyName = name,
-        Severity = severity,
-        Notes = notes,
-        IsDeleted = isDeleted
-    };
+        {
+            PatientId = patientId,
+            AllergyName = name,
+            Severity = severity,
+            Notes = notes,
+            IsDeleted = isDeleted
+        };
 
     private static AllergyRequest ValidRequest(
         string name = "Penicillin",
         AllergySeverity severity = AllergySeverity.Severe,
         string? notes = "Causes rash") => new()
-    {
-        AllergyName = name,
-        Severity = severity,
-        Notes = notes
-    };
+        {
+            AllergyName = name,
+            Severity = severity,
+            Notes = notes
+        };
 
     [Fact]
     public async Task AddAllergyWithValidRequestPersistsAndReturnsResponse()
