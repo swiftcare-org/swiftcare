@@ -718,6 +718,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          start_container_app() {
+            local app_name="$1"
+            local app_id
+            local running_status
+
+            running_status=$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" --name "$app_name" \
+              --query properties.runningStatus --output tsv)
+
+            if [ "$running_status" = "Stopped" ]; then
+              app_id=$(az containerapp show \
+                --resource-group "$RESOURCE_GROUP" --name "$app_name" \
+                --query id --output tsv)
+              az rest \
+                --method post \
+                --uri "https://management.azure.com${app_id}/start?api-version=2026-01-01" \
+                --output none
+              echo "Start requested for $app_name."
+            fi
+
+            for attempt in $(seq 1 60); do
+              running_status=$(az containerapp show \
+                --resource-group "$RESOURCE_GROUP" --name "$app_name" \
+                --query properties.runningStatus --output tsv)
+              if [ "$running_status" = "Running" ]; then
+                echo "$app_name is running."
+                return 0
+              fi
+
+              echo "$app_name state is ${running_status:-Unknown}; attempt $attempt/60"
+              sleep 5
+            done
+
+            echo "::error::$app_name did not enter the Running state"
+            return 1
+          }
+
+          start_container_app "$AUTH_APP"
+          start_container_app "$PATIENT_APP"
+
           auth_fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
             --query properties.configuration.ingress.fqdn --output tsv)
@@ -797,6 +838,8 @@ jobs:
           az containerapp revision set-mode \
             --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
             --mode single --only-show-errors >/dev/null
+
+          start_container_app "$GATEWAY_APP"
 
           fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
