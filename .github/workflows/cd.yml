@@ -31,6 +31,7 @@ env:
   DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
   GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-gateway
   AUTH_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-auth
+  PATIENT_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-patient
 
 jobs:
   manual-quality-gate:
@@ -89,6 +90,17 @@ jobs:
           tags: ${{ env.AUTH_IMAGE }}:${{ env.DEPLOY_SHA }}
           cache-from: type=gha,scope=swiftcare-auth
           cache-to: type=gha,mode=max,scope=swiftcare-auth
+
+      - name: Build and push PatientService
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/PatientService/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.PATIENT_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-patient
+          cache-to: type=gha,mode=max,scope=swiftcare-patient
 
   deploy-backend:
     name: Migrate and deploy backend
