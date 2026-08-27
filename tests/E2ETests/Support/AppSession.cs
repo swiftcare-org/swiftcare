@@ -25,4 +25,14 @@ public static class AppSession
     {
         driver.Navigate().GoToUrl($"{TestConfig.BaseUrl}{path}");
     }
+
+    // Clicks a dashboard navigation link by its target path. Matching on href
+    // rather than link text, because the dashboard links are upper-cased by CSS
+    // and Selenium's By.LinkText matches the rendered (transformed) text.
+    public static void ClickNavLink(IWebDriver driver, string href)
+    {
+        var selector = By.CssSelector($"a[href='{href}']");
+        new WebDriverWait(driver, TimeSpan.FromSeconds(10)).Until(d => d.FindElements(selector).Count > 0);
+        driver.FindElement(selector).Click();
+    }
 }
