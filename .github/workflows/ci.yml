@@ -189,7 +189,7 @@ jobs:
           npm run build
 
   e2e-tests:
-    name: Run login and logout E2E tests
+    name: Run E2E tests
     runs-on: ubuntu-latest
     needs:
       - build-and-test
@@ -233,38 +233,46 @@ jobs:
         run: cp .env.example .env
 
       - name: Build backend images
-        run: docker compose build authservice apigateway
+        run: docker compose build authservice patientservice apigateway
 
-      - name: Start MySQL and apply migrations
+      - name: Start infrastructure and apply migrations
         shell: bash
         run: |
           set -euo pipefail
 
-          docker compose up --detach --wait mysql
+          docker compose up --detach --wait mysql kafka
 
-          migration_succeeded=false
-          for attempt in {1..5}; do
-            echo "Applying AuthService migrations (attempt ${attempt}/5)..."
-            if docker compose run --rm --no-deps authservice --migrate; then
-              migration_succeeded=true
-              break
+          apply_migrations() {
+            local service="$1"
+            local display_name="$2"
+            local migration_succeeded=false
+
+            for attempt in {1..5}; do
+              echo "Applying ${display_name} migrations (attempt ${attempt}/5)..."
+              if docker compose run --rm --no-deps "$service" --migrate; then
+                migration_succeeded=true
+                break
+              fi
+
+              if [[ "$attempt" -lt 5 ]]; then
+                sleep "$((attempt * 5))"
+              fi
+            done
+
+            if [[ "$migration_succeeded" != "true" ]]; then
+              echo "${display_name} migrations failed after 5 attempts."
+              return 1
             fi
+          }
 
-            if [[ "$attempt" -lt 5 ]]; then
-              sleep "$((attempt * 5))"
-            fi
-          done
+          apply_migrations authservice AuthService
+          apply_migrations patientservice PatientService
 
-          if [[ "$migration_succeeded" != "true" ]]; then
-            echo "AuthService migrations failed after 5 attempts."
-            exit 1
-          fi
+          docker compose run --rm --no-deps kafka-init
 
-      - name: Start AuthService and API Gateway
+      - name: Start application services
         run: |
-          # These browser tests cover the auth journey only. Avoid starting the
-          # PatientService dependency and its Kafka stack in this focused job.
-          docker compose up --detach --no-build --no-deps --wait authservice
+          docker compose up --detach --no-build --no-deps --wait authservice patientservice
           docker compose up --detach --no-build --no-deps --wait apigateway
 
       - name: Run Selenium E2E tests
@@ -305,7 +313,10 @@ jobs:
           mkdir -p TestResults/E2E
           if [[ -f .env ]]; then
             docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
-            docker compose logs --no-color mysql authservice apigateway > TestResults/E2E/docker-compose.log 2>&1 || true
+            docker compose logs --no-color \
+              mysql zookeeper kafka kafka-init \
+              authservice patientservice apigateway \
+              > TestResults/E2E/docker-compose.log 2>&1 || true
           fi
 
       - name: Upload E2E test results
