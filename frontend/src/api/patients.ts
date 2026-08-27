@@ -25,3 +25,15 @@ export function registerPatient(request: RegisterPatientRequestBody): Promise<Re
     body: request,
   });
 }
+
+export interface PatientSearchResult {
+  patientId: string;
+  fullName: string;
+  nic: string;
+  phoneNumber: string;
+  bloodGroup: BloodGroup;
+}
+
+export function searchPatients(term: string): Promise<PatientSearchResult[]> {
+  return apiRequest<PatientSearchResult[]>(`/api/patients/search?q=${encodeURIComponent(term)}`);
+}
