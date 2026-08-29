@@ -928,44 +928,6 @@ jobs:
           echo "::error::QueueService did not become ready within 5 minutes"
           exit 1
 
-      - name: Collect QueueService deployment diagnostics
-        if: failure()
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-
-          if az containerapp job show \
-            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
-            >/dev/null 2>&1; then
-            echo "QueueService migration executions:"
-            az containerapp job execution list \
-              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
-              --query "[:5].{name:name,status:properties.status,start:properties.startTime,end:properties.endTime}" \
-              --output table
-          fi
-
-          if az containerapp show \
-            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-            >/dev/null 2>&1; then
-            echo "QueueService application state:"
-            az containerapp show \
-              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-              --query "{running:properties.runningStatus,latest:properties.latestRevisionName,ready:properties.latestReadyRevisionName}" \
-              --output yaml
-
-            echo "QueueService revisions:"
-            az containerapp revision list \
-              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-              --query "[].{name:name,active:properties.active,health:properties.healthState,provisioning:properties.provisioningState,replicas:properties.replicas}" \
-              --output table
-
-            echo "QueueService application logs:"
-            az containerapp logs show \
-              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-              --tail 100 --format text
-          fi
-
       - name: Deploy the gateway last
         id: gateway
         shell: bash
