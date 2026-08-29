@@ -32,6 +32,7 @@ env:
   GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-gateway
   AUTH_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-auth
   PATIENT_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-patient
+  QUEUE_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-queue
 
 jobs:
   manual-quality-gate:
@@ -101,6 +102,17 @@ jobs:
           tags: ${{ env.PATIENT_IMAGE }}:${{ env.DEPLOY_SHA }}
           cache-from: type=gha,scope=swiftcare-patient
           cache-to: type=gha,mode=max,scope=swiftcare-patient
+
+      - name: Build and push QueueService
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/QueueService/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.QUEUE_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-queue
+          cache-to: type=gha,mode=max,scope=swiftcare-queue
 
   deploy-backend:
     name: Migrate and deploy backend
