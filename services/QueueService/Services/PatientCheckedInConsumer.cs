@@ -131,7 +131,7 @@ public sealed class PatientCheckedInConsumer : BackgroundService
                 checkedInEvent.PatientId,
                 correlationId);
             _consumer.Seek(consumeResult.TopicPartitionOffset);
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            await Task.Delay(_options.RetryDelay, stoppingToken);
         }
     }
 
