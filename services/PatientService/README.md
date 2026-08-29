@@ -98,10 +98,10 @@ See `Controllers/PatientsController.cs` and `Controllers/AllergiesController.cs`
 
 ## Known scope bounds
 
-- No queue number is returned or assigned. QueueService owns queue numbering and does not exist yet.
+- No queue number is returned or assigned. QueueService owns queue numbering (see its own README) — this endpoint only publishes the `patient-checked-in` event that triggers it.
 - No phone-number normalization: a patient stored as `+94771234567` is not found by a search for `0771234567`, or vice versa, unless the shared digits are typed.
 - Patient search is not audited — nothing records who searched for what. If searches must be audit-logged for compliance, that is a separate story.
-- Nothing consumes `patient-checked-in` yet; verify publication via Kafka UI (`localhost:8080` in the local compose stack).
+- QueueService consumes `patient-checked-in` (see its own README); verify publication via Kafka UI (`localhost:8080` in the local compose stack) or the resulting `QueueEntries` row.
 - **Allergies live in PatientService, not MedicalRecordService.** The README and PRODUCT.md assign allergies (and other clinical records) to MedicalRecordService, which does not exist yet (an empty placeholder directory, not in `SwiftCare.slnx`). SWC-17 was placed here by explicit stakeholder decision rather than waiting on that service. This is a deliberate database-boundary trade-off: when MedicalRecordService is eventually built, the `Allergies` table will need to migrate out of `swiftcare_patient` into `swiftcare_medical_record` via each service's API, not a direct database copy, per SwiftCare's cross-service data rule.
 - No optimistic concurrency on allergy updates — two concurrent edits to the same allergy resolve last-write-wins, silently.
 - Duplicate allergy names for the same patient are permitted; there is no uniqueness constraint.

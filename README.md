@@ -73,7 +73,7 @@ swiftcare/
 `-- README.md
 ```
 
-`ApiGateway/`, `services/AuthService/`, `services/PatientService/`, and `frontend/` contain the current Sprint 1 application slice. The remaining four services under `services/` are placeholder directories reserving the agreed layout.
+`ApiGateway/`, `services/AuthService/`, `services/PatientService/`, `services/QueueService/`, and `frontend/` contain the current Sprint 1 application slice. The remaining three services under `services/` are placeholder directories reserving the agreed layout.
 
 ## Prerequisites
 
