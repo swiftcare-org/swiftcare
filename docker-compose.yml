@@ -149,6 +149,28 @@ services:
     networks:
       - swiftcare-network
 
+  queueservice:
+    build:
+      context: .
+      dockerfile: services/QueueService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__QueueDb: "Server=mysql;Port=3306;Database=${QUEUE_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      Kafka__BootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
+    ports:
+      - "${QUEUE_SERVICE_PORT:-5003}:5003"
+    networks:
+      - swiftcare-network
+
   apigateway:
     build:
       context: .
