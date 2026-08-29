@@ -9,7 +9,7 @@ Terraform owns stable infrastructure:
 - `swiftcare-rg`
 - `swiftcare-vnet` and its delegated subnets
 - private DNS zones and VNet links
-- `swiftcare-mysql` and the AuthService and PatientService databases
+- `swiftcare-mysql` and the AuthService, PatientService and QueueService databases
 - `swiftcare-logs`
 - `swiftcare-aca-env`
 - the Kafka/ZooKeeper Container Instance, NAT Gateway, public IP and private DNS record
@@ -18,7 +18,7 @@ Terraform owns stable infrastructure:
 
 The CD workflow owns deployable application state:
 
-- Gateway, AuthService and PatientService Container Apps
+- Gateway, AuthService, PatientService and QueueService Container Apps
 - database migration and administrator-bootstrap jobs
 - application images, revisions, ingress and secrets
 - the `api.swiftcare.me` Gateway binding and its managed certificate
@@ -84,7 +84,7 @@ Use `-backend-config="backend.hcl"` whenever backend initialization is required.
 
 ## Supply the MySQL administrator password
 
-The existing MySQL administrator password is required for import, refresh, plan and apply because Azure treats it as a write-only server argument. It is not the AuthService or PatientService database password.
+The existing MySQL administrator password is required for import, refresh, plan and apply because Azure treats it as a write-only server argument. It is not an AuthService, PatientService or QueueService database password.
 
 Set it without displaying it:
 
@@ -134,7 +134,7 @@ terraform -chdir=deployment/terraform state list
 (terraform -chdir=deployment/terraform state list | Measure-Object -Line).Lines
 ```
 
-With messaging and both frontend custom domains enabled, the current environment contains approximately 27 managed resource addresses.
+With messaging, all three Sprint 1 databases, and both frontend custom domains enabled, the current environment contains approximately 29 managed resource addresses.
 
 ## Review before applying
 
@@ -147,7 +147,7 @@ terraform -chdir=deployment/terraform show "azure-development.tfplan"
 
 Stop and investigate if the plan proposes:
 
-- destroying or replacing MySQL, either service database, the VNet or Container Apps environment
+- destroying or replacing MySQL, any service database, the VNet or Container Apps environment
 - recreating validated custom domains
 - changing subnet prefixes or delegations
 - replacing the deployment identity
