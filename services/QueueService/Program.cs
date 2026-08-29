@@ -1,6 +1,8 @@
 using QueueService.Data;
 using QueueService.Maintenance;
 using QueueService.Middleware;
+using QueueService.Models.Configuration;
+using QueueService.Services;
 using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,6 +27,9 @@ builder.Services.AddHealthChecks();
 // Build()) is what actually fails startup fast.
 builder.Services.AddDbContext<QueueDbContext>(options =>
     options.UseMySql(builder.Configuration.GetConnectionString("QueueDb"), new MySqlServerVersion(new Version(8, 4, 0))));
+
+builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection("Queue"));
+builder.Services.AddScoped<IQueueEntryCreationService, QueueEntryCreationService>();
 
 var app = builder.Build();
 
