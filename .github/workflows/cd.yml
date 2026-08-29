@@ -819,6 +819,113 @@ jobs:
             exit 1
           fi
 
+      - name: Deploy QueueService as a private background worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$QUEUE_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --secrets \
+                "queue-db=$QUEUE_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5003" \
+                "ConnectionStrings__QueueDb=secretref:queue-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+                "Kafka__PatientCheckedInTopic=$KAFKA_PATIENT_CHECKED_IN_TOPIC" \
+                "Kafka__ConsumerGroupId=$KAFKA_QUEUE_CONSUMER_GROUP" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 \
+              --secrets \
+                "queue-db=$QUEUE_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5003" \
+                "ConnectionStrings__QueueDb=secretref:queue-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+                "Kafka__PatientCheckedInTopic=$KAFKA_PATIENT_CHECKED_IN_TOPIC" \
+                "Kafka__ConsumerGroupId=$KAFKA_QUEUE_CONSUMER_GROUP" \
+              --only-show-errors >/dev/null
+          fi
+
+          ingress_external=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --query properties.configuration.ingress.external --output tsv)
+          if [ -n "$ingress_external" ]; then
+            az containerapp ingress disable \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          running_status=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --query properties.runningStatus --output tsv)
+          if [ "$running_status" = "Stopped" ]; then
+            app_id=$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --query id --output tsv)
+            az rest \
+              --method post \
+              --uri "https://management.azure.com${app_id}/start?api-version=2026-01-01" \
+              --output none
+            echo "Start requested for $QUEUE_APP."
+          fi
+
+          for attempt in $(seq 1 60); do
+            app_state=$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --query "[properties.runningStatus,properties.latestRevisionName,properties.latestReadyRevisionName]" \
+              --output tsv)
+            read -r running latest ready <<< "$app_state"
+
+            if [ "$running" = "Running" ] && [ -n "$latest" ] && [ "$latest" = "$ready" ]; then
+              ingress=$(az containerapp show \
+                --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+                --query properties.configuration.ingress --output json)
+              if [ -n "$ingress" ] && [ "$ingress" != "null" ]; then
+                echo "::error::QueueService must not expose ingress"
+                exit 1
+              fi
+
+              echo "QueueService revision $ready is ready without ingress."
+              exit 0
+            fi
+
+            echo "QueueService running=${running:-Unknown} latest=${latest:-Missing} ready=${ready:-Pending}; attempt $attempt/60"
+            sleep 5
+          done
+
+          echo "::error::QueueService did not become ready within 5 minutes"
+          exit 1
+
       - name: Deploy the gateway last
         id: gateway
         shell: bash
