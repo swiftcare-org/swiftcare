@@ -40,6 +40,7 @@ jobs:
             ApiGateway/Dockerfile
             services/AuthService/Dockerfile
             services/PatientService/Dockerfile
+            services/QueueService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -107,6 +108,7 @@ jobs:
           dotnet test tests/AuthService.UnitTests/AuthService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/QueueService.UnitTests/QueueService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
@@ -374,6 +376,16 @@ jobs:
           cache-from: type=gha,scope=swiftcare-patient
           cache-to: type=gha,mode=max,scope=swiftcare-patient
 
+      - name: Build the QueueService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/QueueService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-queue
+          cache-to: type=gha,mode=max,scope=swiftcare-queue
+
   security-scan:
     name: Scan dependencies for vulnerabilities
     runs-on: ubuntu-latest
@@ -419,6 +431,7 @@ jobs:
       MYSQL_ROOT_PASSWORD: ci-only-root-password
       AUTH_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_auth;User Id=root;Password=ci-only-root-password;"
       PATIENT_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_patient;User Id=root;Password=ci-only-root-password;"
+      QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -474,6 +487,14 @@ jobs:
       - name: Check PatientService for model changes without a migration
         if: hashFiles('services/PatientService/PatientService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/PatientService
+
+      - name: Apply QueueService migrations to a clean database
+        if: hashFiles('services/QueueService/QueueService.csproj') != ''
+        run: dotnet ef database update --project services/QueueService --connection "$QUEUE_DB_CONNECTION"
+
+      - name: Check QueueService for model changes without a migration
+        if: hashFiles('services/QueueService/QueueService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/QueueService
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})
