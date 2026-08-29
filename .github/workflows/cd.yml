@@ -135,17 +135,22 @@ jobs:
       GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
       PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
+      QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
       AUTH_MIGRATE_JOB: ${{ vars.AZURE_AUTH_MIGRATE_JOB }}
       PATIENT_MIGRATE_JOB: ${{ vars.AZURE_PATIENT_MIGRATE_JOB }}
+      QUEUE_MIGRATE_JOB: ${{ vars.AZURE_QUEUE_MIGRATE_JOB }}
       AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
       AUTH_DB_USER: ${{ vars.AUTH_DB_USER }}
       PATIENT_DB_USER: ${{ vars.PATIENT_DB_USER }}
+      QUEUE_DB_USER: ${{ vars.QUEUE_DB_USER }}
       KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
       KAFKA_CONTAINER: ${{ vars.KAFKA_CONTAINER_NAME }}
       ZOOKEEPER_CONTAINER: ${{ vars.ZOOKEEPER_CONTAINER_NAME }}
       KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
+      KAFKA_PATIENT_CHECKED_IN_TOPIC: ${{ vars.KAFKA_PATIENT_CHECKED_IN_TOPIC }}
+      KAFKA_QUEUE_CONSUMER_GROUP: ${{ vars.KAFKA_QUEUE_CONSUMER_GROUP }}
       STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
       JWT_ISSUER: ${{ vars.JWT_ISSUER }}
       JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
@@ -156,6 +161,7 @@ jobs:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       AUTH_DB_PASSWORD: ${{ secrets.AUTH_DB_PASSWORD }}
       PATIENT_DB_PASSWORD: ${{ secrets.PATIENT_DB_PASSWORD }}
+      QUEUE_DB_PASSWORD: ${{ secrets.QUEUE_DB_PASSWORD }}
       JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
       GATEWAY_INTERNAL_SECRET: ${{ secrets.GATEWAY_INTERNAL_SECRET }}
     steps:
@@ -165,12 +171,14 @@ jobs:
           set -euo pipefail
           required=(
             AZURE_LOCATION AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID
-            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP
-            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB AUTH_BOOTSTRAP_JOB
+            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP QUEUE_APP
+            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB QUEUE_MIGRATE_JOB AUTH_BOOTSTRAP_JOB
             MYSQL_SERVER_NAME MYSQL_FQDN
             AUTH_DB_USER AUTH_DB_PASSWORD PATIENT_DB_USER PATIENT_DB_PASSWORD
+            QUEUE_DB_USER QUEUE_DB_PASSWORD
             KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
-            KAFKA_BOOTSTRAP_SERVERS STATIC_WEB_APP_NAME
+            KAFKA_BOOTSTRAP_SERVERS KAFKA_PATIENT_CHECKED_IN_TOPIC
+            KAFKA_QUEUE_CONSUMER_GROUP STATIC_WEB_APP_NAME
             JWT_ISSUER JWT_AUDIENCE JWT_SIGNING_KEY GATEWAY_INTERNAL_SECRET
             FRONTEND_ORIGIN FRONTEND_WWW_ORIGIN GATEWAY_ORIGIN
             GHCR_USERNAME GHCR_TOKEN
@@ -366,11 +374,16 @@ jobs:
           set -euo pipefail
           auth_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_auth;User Id=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD};SslMode=Required;"
           patient_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_patient;User Id=${PATIENT_DB_USER};Password=${PATIENT_DB_PASSWORD};SslMode=Required;"
+          queue_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_queue;User Id=${QUEUE_DB_USER};Password=${QUEUE_DB_PASSWORD};SslMode=Required;"
 
           echo "::add-mask::$auth_connection"
           echo "::add-mask::$patient_connection"
-          echo "AUTH_DB_CONNECTION=$auth_connection" >> "$GITHUB_ENV"
-          echo "PATIENT_DB_CONNECTION=$patient_connection" >> "$GITHUB_ENV"
+          echo "::add-mask::$queue_connection"
+          {
+            echo "AUTH_DB_CONNECTION=$auth_connection"
+            echo "PATIENT_DB_CONNECTION=$patient_connection"
+            echo "QUEUE_DB_CONNECTION=$queue_connection"
+          } >> "$GITHUB_ENV"
 
       - name: Configure the AuthService migration job
         shell: bash
