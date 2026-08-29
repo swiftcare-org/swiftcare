@@ -18,5 +18,6 @@ locals {
   github_deployment_identity_name = "${var.project_name}-github-cd"
   auth_database_name              = "${var.project_name}_auth"
   patient_database_name           = "${var.project_name}_patient"
+  queue_database_name             = "${var.project_name}_queue"
   kafka_bootstrap_servers         = "kafka.${local.messaging_private_dns_zone_name}:9092"
 }
