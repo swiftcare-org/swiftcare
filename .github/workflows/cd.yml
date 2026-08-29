@@ -902,9 +902,11 @@ jobs:
           for attempt in $(seq 1 60); do
             app_state=$(az containerapp show \
               --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-              --query "[properties.runningStatus,properties.latestRevisionName,properties.latestReadyRevisionName]" \
-              --output tsv)
-            read -r running latest ready <<< "$app_state"
+              --query "{running:properties.runningStatus,latest:properties.latestRevisionName,ready:properties.latestReadyRevisionName}" \
+              --output json)
+            running=$(jq -r '.running // empty' <<< "$app_state")
+            latest=$(jq -r '.latest // empty' <<< "$app_state")
+            ready=$(jq -r '.ready // empty' <<< "$app_state")
 
             if [ "$running" = "Running" ] && [ -n "$latest" ] && [ "$latest" = "$ready" ]; then
               ingress=$(az containerapp show \
