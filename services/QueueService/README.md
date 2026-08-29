@@ -42,20 +42,18 @@ Never hardcode these values in source or commit them to `.env`. Set them via you
 
 ## Running locally
 
-QueueService is not yet wired into the repository root `docker-compose.yml` (a pending DevOps handoff — see "Known scope bounds" below), so run it standalone alongside the rest of the compose stack:
+QueueService is part of the repository Compose stack. Apply its migrations before starting the worker against a new database volume:
 
 ```bash
-# from the repository root, with MySQL and Kafka up (docker compose up -d)
-cd services/QueueService
-
-export ConnectionStrings__QueueDb="Server=localhost;Port=3306;Database=swiftcare_queue;User=<user>;Password=<password>;"
-export Gateway__InternalSecret="<shared value, must match ApiGateway>"
-export Kafka__BootstrapServers="localhost:9092"
-export ASPNETCORE_ENVIRONMENT=Development
-
-dotnet ef database update
-dotnet run
+# from the repository root after creating .env from .env.example
+docker compose up --detach --wait mysql kafka
+docker compose run --rm kafka-init
+docker compose run --rm --no-deps queueservice --migrate
+docker compose up --detach --no-deps --wait queueservice
+curl http://localhost:5003/health
 ```
+
+Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes Kafka messages in the background; it is not called by the API Gateway for the current SWC-19 scope.
 
 For controlled deployments, the published service image can apply migrations and
 exit without starting the web host:
@@ -81,6 +79,8 @@ QueueService validates only that `Kafka:BootstrapServers` is *configured* at sta
 dotnet test tests/QueueService.UnitTests/QueueService.UnitTests.csproj
 ```
 
+CI runs this suite, applies the committed migrations to a clean MySQL database, checks for pending model changes, and builds the production Docker image.
+
 Tests use `Microsoft.EntityFrameworkCore.Sqlite` (in-memory, relational) rather than the `InMemory` provider PatientService's tests use — `InMemory` enforces neither unique indexes nor transactions, so it cannot verify the `UNIQUE (PatientId, QueueDate)` / `UNIQUE (QueueDate, QueueNumber)` constraints or the transactional counter allocation this story's Definition of Done requires. Coverage includes: sequential queue-number assignment across multiple patients on the same day, `Status = Waiting` / `RoomNumber = NULL` on creation, the daily reset (a new clinic day restarts at `Q-001`, the prior day's entries are untouched), the `Asia/Colombo` midnight-boundary conversion (a UTC timestamp late in the evening correctly lands on the next local day), duplicate-`EventId` idempotency, same-patient-same-day rejection with a distinct `EventId`, confirmation that a rejected duplicate does not consume a queue number, `Q-010`/`Q-100` number-padding boundaries, both unique indexes verified directly against `QueueDbContext` independent of the service logic, and the Kafka consumer's message handling (valid dispatch and commit, malformed-payload skip, empty-`EventId` skip, and a processing failure causing `Seek` without `Commit`).
 
 ## Endpoints
@@ -91,13 +91,15 @@ Tests use `Microsoft.EntityFrameworkCore.Sqlite` (in-memory, relational) rather 
 
 No other HTTP endpoints exist yet. See "What it does" above for the Kafka consumer's behavior instead.
 
+## Deployment
+
+CD publishes `swiftcare-queue:<commit-sha>` to GHCR, runs `--migrate` through a finite Azure Container Apps Job, and deploys QueueService as a private background Container App without ingress. The worker keeps one replica active while the Azure environment is running so it can continuously consume `patient-checked-in` events. Credit-saving operations may explicitly stop the app; a later deployment starts it again.
+
+Azure deployment uses a dedicated `swiftcare_queue` database account and requires the GitHub Environment values documented in the repository root README.
+
 ## Known scope bounds
 
 - **No read API.** Nothing returns queue entries over HTTP. Displaying the queue (queue number, waiting list, calling patients, room assignment) is a separate future story.
-- **Not in `docker-compose.yml` or `.env.example`.** Run it standalone via `dotnet run` per "Running locally" above until DevOps adds a `queueservice` block and a `QUEUE_SERVICE_PORT` variable.
-- **No `Dockerfile`.** Out of developer scope for this story; DevOps owns it alongside the compose entry.
-- **Not in CI's `dotnet test` or `validate-migrations` jobs.** `tests/QueueService.UnitTests` exists and passes locally but does not yet gate pull requests, and the `InitialQueueSchema` migration is not yet applied to a clean database in CI, until `.github/workflows/ci.yml` is updated (DevOps-owned; developer scope for this story explicitly excludes CI/CD workflow changes).
-- **Not in the CD pipeline.** No image build, no Container Apps deployment, no migration job.
 - **No returning-patient check-in flow exists yet.** The only current producer of `patient-checked-in` is PatientService's *new*-patient registration endpoint (see PatientService's README). A returning patient checking in again is a separate story (SWC-13); until then, Scenario 4 (same patient, same day) is only reachable by hand-publishing a second event to Kafka, not through the running application.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.
 - **Queue numbers are not gap-free.** A transaction that rolls back after incrementing the counter leaves a gap in that day's sequence. The story requires "the next daily queue number", not gapless numbering.
