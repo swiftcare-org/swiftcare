@@ -525,6 +525,76 @@ jobs:
           echo "::error::PatientService migration execution timed out after 10 minutes"
           exit 1
 
+      - name: Configure the QueueService migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$QUEUE_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" >/dev/null 2>&1; then
+            az containerapp job registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp job secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --secrets "queue-db=$QUEUE_DB_CONNECTION" \
+              --only-show-errors >/dev/null
+            az containerapp job update \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --set-env-vars "ConnectionStrings__QueueDb=secretref:queue-db" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp job create \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --trigger-type Manual \
+              --replica-timeout 600 --replica-retry-limit 1 \
+              --replica-completion-count 1 --parallelism 1 \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --secrets "queue-db=$QUEUE_DB_CONNECTION" \
+              --env-vars "ConnectionStrings__QueueDb=secretref:queue-db" \
+              --only-show-errors >/dev/null
+          fi
+
+      - name: Apply QueueService database migrations inside the VNet
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+            --query name --output tsv)
+          echo "Started QueueService migration execution $execution"
+
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            case "$status" in
+              Succeeded)
+                echo "QueueService migration succeeded."
+                exit 0
+                ;;
+              Failed|Degraded)
+                echo "::error::QueueService migration execution ended with $status"
+                exit 1
+                ;;
+              *)
+                echo "QueueService migration status: ${status:-Pending} (attempt $attempt/60)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::QueueService migration execution timed out after 10 minutes"
+          exit 1
+
       - name: Bootstrap the initial administrator
         if: github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
         shell: bash
