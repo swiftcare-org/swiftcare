@@ -1,3 +1,4 @@
+using Confluent.Kafka;
 using QueueService.Data;
 using QueueService.Maintenance;
 using QueueService.Middleware;
@@ -5,6 +6,7 @@ using QueueService.Models.Configuration;
 using QueueService.Services;
 using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 // Azure Container Apps Jobs run maintenance commands to completion without
 // starting Kestrel or exposing an application endpoint.
@@ -31,6 +33,24 @@ builder.Services.AddDbContext<QueueDbContext>(options =>
 builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection("Queue"));
 builder.Services.AddScoped<IQueueEntryCreationService, QueueEntryCreationService>();
 
+builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+
+// Registered as a singleton - IConsumer is not thread-safe for concurrent Consume() calls,
+// but this app only ever has one loop calling it (PatientCheckedInConsumer), so a single
+// instance shared with DI is correct here and lets tests substitute a fake consumer.
+builder.Services.AddSingleton<IConsumer<string, string>>(sp =>
+{
+    var kafkaOptions = sp.GetRequiredService<IOptions<KafkaOptions>>().Value;
+    return new ConsumerBuilder<string, string>(new ConsumerConfig
+    {
+        BootstrapServers = kafkaOptions.BootstrapServers,
+        GroupId = kafkaOptions.ConsumerGroupId,
+        EnableAutoCommit = false,
+        AutoOffsetReset = AutoOffsetReset.Earliest
+    }).Build();
+});
+builder.Services.AddHostedService<PatientCheckedInConsumer>();
+
 var app = builder.Build();
 
 // Fail fast before serving any request if required configuration is missing. Checked
@@ -52,8 +72,8 @@ if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
 }
 
 // Checked for presence only, never reachability: QueueService must start and serve
-// /health even when Kafka is down, matching independent deployability - the
-// patient-checked-in consumer (added in a later stage) degrades instead of blocking startup.
+// /health even when Kafka is down, matching independent deployability - PatientCheckedInConsumer
+// degrades (retries via Seek, see ProcessMessageAsync) instead of blocking startup.
 if (string.IsNullOrEmpty(app.Configuration["Kafka:BootstrapServers"]))
 {
     throw new InvalidOperationException(
