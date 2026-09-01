@@ -39,6 +39,11 @@ jobs:
             .github/workflows/cd.yml
             ApiGateway/Dockerfile
             services/AuthService/Dockerfile
+            services/PatientService/Dockerfile
+            services/QueueService/Dockerfile
+            tests/E2ETests/E2ETests.csproj
+            deployment/terraform/versions.tf
+            deployment/terraform/.terraform.lock.hcl
           )
 
           for file in "${required_files[@]}"; do
@@ -50,6 +55,18 @@ jobs:
 
       - name: Validate Docker Compose
         run: docker compose config --quiet
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Validate Terraform configuration
+        shell: bash
+        run: |
+          terraform -chdir=deployment/terraform fmt -check -recursive
+          terraform -chdir=deployment/terraform init -backend=false -input=false
+          terraform -chdir=deployment/terraform validate
 
   build-and-test:
     name: Build and test .NET projects
@@ -88,7 +105,10 @@ jobs:
         if: hashFiles('SwiftCare.slnx') != ''
         run: |
           dotnet build SwiftCare.slnx --no-restore --configuration Release
-          dotnet test SwiftCare.slnx --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/AuthService.UnitTests/AuthService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/QueueService.UnitTests/QueueService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
@@ -170,6 +190,152 @@ jobs:
           npm run lint
           npm run build
 
+  e2e-tests:
+    name: Run E2E tests
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-test
+      - build-frontend
+    env:
+      AUTH_SEED_PASSWORD: ci-only-e2e-seed-password
+      E2E_BASE_URL: http://localhost:5173
+      E2E_HEADLESS: "true"
+      VITE_GATEWAY_URL: http://localhost:8000
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore E2E test dependencies
+        run: dotnet restore tests/E2ETests/E2ETests.csproj
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Prepare E2E environment
+        run: cp .env.example .env
+
+      - name: Build backend images
+        run: docker compose build authservice patientservice apigateway
+
+      - name: Start infrastructure and apply migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker compose up --detach --wait mysql kafka
+
+          apply_migrations() {
+            local service="$1"
+            local display_name="$2"
+            local migration_succeeded=false
+
+            for attempt in {1..5}; do
+              echo "Applying ${display_name} migrations (attempt ${attempt}/5)..."
+              if docker compose run --rm --no-deps "$service" --migrate; then
+                migration_succeeded=true
+                break
+              fi
+
+              if [[ "$attempt" -lt 5 ]]; then
+                sleep "$((attempt * 5))"
+              fi
+            done
+
+            if [[ "$migration_succeeded" != "true" ]]; then
+              echo "${display_name} migrations failed after 5 attempts."
+              return 1
+            fi
+          }
+
+          apply_migrations authservice AuthService
+          apply_migrations patientservice PatientService
+
+          docker compose run --rm --no-deps kafka-init
+
+      - name: Start application services
+        run: |
+          docker compose up --detach --no-build --no-deps --wait authservice patientservice
+          docker compose up --detach --no-build --no-deps --wait apigateway
+
+      - name: Run Selenium E2E tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p TestResults/E2E
+          npm --prefix frontend run dev -- --host 127.0.0.1 > TestResults/E2E/frontend.log 2>&1 &
+          frontend_pid=$!
+          trap 'kill "$frontend_pid" 2>/dev/null || true' EXIT
+
+          frontend_ready=false
+          for _ in {1..30}; do
+            if curl --fail --silent http://localhost:5173 >/dev/null; then
+              frontend_ready=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "$frontend_ready" != "true" ]]; then
+            echo "Frontend did not become ready within 60 seconds."
+            exit 1
+          fi
+
+          google-chrome --version
+          dotnet test tests/E2ETests/E2ETests.csproj \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=e2e.trx" \
+            --results-directory TestResults/E2E
+
+      - name: Collect E2E diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p TestResults/E2E
+          if [[ -f .env ]]; then
+            docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
+            docker compose logs --no-color \
+              mysql zookeeper kafka kafka-init \
+              authservice patientservice apigateway \
+              > TestResults/E2E/docker-compose.log 2>&1 || true
+          fi
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: TestResults/E2E
+
+      - name: Stop E2E environment
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f .env ]]; then
+            docker compose down --volumes --remove-orphans
+          fi
+
   build-images:
     name: Build deployable images
     runs-on: ubuntu-latest
@@ -199,6 +365,26 @@ jobs:
           push: false
           cache-from: type=gha,scope=swiftcare-auth
           cache-to: type=gha,mode=max,scope=swiftcare-auth
+
+      - name: Build the PatientService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/PatientService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-patient
+          cache-to: type=gha,mode=max,scope=swiftcare-patient
+
+      - name: Build the QueueService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/QueueService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-queue
+          cache-to: type=gha,mode=max,scope=swiftcare-queue
 
   security-scan:
     name: Scan dependencies for vulnerabilities
@@ -244,6 +430,8 @@ jobs:
     env:
       MYSQL_ROOT_PASSWORD: ci-only-root-password
       AUTH_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_auth;User Id=root;Password=ci-only-root-password;"
+      PATIENT_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_patient;User Id=root;Password=ci-only-root-password;"
+      QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -253,10 +441,11 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -pci-only-root-password --silent"
+          --health-cmd="mysqladmin ping --protocol=tcp -h 127.0.0.1 -u root -pci-only-root-password --silent"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+          --health-start-period=30s
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -290,6 +479,22 @@ jobs:
       - name: Check for model changes without a migration
         if: hashFiles('services/AuthService/AuthService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/AuthService
+
+      - name: Apply PatientService migrations to a clean database
+        if: hashFiles('services/PatientService/PatientService.csproj') != ''
+        run: dotnet ef database update --project services/PatientService --connection "$PATIENT_DB_CONNECTION"
+
+      - name: Check PatientService for model changes without a migration
+        if: hashFiles('services/PatientService/PatientService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/PatientService
+
+      - name: Apply QueueService migrations to a clean database
+        if: hashFiles('services/QueueService/QueueService.csproj') != ''
+        run: dotnet ef database update --project services/QueueService --connection "$QUEUE_DB_CONNECTION"
+
+      - name: Check QueueService for model changes without a migration
+        if: hashFiles('services/QueueService/QueueService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/QueueService
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})

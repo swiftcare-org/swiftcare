@@ -73,7 +73,7 @@ swiftcare/
 `-- README.md
 ```
 
-`ApiGateway/`, `services/AuthService/`, and `frontend/` are scaffolded and implement SWC-6 (user login). The remaining services under `services/` are still placeholder directories reserving the agreed layout.
+`ApiGateway/`, `services/AuthService/`, `services/PatientService/`, `services/QueueService/`, and `frontend/` contain the current Sprint 1 application slice. The remaining three services under `services/` are placeholder directories reserving the agreed layout.
 
 ## Prerequisites
 
@@ -136,11 +136,11 @@ docker compose down -v
 
 **Warning:** `docker compose down -v` permanently deletes local database data stored in Compose volumes.
 
-The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 7.6.1, Kafka UI, AuthService, and the API Gateway. The frontend still runs through Vite on the host. Kafka uses `kafka:29092` inside the Compose network and `localhost:9092` for host tools.
+The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 7.6.1, Kafka UI, AuthService, PatientService, QueueService, and the API Gateway. The frontend still runs through Vite on the host. Kafka uses `kafka:29092` inside the Compose network and `localhost:9092` for host tools.
 
 ## Running the application locally
 
-For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
+For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
 
 ### One-time database preparation
 
@@ -151,9 +151,11 @@ On an empty MySQL volume, `deployment/docker/mysql-init/01-create-databases.sh` 
 ```bash
 dotnet tool restore
 dotnet ef database update --project services/AuthService --connection "Server=localhost;Port=3306;Database=swiftcare_auth;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
+dotnet ef database update --project services/PatientService --connection "Server=localhost;Port=3306;Database=swiftcare_patient;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
+dotnet ef database update --project services/QueueService --connection "Server=localhost;Port=3306;Database=swiftcare_queue;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
 ```
 
-`--connection` is required. `AuthDbContextFactory` supplies placeholder design-time credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
+`--connection` is required. Each service's design-time DbContext factory supplies placeholder credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
 
 Re-run this after pulling any change that adds a migration.
 
@@ -297,9 +299,11 @@ A service must never query or modify another service's database. Local and CI mi
 
 `.env.example` contains safe local placeholders. Real passwords, tokens, JWT keys, Azure credentials, and connection strings must remain in local `.env` files or approved secret stores.
 
-The CD workflow reads deployment configuration from the `azure-development` GitHub Environment. Non-sensitive Azure resource identifiers, region, application/job/container names, endpoints, JWT issuer/audience, database username, frontend origin, and initial administrator display name belong in environment variables. Passwords, registry credentials, JWT signing material, gateway trust material, the Static Web Apps deployment token, and optional bootstrap credentials belong in environment secrets.
+The CD workflow reads deployment configuration from the `azure-development` GitHub Environment. Non-sensitive Azure resource identifiers, region, application/job/container names, endpoints, JWT issuer/audience, database username, frontend origins, and initial administrator display name belong in environment variables. Passwords, registry credentials, JWT signing material, gateway trust material, the Static Web Apps deployment token, and optional bootstrap credentials belong in environment secrets.
 
-Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. AuthService uses a non-administrator MySQL account restricted to `swiftcare_auth`, never the flexible-server administrator account. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
+Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. Custom-domain deployment requires `GATEWAY_ORIGIN`, `FRONTEND_ORIGIN`, and `FRONTEND_WWW_ORIGIN` to contain HTTPS origins without trailing slashes. AuthService, PatientService, and QueueService use separate non-administrator MySQL accounts restricted to `swiftcare_auth`, `swiftcare_patient`, and `swiftcare_queue` respectively, never the flexible-server administrator account.
+
+PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
 
 ## CI/CD
 
@@ -311,7 +315,7 @@ The CI workflow runs on pushes and pull requests involving `develop` or `main`, 
 - **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
 - **Validate EF Core migrations** — applies every migration to a clean MySQL 8.4 service container, then fails when the model has changed without a corresponding migration.
 - **Analyze code** — CodeQL static analysis over C# and TypeScript, reporting into the repository's Security tab.
-- **Build deployable images** — builds the API Gateway and AuthService Dockerfiles without publishing them, catching container-only failures before deployment.
+- **Build deployable images** — builds the API Gateway, AuthService, PatientService, and QueueService Dockerfiles without publishing them, catching container-only failures before deployment.
 
 Runs are grouped by workflow and ref with `cancel-in-progress`, so pushing twice in quick succession cancels the superseded run instead of executing both. NuGet packages are cached across runs, keyed on the project files and `dotnet-tools.json`.
 
@@ -331,9 +335,9 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 ### Continuous deployment
 
-A successful CI run for `main` automatically deploys the current Sprint 1 application slice to the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway and AuthService images to GHCR, run AuthService migrations as a finite Container Apps job, deploy AuthService behind internal ingress, deploy the public Gateway last, smoke-test health and login routing, and deploy the frontend to Azure Static Web Apps.
+A successful CI run for `main` automatically deploys the current Sprint 1 application slice to the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, and QueueService images to GHCR; run each service's migrations as finite Container Apps jobs; deploy AuthService and PatientService behind internal ingress; deploy QueueService as a private background Kafka consumer without ingress; deploy the public Gateway last; smoke-test health, authentication, and patient routing; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
 
-The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. The five placeholder services are not fabricated or deployed until their projects exist.
+The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. The three placeholder services are not fabricated or deployed until their projects exist.
 
 Application Insights is not configured by CD yet because the current .NET projects have no Application Insights or OpenTelemetry instrumentation package. Adding telemetry is an application change and should be completed with the observability work below rather than represented by unused environment variables.
 

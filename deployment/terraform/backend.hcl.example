@@ -1,0 +1,9 @@
+# Keep Terraform state outside swiftcare-rg so deleting or recreating the
+# application environment cannot delete the state used to manage it.
+resource_group_name  = "swiftcare-tfstate-rg"
+storage_account_name = "swiftcaretfstate"
+container_name       = "tfstate"
+key                  = "azure-development.tfstate"
+subscription_id      = "00000000-0000-0000-0000-000000000000"
+tenant_id            = "00000000-0000-0000-0000-000000000000"
+use_azuread_auth     = true

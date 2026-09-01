@@ -1,5 +1,7 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using AuthService.Data;
+using Scalar.AspNetCore;
 using AuthService.Maintenance;
 using AuthService.Middleware;
 using AuthService.Models.Configuration;
@@ -17,7 +19,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+// CreateUserRequest.Role is bound from a JSON string ("Doctor"/"Receptionist"/"Admin"),
+// matching how AuthController already serializes Role via .ToString() in responses.
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
@@ -31,6 +36,7 @@ builder.Services.AddDbContext<AuthDbContext>(options =>
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<IUserAccountService, UserAccountService>();
 
 var app = builder.Build();
 
@@ -62,6 +68,10 @@ if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // Interactive API docs at /scalar/v1, reading the /openapi/v1.json document MapOpenApi
+    // above serves. Development-only, matching MapOpenApi's own guard - never expose an
+    // API explorer against a production service.
+    app.MapScalarApiReference();
 
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();

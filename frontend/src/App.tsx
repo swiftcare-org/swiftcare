@@ -1,5 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
+import { UserManagementPage } from './pages/UserManagementPage';
+import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
+import { PatientSearchPage } from './pages/PatientSearchPage';
+import { PatientProfilePage } from './pages/PatientProfilePage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -30,6 +34,38 @@ function App() {
         element={
           <ProtectedRoute allowedRole="Admin">
             <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <UserManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reception/patients/new"
+        element={
+          <ProtectedRoute allowedRole="Receptionist">
+            <PatientRegistrationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/patients/search"
+        element={
+          <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
+            <PatientSearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/patients/:patientId"
+        element={
+          <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
+            <PatientProfilePage />
           </ProtectedRoute>
         }
       />

@@ -7,7 +7,10 @@ The React app used by clinic staff (Doctors, Receptionists, Admins). It talks on
 - `LoginPage` — username/password sign-in with client-side blank/whitespace validation, server-error mapping (401/403/other), and role-based redirect after a successful login.
 - `AuthContext` / `useAuth` — holds the decoded user in memory; the raw JWT lives in `sessionStorage` only (cleared when the tab closes — deliberate, for shared clinic workstations).
 - `ProtectedRoute` — redirects unauthenticated visitors to `/login` and role-mismatched visitors to their own dashboard.
-- Placeholder `DoctorDashboard` / `ReceptionistDashboard` / `AdminDashboard` (real content lands in later stories).
+- `UserManagementPage` (Admin) — create-staff-account form (username, password, full name, role, room number for Doctors) with server-error mapping, plus a table of existing accounts.
+- `PatientRegistrationPage` (Receptionist) — patient intake form (NIC, full name, date of birth, gender, address, phone number, blood group) mirroring PatientService's validation rules client-side.
+- `PatientSearchPage` (Receptionist) — debounced (300ms) live search by name, NIC, or phone number, suppressed below 2 characters. Distinct idle/searching/results/empty/error states; the empty state links to patient registration.
+- Placeholder `DoctorDashboard` (real content lands in a later story).
 
 ## Port
 

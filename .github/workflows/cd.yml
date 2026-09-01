@@ -1,9 +1,6 @@
 name: CD
 
-run-name: >-
-  Deploy ${{ github.event_name == 'workflow_run'
-    && github.event.workflow_run.head_sha
-    || github.sha }} to Azure development
+run-name: Deploy SwiftCare to Azure development
 
 on:
   workflow_run:
@@ -34,6 +31,8 @@ env:
   DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
   GATEWAY_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-gateway
   AUTH_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-auth
+  PATIENT_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-patient
+  QUEUE_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-queue
 
 jobs:
   manual-quality-gate:
@@ -93,9 +92,32 @@ jobs:
           cache-from: type=gha,scope=swiftcare-auth
           cache-to: type=gha,mode=max,scope=swiftcare-auth
 
+      - name: Build and push PatientService
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/PatientService/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.PATIENT_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-patient
+          cache-to: type=gha,mode=max,scope=swiftcare-patient
+
+      - name: Build and push QueueService
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/QueueService/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.QUEUE_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-queue
+          cache-to: type=gha,mode=max,scope=swiftcare-queue
+
   deploy-backend:
     name: Migrate and deploy backend
     needs: images
+    if: always() && needs.images.result == 'success'
     runs-on: ubuntu-latest
     environment: azure-development
     permissions:
@@ -112,22 +134,34 @@ jobs:
       CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
       GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
-      MIGRATE_JOB: ${{ vars.AZURE_MIGRATE_JOB }}
-      BOOTSTRAP_JOB: ${{ vars.AZURE_BOOTSTRAP_JOB }}
+      PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
+      QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
+      AUTH_MIGRATE_JOB: ${{ vars.AZURE_AUTH_MIGRATE_JOB }}
+      PATIENT_MIGRATE_JOB: ${{ vars.AZURE_PATIENT_MIGRATE_JOB }}
+      QUEUE_MIGRATE_JOB: ${{ vars.AZURE_QUEUE_MIGRATE_JOB }}
+      AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
       AUTH_DB_USER: ${{ vars.AUTH_DB_USER }}
+      PATIENT_DB_USER: ${{ vars.PATIENT_DB_USER }}
+      QUEUE_DB_USER: ${{ vars.QUEUE_DB_USER }}
       KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
       KAFKA_CONTAINER: ${{ vars.KAFKA_CONTAINER_NAME }}
       ZOOKEEPER_CONTAINER: ${{ vars.ZOOKEEPER_CONTAINER_NAME }}
       KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
+      KAFKA_PATIENT_CHECKED_IN_TOPIC: ${{ vars.KAFKA_PATIENT_CHECKED_IN_TOPIC }}
+      KAFKA_QUEUE_CONSUMER_GROUP: ${{ vars.KAFKA_QUEUE_CONSUMER_GROUP }}
       STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
       JWT_ISSUER: ${{ vars.JWT_ISSUER }}
       JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+      FRONTEND_WWW_ORIGIN: ${{ vars.FRONTEND_WWW_ORIGIN }}
+      GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       AUTH_DB_PASSWORD: ${{ secrets.AUTH_DB_PASSWORD }}
+      PATIENT_DB_PASSWORD: ${{ secrets.PATIENT_DB_PASSWORD }}
+      QUEUE_DB_PASSWORD: ${{ secrets.QUEUE_DB_PASSWORD }}
       JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
       GATEWAY_INTERNAL_SECRET: ${{ secrets.GATEWAY_INTERNAL_SECRET }}
     steps:
@@ -137,13 +171,17 @@ jobs:
           set -euo pipefail
           required=(
             AZURE_LOCATION AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID
-            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP
-            MIGRATE_JOB BOOTSTRAP_JOB
-            MYSQL_SERVER_NAME MYSQL_FQDN AUTH_DB_USER AUTH_DB_PASSWORD
+            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP QUEUE_APP
+            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB QUEUE_MIGRATE_JOB AUTH_BOOTSTRAP_JOB
+            MYSQL_SERVER_NAME MYSQL_FQDN
+            AUTH_DB_USER AUTH_DB_PASSWORD PATIENT_DB_USER PATIENT_DB_PASSWORD
+            QUEUE_DB_USER QUEUE_DB_PASSWORD
             KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
-            KAFKA_BOOTSTRAP_SERVERS STATIC_WEB_APP_NAME
+            KAFKA_BOOTSTRAP_SERVERS KAFKA_PATIENT_CHECKED_IN_TOPIC
+            KAFKA_QUEUE_CONSUMER_GROUP STATIC_WEB_APP_NAME
             JWT_ISSUER JWT_AUDIENCE JWT_SIGNING_KEY GATEWAY_INTERNAL_SECRET
-            FRONTEND_ORIGIN GHCR_USERNAME GHCR_TOKEN
+            FRONTEND_ORIGIN FRONTEND_WWW_ORIGIN GATEWAY_ORIGIN
+            GHCR_USERNAME GHCR_TOKEN
           )
 
           missing=()
@@ -158,13 +196,21 @@ jobs:
             exit 1
           fi
 
-          if [[ "$FRONTEND_ORIGIN" == */ ]]; then
-            echo "::error::FRONTEND_ORIGIN must not end with a slash"
-            exit 1
-          fi
+          for origin_name in FRONTEND_ORIGIN FRONTEND_WWW_ORIGIN GATEWAY_ORIGIN; do
+            origin="${!origin_name}"
+            if [[ "$origin" == */ ]]; then
+              echo "::error::$origin_name must not end with a slash"
+              exit 1
+            fi
 
-          if [[ "$FRONTEND_ORIGIN" != https://* ]]; then
-            echo "::error::FRONTEND_ORIGIN must be the HTTPS origin of the Azure Static Web App"
+            if [[ "$origin" != https://* ]]; then
+              echo "::error::$origin_name must be an HTTPS origin"
+              exit 1
+            fi
+          done
+
+          if [ "$FRONTEND_ORIGIN" = "$FRONTEND_WWW_ORIGIN" ]; then
+            echo "::error::FRONTEND_ORIGIN and FRONTEND_WWW_ORIGIN must be different origins"
             exit 1
           fi
 
@@ -326,40 +372,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_auth;User Id=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD};SslMode=Required;"
+          auth_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_auth;User Id=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD};SslMode=Required;"
+          patient_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_patient;User Id=${PATIENT_DB_USER};Password=${PATIENT_DB_PASSWORD};SslMode=Required;"
+          queue_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_queue;User Id=${QUEUE_DB_USER};Password=${QUEUE_DB_PASSWORD};SslMode=Required;"
 
-          echo "::add-mask::$connection"
-          echo "AUTH_DB_CONNECTION=$connection" >> "$GITHUB_ENV"
+          echo "::add-mask::$auth_connection"
+          echo "::add-mask::$patient_connection"
+          echo "::add-mask::$queue_connection"
+          {
+            echo "AUTH_DB_CONNECTION=$auth_connection"
+            echo "PATIENT_DB_CONNECTION=$patient_connection"
+            echo "QUEUE_DB_CONNECTION=$queue_connection"
+          } >> "$GITHUB_ENV"
 
-      - name: Configure the migration job
+      - name: Configure the AuthService migration job
         shell: bash
         run: |
           set -euo pipefail
           image="$AUTH_IMAGE:$DEPLOY_SHA"
 
-          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" >/dev/null 2>&1; then
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" >/dev/null 2>&1; then
             az containerapp job registry set \
-              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" \
               --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
               --only-show-errors >/dev/null
             az containerapp job secret set \
-              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" \
               --secrets "auth-db=$AUTH_DB_CONNECTION" \
               --only-show-errors >/dev/null
             az containerapp job update \
-              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
-              --image "$image" --args "--migrate" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" \
+              --image "$image" --args=--migrate \
               --cpu 0.25 --memory 0.5Gi \
               --set-env-vars "ConnectionStrings__AuthDb=secretref:auth-db" \
               --only-show-errors >/dev/null
           else
             az containerapp job create \
-              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" \
               --environment "$CONTAINERAPPS_ENVIRONMENT" \
               --trigger-type Manual \
               --replica-timeout 600 --replica-retry-limit 1 \
               --replica-completion-count 1 --parallelism 1 \
-              --image "$image" --args "--migrate" \
+              --image "$image" --args=--migrate \
               --cpu 0.25 --memory 0.5Gi \
               --registry-server ghcr.io \
               --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
@@ -368,37 +422,177 @@ jobs:
               --only-show-errors >/dev/null
           fi
 
-      - name: Apply database migrations inside the VNet
+      - name: Apply AuthService database migrations inside the VNet
         shell: bash
         run: |
           set -euo pipefail
           execution=$(az containerapp job start \
-            --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" \
             --query name --output tsv)
           echo "Started migration execution $execution"
 
           for attempt in $(seq 1 60); do
             status=$(az containerapp job execution show \
-              --resource-group "$RESOURCE_GROUP" --name "$MIGRATE_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_MIGRATE_JOB" \
               --job-execution-name "$execution" \
               --query properties.status --output tsv 2>/dev/null || true)
             case "$status" in
               Succeeded)
-                echo "Migration succeeded."
+                echo "AuthService migration succeeded."
                 exit 0
                 ;;
               Failed|Degraded)
-                echo "::error::Migration execution ended with $status"
+                echo "::error::AuthService migration execution ended with $status"
                 exit 1
                 ;;
               *)
-                echo "Migration status: ${status:-Pending} (attempt $attempt/60)"
+                echo "AuthService migration status: ${status:-Pending} (attempt $attempt/60)"
                 sleep 10
                 ;;
             esac
           done
 
-          echo "::error::Migration execution timed out after 10 minutes"
+          echo "::error::AuthService migration execution timed out after 10 minutes"
+          exit 1
+
+      - name: Configure the PatientService migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$PATIENT_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" >/dev/null 2>&1; then
+            az containerapp job registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp job secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --secrets "patient-db=$PATIENT_DB_CONNECTION" \
+              --only-show-errors >/dev/null
+            az containerapp job update \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --set-env-vars "ConnectionStrings__PatientDb=secretref:patient-db" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp job create \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --trigger-type Manual \
+              --replica-timeout 600 --replica-retry-limit 1 \
+              --replica-completion-count 1 --parallelism 1 \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --secrets "patient-db=$PATIENT_DB_CONNECTION" \
+              --env-vars "ConnectionStrings__PatientDb=secretref:patient-db" \
+              --only-show-errors >/dev/null
+          fi
+
+      - name: Apply PatientService database migrations inside the VNet
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+            --query name --output tsv)
+          echo "Started PatientService migration execution $execution"
+
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_MIGRATE_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            case "$status" in
+              Succeeded)
+                echo "PatientService migration succeeded."
+                exit 0
+                ;;
+              Failed|Degraded)
+                echo "::error::PatientService migration execution ended with $status"
+                exit 1
+                ;;
+              *)
+                echo "PatientService migration status: ${status:-Pending} (attempt $attempt/60)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::PatientService migration execution timed out after 10 minutes"
+          exit 1
+
+      - name: Configure the QueueService migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$QUEUE_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" >/dev/null 2>&1; then
+            az containerapp job registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp job secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --secrets "queue-db=$QUEUE_DB_CONNECTION" \
+              --only-show-errors >/dev/null
+            az containerapp job update \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --set-env-vars "ConnectionStrings__QueueDb=secretref:queue-db" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp job create \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --trigger-type Manual \
+              --replica-timeout 600 --replica-retry-limit 1 \
+              --replica-completion-count 1 --parallelism 1 \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --secrets "queue-db=$QUEUE_DB_CONNECTION" \
+              --env-vars "ConnectionStrings__QueueDb=secretref:queue-db" \
+              --only-show-errors >/dev/null
+          fi
+
+      - name: Apply QueueService database migrations inside the VNet
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+            --query name --output tsv)
+          echo "Started QueueService migration execution $execution"
+
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_MIGRATE_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            case "$status" in
+              Succeeded)
+                echo "QueueService migration succeeded."
+                exit 0
+                ;;
+              Failed|Degraded)
+                echo "::error::QueueService migration execution ended with $status"
+                exit 1
+                ;;
+              *)
+                echo "QueueService migration status: ${status:-Pending} (attempt $attempt/60)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::QueueService migration execution timed out after 10 minutes"
           exit 1
 
       - name: Bootstrap the initial administrator
@@ -422,10 +616,10 @@ jobs:
 
           cleanup_bootstrap_job() {
             if az containerapp job show \
-              --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_BOOTSTRAP_JOB" \
               >/dev/null 2>&1; then
               az containerapp job delete \
-                --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+                --resource-group "$RESOURCE_GROUP" --name "$AUTH_BOOTSTRAP_JOB" \
                 --yes --only-show-errors
             fi
           }
@@ -435,12 +629,12 @@ jobs:
           cleanup_bootstrap_job
 
           az containerapp job create \
-            --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_BOOTSTRAP_JOB" \
             --environment "$CONTAINERAPPS_ENVIRONMENT" \
             --trigger-type Manual \
             --replica-timeout 600 --replica-retry-limit 0 \
             --replica-completion-count 1 --parallelism 1 \
-            --image "$AUTH_IMAGE:$DEPLOY_SHA" --args "--bootstrap-admin" \
+            --image "$AUTH_IMAGE:$DEPLOY_SHA" --args=--bootstrap-admin \
             --cpu 0.25 --memory 0.5Gi \
             --registry-server ghcr.io \
             --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
@@ -456,13 +650,13 @@ jobs:
             --only-show-errors >/dev/null
 
           execution=$(az containerapp job start \
-            --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+            --resource-group "$RESOURCE_GROUP" --name "$AUTH_BOOTSTRAP_JOB" \
             --query name --output tsv)
           result=TimedOut
 
           for _ in $(seq 1 60); do
             status=$(az containerapp job execution show \
-              --resource-group "$RESOURCE_GROUP" --name "$BOOTSTRAP_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$AUTH_BOOTSTRAP_JOB" \
               --job-execution-name "$execution" \
               --query properties.status --output tsv 2>/dev/null || true)
             if [ "$status" = "Succeeded" ]; then
@@ -559,11 +753,227 @@ jobs:
             exit 1
           fi
 
+      - name: Deploy PatientService with internal ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$PATIENT_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --secrets \
+                "patient-db=$PATIENT_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5002" \
+                "ConnectionStrings__PatientDb=secretref:patient-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --ingress internal --target-port 5002 \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 0 --max-replicas 1 \
+              --secrets \
+                "patient-db=$PATIENT_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5002" \
+                "ConnectionStrings__PatientDb=secretref:patient-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp ingress enable \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --type internal --target-port 5002 --transport auto \
+            --only-show-errors >/dev/null
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          external=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --query properties.configuration.ingress.external --output tsv)
+          if [ "$external" != "false" ]; then
+            echo "::error::PatientService ingress is not internal"
+            exit 1
+          fi
+
+      - name: Deploy QueueService as a private background worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$QUEUE_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --secrets \
+                "queue-db=$QUEUE_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5003" \
+                "ConnectionStrings__QueueDb=secretref:queue-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+                "Kafka__PatientCheckedInTopic=$KAFKA_PATIENT_CHECKED_IN_TOPIC" \
+                "Kafka__ConsumerGroupId=$KAFKA_QUEUE_CONSUMER_GROUP" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 \
+              --secrets \
+                "queue-db=$QUEUE_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "ASPNETCORE_URLS=http://+:5003" \
+                "ConnectionStrings__QueueDb=secretref:queue-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
+                "Kafka__PatientCheckedInTopic=$KAFKA_PATIENT_CHECKED_IN_TOPIC" \
+                "Kafka__ConsumerGroupId=$KAFKA_QUEUE_CONSUMER_GROUP" \
+              --only-show-errors >/dev/null
+          fi
+
+          ingress_external=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --query properties.configuration.ingress.external --output tsv)
+          if [ -n "$ingress_external" ]; then
+            az containerapp ingress disable \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          running_status=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --query properties.runningStatus --output tsv)
+          if [ "$running_status" = "Stopped" ]; then
+            app_id=$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --query id --output tsv)
+            az rest \
+              --method post \
+              --uri "https://management.azure.com${app_id}/start?api-version=2026-01-01" \
+              --output none
+            echo "Start requested for $QUEUE_APP."
+          fi
+
+          for attempt in $(seq 1 60); do
+            app_state=$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+              --query "{running:properties.runningStatus,latest:properties.latestRevisionName,ready:properties.latestReadyRevisionName}" \
+              --output json)
+            running=$(jq -r '.running // empty' <<< "$app_state")
+            latest=$(jq -r '.latest // empty' <<< "$app_state")
+            ready=$(jq -r '.ready // empty' <<< "$app_state")
+
+            if [ "$running" = "Running" ] && [ -n "$latest" ] && [ "$latest" = "$ready" ]; then
+              ingress=$(az containerapp show \
+                --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+                --query properties.configuration.ingress --output json)
+              if [ -n "$ingress" ] && [ "$ingress" != "null" ]; then
+                echo "::error::QueueService must not expose ingress"
+                exit 1
+              fi
+
+              echo "QueueService revision $ready is ready without ingress."
+              exit 0
+            fi
+
+            echo "QueueService running=${running:-Unknown} latest=${latest:-Missing} ready=${ready:-Pending}; attempt $attempt/60"
+            sleep 5
+          done
+
+          echo "::error::QueueService did not become ready within 5 minutes"
+          exit 1
+
       - name: Deploy the gateway last
         id: gateway
         shell: bash
         run: |
           set -euo pipefail
+
+          start_container_app() {
+            local app_name="$1"
+            local app_id
+            local running_status
+
+            running_status=$(az containerapp show \
+              --resource-group "$RESOURCE_GROUP" --name "$app_name" \
+              --query properties.runningStatus --output tsv)
+
+            if [ "$running_status" = "Stopped" ]; then
+              app_id=$(az containerapp show \
+                --resource-group "$RESOURCE_GROUP" --name "$app_name" \
+                --query id --output tsv)
+              az rest \
+                --method post \
+                --uri "https://management.azure.com${app_id}/start?api-version=2026-01-01" \
+                --output none
+              echo "Start requested for $app_name."
+            fi
+
+            for attempt in $(seq 1 60); do
+              running_status=$(az containerapp show \
+                --resource-group "$RESOURCE_GROUP" --name "$app_name" \
+                --query properties.runningStatus --output tsv)
+              if [ "$running_status" = "Running" ]; then
+                echo "$app_name is running."
+                return 0
+              fi
+
+              echo "$app_name state is ${running_status:-Unknown}; attempt $attempt/60"
+              sleep 5
+            done
+
+            echo "::error::$app_name did not enter the Running state"
+            return 1
+          }
+
+          start_container_app "$AUTH_APP"
+          start_container_app "$PATIENT_APP"
+
           auth_fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
             --query properties.configuration.ingress.fqdn --output tsv)
@@ -572,8 +982,17 @@ jobs:
             exit 1
           fi
 
+          patient_fqdn=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
+            --query properties.configuration.ingress.fqdn --output tsv)
+          if [ -z "$patient_fqdn" ]; then
+            echo "::error::PatientService has no internal ingress FQDN"
+            exit 1
+          fi
+
           image="$GATEWAY_IMAGE:$DEPLOY_SHA"
-          proxy_address="https://${auth_fqdn}"
+          auth_proxy_address="https://${auth_fqdn}"
+          patient_proxy_address="https://${patient_fqdn}"
 
           if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" >/dev/null 2>&1; then
             az containerapp registry set \
@@ -598,7 +1017,9 @@ jobs:
                 "Jwt__Audience=$JWT_AUDIENCE" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
                 "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN" \
-                "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$proxy_address" \
+                "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN" \
+                "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$auth_proxy_address" \
+                "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
               --only-show-errors >/dev/null
           else
             az containerapp create \
@@ -621,7 +1042,9 @@ jobs:
                 "Jwt__Audience=$JWT_AUDIENCE" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
                 "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN" \
-                "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$proxy_address" \
+                "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN" \
+                "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$auth_proxy_address" \
+                "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
               --only-show-errors >/dev/null
           fi
 
@@ -633,6 +1056,8 @@ jobs:
             --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
             --mode single --only-show-errors >/dev/null
 
+          start_container_app "$GATEWAY_APP"
+
           fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
             --query properties.configuration.ingress.fqdn --output tsv)
@@ -643,7 +1068,7 @@ jobs:
 
           echo "url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke test health and AuthService routing
+      - name: Smoke test health and service routing
         shell: bash
         env:
           GATEWAY_URL: ${{ steps.gateway.outputs.url }}
@@ -686,11 +1111,67 @@ jobs:
             exit 1
           fi
 
-          echo "Gateway health and AuthService routing passed."
+          patient_token=$(
+            python3 <<'PY'
+          import base64
+          import hashlib
+          import hmac
+          import json
+          import os
+          import time
+          import uuid
+
+          def encode(value):
+              serialized = json.dumps(value, separators=(",", ":")).encode()
+              return base64.urlsafe_b64encode(serialized).rstrip(b"=").decode()
+
+          now = int(time.time())
+          header = encode({"alg": "HS256", "typ": "JWT"})
+          payload = encode({
+              "sub": "00000000-0000-0000-0000-000000000000",
+              "jti": str(uuid.uuid4()),
+              "role": "Receptionist",
+              "iss": os.environ["JWT_ISSUER"],
+              "aud": os.environ["JWT_AUDIENCE"],
+              "iat": now,
+              "nbf": now,
+              "exp": now + 300
+          })
+          unsigned = f"{header}.{payload}"
+          signature = hmac.new(
+              os.environ["JWT_SIGNING_KEY"].encode(),
+              unsigned.encode(),
+              hashlib.sha256).digest()
+          encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+          print(f"{unsigned}.{encoded_signature}")
+          PY
+          )
+
+          patient_ok=false
+          for attempt in $(seq 1 30); do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --max-time 20 \
+              --header "Authorization: Bearer $patient_token" \
+              "$GATEWAY_URL/api/patients/search?q=deployment-connectivity-check" || true)
+            if [ "$code" = "200" ]; then
+              patient_ok=true
+              break
+            fi
+            echo "Patient route returned ${code:-no response}; attempt $attempt/30"
+            sleep 10
+          done
+
+          if [ "$patient_ok" != "true" ]; then
+            echo "::error::Gateway could not reach a healthy PatientService"
+            exit 1
+          fi
+
+          echo "Gateway health, AuthService routing, and PatientService routing passed."
 
   deploy-frontend:
     name: Build and deploy frontend
     needs: deploy-backend
+    if: always() && needs.deploy-backend.result == 'success'
     runs-on: ubuntu-latest
     environment: azure-development
     steps:
@@ -709,11 +1190,11 @@ jobs:
       - name: Build against the deployed gateway
         working-directory: frontend
         env:
-          VITE_GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          VITE_GATEWAY_URL: ${{ vars.GATEWAY_ORIGIN }}
         run: |
           set -euo pipefail
           if [ -z "$VITE_GATEWAY_URL" ]; then
-            echo "::error::The backend job did not publish the gateway URL"
+            echo "::error::GATEWAY_ORIGIN is not configured"
             exit 1
           fi
           npm ci
@@ -731,14 +1212,18 @@ jobs:
 
       - name: Publish deployment summary
         env:
-          GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          AZURE_GATEWAY_URL: ${{ needs.deploy-backend.outputs.gateway_url }}
+          GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}
           FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+          FRONTEND_WWW_ORIGIN: ${{ vars.FRONTEND_WWW_ORIGIN }}
         run: |
           {
             echo "## Azure development deployment"
             echo
             echo "- Commit: \`$DEPLOY_SHA\`"
-            echo "- Gateway: $GATEWAY_URL"
+            echo "- Gateway: $GATEWAY_ORIGIN"
+            echo "- Azure Gateway endpoint: $AZURE_GATEWAY_URL"
             echo "- Frontend: $FRONTEND_ORIGIN"
-            echo "- Gateway and AuthService images use the same immutable commit tag."
+            echo "- Frontend (www): $FRONTEND_WWW_ORIGIN"
+            echo "- Gateway, AuthService, PatientService, and QueueService images use the same immutable commit tag."
           } >> "$GITHUB_STEP_SUMMARY"

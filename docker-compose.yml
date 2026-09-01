@@ -22,7 +22,9 @@ services:
     networks:
       - swiftcare-network
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      # The official image runs a temporary socket-only server while executing init
+      # scripts. Probe TCP so Compose cannot mark MySQL healthy before that finishes.
+      test: ["CMD-SHELL", "mysqladmin ping --protocol=tcp -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -127,6 +129,48 @@ services:
     networks:
       - swiftcare-network
 
+  patientservice:
+    build:
+      context: .
+      dockerfile: services/PatientService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__PatientDb: "Server=mysql;Port=3306;Database=${PATIENT_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      Kafka__BootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
+    ports:
+      - "${PATIENT_SERVICE_PORT:-5002}:5002"
+    networks:
+      - swiftcare-network
+
+  queueservice:
+    build:
+      context: .
+      dockerfile: services/QueueService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__QueueDb: "Server=mysql;Port=3306;Database=${QUEUE_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      Kafka__BootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
+    ports:
+      - "${QUEUE_SERVICE_PORT:-5003}:5003"
+    networks:
+      - swiftcare-network
+
   apigateway:
     build:
       context: .
@@ -135,6 +179,8 @@ services:
     depends_on:
       authservice:
         condition: service_healthy
+      patientservice:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       Jwt__SecretKey: ${JWT_SIGNING_KEY}
@@ -142,6 +188,7 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE}
       Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
       ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address: http://authservice:5000
+      ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address: http://patientservice:5002
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     networks:

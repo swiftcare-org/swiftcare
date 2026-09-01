@@ -19,6 +19,7 @@ public sealed class AuthServiceWebApplicationFactory : WebApplicationFactory<Pro
     public const string ValidGatewaySecret = "integration-test-gateway-secret-value";
 
     public Mock<IAuthenticationService> AuthenticationServiceMock { get; } = new();
+    public Mock<IUserAccountService> UserAccountServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -44,6 +45,9 @@ public sealed class AuthServiceWebApplicationFactory : WebApplicationFactory<Pro
 
             services.RemoveAll<IAuthenticationService>();
             services.AddScoped(_ => AuthenticationServiceMock.Object);
+
+            services.RemoveAll<IUserAccountService>();
+            services.AddScoped(_ => UserAccountServiceMock.Object);
         });
     }
 }
