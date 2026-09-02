@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace ApiGateway.UnitTests.Routing;
@@ -35,6 +36,7 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
 
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
@@ -47,7 +49,8 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
                 ["Cors:AllowedOrigins:0"] = TestFrontendOrigin,
                 // A port nothing binds to in a test environment - see class comment above.
                 ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999",
-                ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999"
+                ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:queue-cluster:Destinations:queue-destination:Address"] = "http://localhost:59999"
             });
         });
     }
