@@ -181,6 +181,8 @@ services:
         condition: service_healthy
       patientservice:
         condition: service_healthy
+      queueservice:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       Jwt__SecretKey: ${JWT_SIGNING_KEY}
@@ -189,6 +191,7 @@ services:
       Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
       ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address: http://authservice:5000
       ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address: http://patientservice:5002
+      ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address: http://queueservice:5003
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     networks:
