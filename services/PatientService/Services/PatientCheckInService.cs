@@ -22,6 +22,8 @@ public sealed class PatientCheckInService : IPatientCheckInService
         string correlationId,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
+
         var patientExists = await _dbContext.Patients
             .AsNoTracking()
             .AnyAsync(

@@ -92,6 +92,9 @@ function wait(delayMilliseconds: number): Promise<void> {
 }
 
 async function waitForQueueAssignment(patientId: string): Promise<PatientQueueStatus | null> {
+  let successfulLookup = false;
+  let lastLookupError: unknown = null;
+
   for (let attempt = 0; attempt < QUEUE_ASSIGNMENT_MAX_ATTEMPTS; attempt += 1) {
     if (attempt > 0) {
       await wait(QUEUE_ASSIGNMENT_RETRY_DELAY_MS);
@@ -99,13 +102,24 @@ async function waitForQueueAssignment(patientId: string): Promise<PatientQueueSt
 
     try {
       const status = await getPatientQueueStatus(patientId);
+      successfulLookup = true;
+      lastLookupError = null;
       if (status.isCheckedIn && status.queueNumber) {
         return status;
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        throw error;
+      }
+
+      lastLookupError = error;
       // Queue creation is asynchronous. A transient lookup failure is retried within
       // this bounded post-check-in window rather than starting permanent page polling.
     }
+  }
+
+  if (!successfulLookup && lastLookupError) {
+    throw lastLookupError;
   }
 
   return null;
@@ -235,11 +249,27 @@ export function PatientProfilePage() {
 
     try {
       await checkInPatient(patientId);
+    } catch (error) {
       if (latestRequestId.current !== requestId) {
         return;
       }
 
-      setCheckInStatus('awaitingQueue');
+      setCheckInStatus('failed');
+      setCheckInMessage(
+        error instanceof ApiError
+          ? error.message
+          : 'Unable to check in the patient. Please try again.',
+      );
+      return;
+    }
+
+    if (latestRequestId.current !== requestId) {
+      return;
+    }
+
+    setCheckInStatus('awaitingQueue');
+
+    try {
       const assignedStatus = await waitForQueueAssignment(patientId);
       if (latestRequestId.current !== requestId) {
         return;
@@ -261,11 +291,12 @@ export function PatientProfilePage() {
         return;
       }
 
-      setCheckInStatus('failed');
+      setCheckInStatus('accepted');
+      setQueueStatusLoadState('error');
       setCheckInMessage(
-        error instanceof ApiError
-          ? error.message
-          : 'Unable to check in the patient. Please try again.',
+        error instanceof ApiError && (error.status === 401 || error.status === 403)
+          ? 'Check-in was accepted, but the assigned queue number could not be retrieved. Please sign in again.'
+          : 'Check-in was accepted, but the assigned queue number could not be retrieved. Refresh the profile to check again.',
       );
     }
   }

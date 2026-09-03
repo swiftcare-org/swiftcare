@@ -122,4 +122,20 @@ public class PatientCheckInServiceTests
 
         Assert.Equal(CheckInPatientOutcome.EventPublishFailed, outcome);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task CheckInWithMissingCorrelationIdThrowsArgumentException(string correlationId)
+    {
+        await using var dbContext = CreateDbContext();
+        var publisherMock = new Mock<IPatientEventPublisher>();
+        var service = new PatientCheckInService(dbContext, publisherMock.Object);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.CheckInPatientAsync(Guid.NewGuid(), correlationId));
+
+        Assert.Equal("correlationId", exception.ParamName);
+        publisherMock.VerifyNoOtherCalls();
+    }
 }

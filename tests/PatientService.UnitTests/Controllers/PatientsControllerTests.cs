@@ -42,6 +42,8 @@ public class PatientsControllerTests
         BloodGroup = "O-"
     };
 
+    private static bool IsValidGuid(string value) => Guid.TryParse(value, out _);
+
     private static HttpClient CreateClientWithRole(PatientServiceWebApplicationFactory factory, string role)
     {
         var client = factory.CreateClient();
@@ -421,6 +423,31 @@ public class PatientsControllerTests
             service => service.CheckInPatientAsync(
                 patientId,
                 correlationId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckInPatientWithWhitespaceCorrelationIdGeneratesFallback()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientCheckInServiceMock
+            .Setup(service => service.CheckInPatientAsync(
+                patientId,
+                It.Is<string>(value => IsValidGuid(value)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CheckInPatientOutcome.Success);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        client.DefaultRequestHeaders.TryAddWithoutValidation(CorrelationIdHeaderName, "   ");
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        factory.PatientCheckInServiceMock.Verify(
+            service => service.CheckInPatientAsync(
+                patientId,
+                It.Is<string>(value => IsValidGuid(value)),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

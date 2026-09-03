@@ -130,8 +130,10 @@ public sealed class PatientsController : ControllerBase
             return forbidden;
         }
 
-        var correlationId = HttpContext.Request.Headers[CorrelationIdHeaderName].FirstOrDefault()
-            ?? Guid.NewGuid().ToString();
+        var correlationIdHeader = HttpContext.Request.Headers[CorrelationIdHeaderName].FirstOrDefault();
+        var correlationId = string.IsNullOrWhiteSpace(correlationIdHeader)
+            ? Guid.NewGuid().ToString()
+            : correlationIdHeader;
 
         var outcome = await _patientCheckInService.CheckInPatientAsync(
             id,
