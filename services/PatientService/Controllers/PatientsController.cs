@@ -114,6 +114,37 @@ public sealed class PatientsController : ControllerBase
         return Ok(profile);
     }
 
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(PatientProfileResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdatePatient(
+        Guid id,
+        [FromBody] UpdatePatientRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfRoleNotIn("Receptionist") is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        var profile = await _patientProfileService.UpdatePatientAsync(id, request, cancellationToken);
+
+        if (profile is null)
+        {
+            return NotFound(new MessageResponse("Patient not found"));
+        }
+
+        _logger.LogInformation(
+            "Patient profile updated: patientId={PatientId} by userId={UserId}",
+            id,
+            ParseUserIdHeader());
+
+        return Ok(profile);
+    }
+
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
     // request that didn't originate from the Gateway, which is the sole source of this
     // header - it derives it from the validated JWT, never from the original client.

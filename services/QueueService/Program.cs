@@ -32,6 +32,8 @@ builder.Services.AddDbContext<QueueDbContext>(options =>
 
 builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection("Queue"));
 builder.Services.AddScoped<IQueueEntryCreationService, QueueEntryCreationService>();
+builder.Services.AddScoped<IPatientQueueStatusService, PatientQueueStatusService>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 

@@ -34,4 +34,38 @@ public sealed class PatientProfileService : IPatientProfileService
             })
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    public async Task<PatientProfileResponse?> UpdatePatientAsync(
+        Guid patientId,
+        UpdatePatientRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var patient = await _dbContext.Patients
+            .Where(p => p.Id == patientId && !p.IsDeleted)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (patient is null)
+        {
+            return null;
+        }
+
+        patient.Address = request.Address.Trim();
+        patient.PhoneNumber = request.PhoneNumber.Trim();
+        patient.BloodGroup = request.BloodGroup!.Value;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new PatientProfileResponse
+        {
+            PatientId = patient.Id,
+            FullName = patient.FullName,
+            Nic = patient.Nic,
+            DateOfBirth = patient.DateOfBirth,
+            Gender = patient.Gender,
+            Address = patient.Address,
+            PhoneNumber = patient.PhoneNumber,
+            BloodGroup = patient.BloodGroup,
+            RegisteredAt = patient.CreatedAt
+        };
+    }
 }

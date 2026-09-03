@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { getPatient } from '../api/patients';
-import type { PatientProfile } from '../api/patients';
+import { getPatient, updatePatient } from '../api/patients';
+import type { BloodGroup, PatientProfile, UpdatePatientRequestBody } from '../api/patients';
+import { getPatientQueueStatus } from '../api/queue';
+import type { PatientQueueStatus } from '../api/queue';
 import { addAllergy, getAllergies, removeAllergy, updateAllergy } from '../api/allergies';
 import type { Allergy, AllergyRequestBody, AllergySeverity } from '../api/allergies';
 import { ApiError } from '../api/client';
@@ -11,6 +13,20 @@ import { roleRoutes } from '../auth/roleRoutes';
 
 type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
+type QueueStatusLoadState = 'idle' | 'loading' | 'loaded' | 'error';
+type ProfileUpdateStatus = 'idle' | 'submitting' | 'saved' | 'failed';
+
+interface ProfileEditFormState {
+  address: string;
+  phoneNumber: string;
+  bloodGroup: BloodGroup;
+}
+
+interface ProfileFieldErrors {
+  address: string | null;
+  phoneNumber: string | null;
+  bloodGroup: string | null;
+}
 
 interface AllergyFormState {
   allergyName: string;
@@ -26,12 +42,19 @@ interface AllergyFieldErrors {
 const EMPTY_FIELD_ERRORS: AllergyFieldErrors = { allergyName: null, severity: null };
 const EMPTY_FORM: AllergyFormState = { allergyName: '', severity: 'Severe', notes: '' };
 const SEVERITY_OPTIONS: AllergySeverity[] = ['Severe', 'Moderate', 'Mild'];
+const EMPTY_PROFILE_FIELD_ERRORS: ProfileFieldErrors = {
+  address: null,
+  phoneNumber: null,
+  bloodGroup: null,
+};
+const BLOOD_GROUP_OPTIONS: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
+const PHONE_PATTERN = /^(0[0-9]{9}|\+94[0-9]{9})$/;
 
 const GENERIC_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 const FORBIDDEN_MANAGE_MESSAGE = 'You are not authorized to manage allergies.';
 
 function inputClassName(hasError: boolean): string {
-  return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
+  return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 read-only:bg-slate-100 read-only:text-slate-600 disabled:bg-slate-100 disabled:text-slate-400 ${
     hasError ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
   }`;
 }
@@ -44,6 +67,40 @@ function severityBadgeClassName(severity: AllergySeverity): string {
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString();
+}
+
+function calculateAge(dateOfBirth: string): number {
+  const [year, month, day] = dateOfBirth.slice(0, 10).split('-').map(Number);
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  const birthdayHasPassed =
+    today.getMonth() + 1 > month ||
+    (today.getMonth() + 1 === month && today.getDate() >= day);
+
+  if (!birthdayHasPassed) {
+    age -= 1;
+  }
+
+  return age;
+}
+
+function validateProfileForm(form: ProfileEditFormState): ProfileFieldErrors {
+  const address = form.address.trim();
+  const phoneNumber = form.phoneNumber.trim();
+
+  return {
+    address: address
+      ? address.length <= 256
+        ? null
+        : 'Address must be 256 characters or fewer.'
+      : 'Address is required.',
+    phoneNumber: phoneNumber
+      ? PHONE_PATTERN.test(phoneNumber)
+        ? null
+        : 'Phone number must be a valid Sri Lankan number.'
+      : 'Phone number is required.',
+    bloodGroup: form.bloodGroup ? null : 'Blood group is required.',
+  };
 }
 
 function validateForm(form: AllergyFormState): AllergyFieldErrors {
@@ -59,10 +116,19 @@ export function PatientProfilePage() {
   const { user } = useAuth();
   const backRoute = user ? roleRoutes[user.role] : '/login';
   const canManage = user?.role === 'Doctor' || user?.role === 'Receptionist';
+  const isReceptionist = user?.role === 'Receptionist';
 
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
+  const [queueStatus, setQueueStatus] = useState<PatientQueueStatus | null>(null);
+  const [queueStatusLoadState, setQueueStatusLoadState] = useState<QueueStatusLoadState>('idle');
+
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState<ProfileEditFormState | null>(null);
+  const [profileFieldErrors, setProfileFieldErrors] = useState<ProfileFieldErrors>(EMPTY_PROFILE_FIELD_ERRORS);
+  const [profileUpdateStatus, setProfileUpdateStatus] = useState<ProfileUpdateStatus>('idle');
+  const [profileServerMessage, setProfileServerMessage] = useState<string | null>(null);
 
   const [addForm, setAddForm] = useState<AllergyFormState>(EMPTY_FORM);
   const [addFieldErrors, setAddFieldErrors] = useState<AllergyFieldErrors>(EMPTY_FIELD_ERRORS);
@@ -88,14 +154,31 @@ export function PatientProfilePage() {
 
     const requestId = ++latestRequestId.current;
     setLoadStatus('loading');
+    setQueueStatus(null);
+    setQueueStatusLoadState(isReceptionist ? 'loading' : 'idle');
 
-    Promise.all([getPatient(patientId), getAllergies(patientId)])
-      .then(([loadedPatient, loadedAllergies]) => {
+    const queueStatusRequest = isReceptionist
+      ? getPatientQueueStatus(patientId)
+          .then((status) => ({ status, failed: false as const }))
+          .catch(() => ({ status: null, failed: true as const }))
+      : Promise.resolve({ status: null, failed: false as const });
+
+    Promise.all([getPatient(patientId), getAllergies(patientId), queueStatusRequest])
+      .then(([loadedPatient, loadedAllergies, loadedQueueStatus]) => {
         if (latestRequestId.current !== requestId) {
           return;
         }
         setPatient(loadedPatient);
         setAllergies(loadedAllergies);
+        setProfileForm({
+          address: loadedPatient.address,
+          phoneNumber: loadedPatient.phoneNumber,
+          bloodGroup: loadedPatient.bloodGroup,
+        });
+        setQueueStatus(loadedQueueStatus.status);
+        setQueueStatusLoadState(
+          isReceptionist ? (loadedQueueStatus.failed ? 'error' : 'loaded') : 'idle',
+        );
         setLoadStatus('loaded');
       })
       .catch((error) => {
@@ -108,7 +191,88 @@ export function PatientProfilePage() {
           setLoadStatus('error');
         }
       });
-  }, [patientId]);
+  }, [isReceptionist, patientId]);
+
+  function startProfileEdit() {
+    if (!patient) {
+      return;
+    }
+
+    setProfileForm({
+      address: patient.address,
+      phoneNumber: patient.phoneNumber,
+      bloodGroup: patient.bloodGroup,
+    });
+    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
+    setProfileUpdateStatus('idle');
+    setProfileServerMessage(null);
+    setIsEditingProfile(true);
+  }
+
+  function cancelProfileEdit() {
+    setIsEditingProfile(false);
+    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
+    setProfileUpdateStatus('idle');
+    setProfileServerMessage(null);
+  }
+
+  function clearProfileFieldError(field: keyof ProfileFieldErrors) {
+    setProfileFieldErrors((previous) =>
+      previous[field] ? { ...previous, [field]: null } : previous,
+    );
+    if (profileUpdateStatus === 'failed') {
+      setProfileUpdateStatus('idle');
+      setProfileServerMessage(null);
+    }
+  }
+
+  async function handleProfileUpdate(event: FormEvent) {
+    event.preventDefault();
+    if (!patientId || !profileForm) {
+      return;
+    }
+
+    const errors = validateProfileForm(profileForm);
+    setProfileFieldErrors(errors);
+    if (Object.values(errors).some((error) => error !== null)) {
+      return;
+    }
+
+    setProfileUpdateStatus('submitting');
+    setProfileServerMessage(null);
+
+    const request: UpdatePatientRequestBody = {
+      address: profileForm.address.trim(),
+      phoneNumber: profileForm.phoneNumber.trim(),
+      bloodGroup: profileForm.bloodGroup,
+    };
+
+    try {
+      const updatedPatient = await updatePatient(patientId, request);
+      setPatient(updatedPatient);
+      setProfileForm({
+        address: updatedPatient.address,
+        phoneNumber: updatedPatient.phoneNumber,
+        bloodGroup: updatedPatient.bloodGroup,
+      });
+      setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
+      setProfileUpdateStatus('saved');
+      setIsEditingProfile(false);
+    } catch (error) {
+      setProfileUpdateStatus('failed');
+      if (error instanceof ApiError && error.status === 400 && Object.keys(error.fieldErrors).length > 0) {
+        setProfileFieldErrors((previous) => ({
+          address: error.fieldErrors.address ?? previous.address,
+          phoneNumber: error.fieldErrors.phonenumber ?? previous.phoneNumber,
+          bloodGroup: error.fieldErrors.bloodgroup ?? previous.bloodGroup,
+        }));
+      } else if (error instanceof ApiError && error.status === 403) {
+        setProfileServerMessage('You are not authorized to update patient profiles.');
+      } else {
+        setProfileServerMessage('Unable to update the patient profile. Please try again.');
+      }
+    }
+  }
 
   async function refetchAllergies() {
     if (!patientId) {
@@ -261,13 +425,85 @@ export function PatientProfilePage() {
 
       {loadStatus === 'loaded' && patient && (
         <>
+          {isReceptionist && (
+            <div className="mt-6" aria-live="polite">
+              {queueStatusLoadState === 'loading' && (
+                <p className="text-sm text-slate-500">Checking today&apos;s queue…</p>
+              )}
+              {queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && (
+                <div className="border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Already checked in — Queue: {queueStatus.queueNumber}
+                  </p>
+                </div>
+              )}
+              {/* SWC-13 owns visibility based on today's queue status. SWC-15 will attach
+                  the check-in mutation, so the control remains non-actionable here. */}
+              {queueStatusLoadState === 'loaded' && queueStatus && !queueStatus.isCheckedIn && (
+                <button
+                  type="button"
+                  disabled
+                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Check In
+                </button>
+              )}
+              {queueStatusLoadState === 'error' && (
+                <p className="border-l-2 border-red-600 pl-2 text-sm text-red-700">
+                  Unable to check today&apos;s queue status.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div aria-live="polite">
+            {profileUpdateStatus === 'saved' && (
+              <div className="mt-6 border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-emerald-800">
+                  Profile Updated
+                </p>
+                <p className="mt-1 text-sm text-emerald-900">Patient profile updated successfully.</p>
+              </div>
+            )}
+          </div>
+
           <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Patient</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{patient.fullName}</p>
-            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Patient</p>
+                <p className="mt-1 text-2xl font-semibold text-slate-900">{patient.fullName}</p>
+              </div>
+              {isReceptionist && !isEditingProfile && (
+                <button
+                  type="button"
+                  onClick={startProfileEdit}
+                  className="border-2 border-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:bg-brand-blue hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                >
+                  Edit Profile
+                </button>
+              )}
+            </div>
+
+            <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Patient ID</dt>
+                <dd className="break-all text-slate-800">{patient.patientId}</dd>
+              </div>
               <div>
                 <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">NIC</dt>
                 <dd className="text-slate-800">{patient.nic}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Date of Birth</dt>
+                <dd className="text-slate-800">{formatDate(patient.dateOfBirth)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Age</dt>
+                <dd className="text-slate-800">{calculateAge(patient.dateOfBirth)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Gender</dt>
+                <dd className="text-slate-800">{patient.gender}</dd>
               </div>
               <div>
                 <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Phone</dt>
@@ -278,10 +514,145 @@ export function PatientProfilePage() {
                 <dd className="text-slate-800">{patient.bloodGroup}</dd>
               </div>
               <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Date of Birth</dt>
-                <dd className="text-slate-800">{formatDate(patient.dateOfBirth)}</dd>
+                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Address</dt>
+                <dd className="whitespace-pre-wrap text-slate-800">{patient.address}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Registration Date</dt>
+                <dd className="text-slate-800">{formatDate(patient.registeredAt)}</dd>
               </div>
             </dl>
+
+            {isReceptionist && isEditingProfile && profileForm && (
+              <form onSubmit={handleProfileUpdate} noValidate className="mt-6 border-t border-slate-300 pt-6">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Edit Profile</p>
+
+                {profileUpdateStatus === 'failed' && profileServerMessage && (
+                  <p className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700">
+                    {profileServerMessage}
+                  </p>
+                )}
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="profile-nic" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      NIC
+                    </label>
+                    <input
+                      id="profile-nic"
+                      type="text"
+                      value={patient.nic}
+                      readOnly
+                      aria-readonly="true"
+                      className={inputClassName(false)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="profile-date-of-birth" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      Date of Birth
+                    </label>
+                    <input
+                      id="profile-date-of-birth"
+                      type="date"
+                      value={patient.dateOfBirth.slice(0, 10)}
+                      readOnly
+                      aria-readonly="true"
+                      className={inputClassName(false)}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="profile-address" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      Address
+                    </label>
+                    <textarea
+                      id="profile-address"
+                      rows={3}
+                      value={profileForm.address}
+                      onChange={(event) => {
+                        setProfileForm((previous) => previous ? { ...previous, address: event.target.value } : previous);
+                        clearProfileFieldError('address');
+                      }}
+                      disabled={profileUpdateStatus === 'submitting'}
+                      aria-invalid={profileFieldErrors.address ? true : undefined}
+                      aria-describedby={profileFieldErrors.address ? 'profile-address-error' : undefined}
+                      className={inputClassName(!!profileFieldErrors.address)}
+                    />
+                    {profileFieldErrors.address && (
+                      <p id="profile-address-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                        {profileFieldErrors.address}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="profile-phone-number" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      Phone Number
+                    </label>
+                    <input
+                      id="profile-phone-number"
+                      type="tel"
+                      value={profileForm.phoneNumber}
+                      onChange={(event) => {
+                        setProfileForm((previous) => previous ? { ...previous, phoneNumber: event.target.value } : previous);
+                        clearProfileFieldError('phoneNumber');
+                      }}
+                      disabled={profileUpdateStatus === 'submitting'}
+                      aria-invalid={profileFieldErrors.phoneNumber ? true : undefined}
+                      aria-describedby={profileFieldErrors.phoneNumber ? 'profile-phone-number-error' : undefined}
+                      className={inputClassName(!!profileFieldErrors.phoneNumber)}
+                    />
+                    {profileFieldErrors.phoneNumber && (
+                      <p id="profile-phone-number-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                        {profileFieldErrors.phoneNumber}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="profile-blood-group" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      Blood Group
+                    </label>
+                    <select
+                      id="profile-blood-group"
+                      value={profileForm.bloodGroup}
+                      onChange={(event) => {
+                        setProfileForm((previous) => previous ? { ...previous, bloodGroup: event.target.value as BloodGroup } : previous);
+                        clearProfileFieldError('bloodGroup');
+                      }}
+                      disabled={profileUpdateStatus === 'submitting'}
+                      aria-invalid={profileFieldErrors.bloodGroup ? true : undefined}
+                      aria-describedby={profileFieldErrors.bloodGroup ? 'profile-blood-group-error' : undefined}
+                      className={inputClassName(!!profileFieldErrors.bloodGroup)}
+                    >
+                      {BLOOD_GROUP_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                    {profileFieldErrors.bloodGroup && (
+                      <p id="profile-blood-group-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                        {profileFieldErrors.bloodGroup}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={profileUpdateStatus === 'submitting'}
+                    className="bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {profileUpdateStatus === 'submitting' ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelProfileEdit}
+                    disabled={profileUpdateStatus === 'submitting'}
+                    className="border-2 border-slate-400 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
 
           {/* Red alert banner: derives from the same allergies list the table renders, so
@@ -493,6 +864,13 @@ export function PatientProfilePage() {
                 </table>
               </div>
             )}
+          </div>
+
+          <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+              Chronic Conditions
+            </p>
+            <p className="mt-3 text-sm text-slate-500">No chronic conditions recorded</p>
           </div>
 
           {canManage && (

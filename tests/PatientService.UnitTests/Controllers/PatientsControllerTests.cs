@@ -34,6 +34,13 @@ public class PatientsControllerTests
         BloodGroup = "A+"
     };
 
+    private static object ValidUpdatePatientBody() => new
+    {
+        Address = "456 Updated Road, Colombo",
+        PhoneNumber = "0777654321",
+        BloodGroup = "O-"
+    };
+
     private static HttpClient CreateClientWithRole(PatientServiceWebApplicationFactory factory, string role)
     {
         var client = factory.CreateClient();
@@ -387,6 +394,110 @@ public class PatientsControllerTests
         var response = await client.GetAsync($"/api/patients/{patientId}");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdatePatientWithValidRequestReturns200WithUpdatedProfile()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var expected = new PatientProfileResponse
+        {
+            PatientId = patientId,
+            FullName = "Test Patient",
+            Nic = "199012345678",
+            DateOfBirth = new DateOnly(1990, 4, 17),
+            Gender = Gender.Male,
+            Address = "456 Updated Road, Colombo",
+            PhoneNumber = "0777654321",
+            BloodGroup = BloodGroup.ONegative,
+            RegisteredAt = DateTime.UtcNow
+        };
+        factory.PatientProfileServiceMock
+            .Setup(s => s.UpdatePatientAsync(
+                patientId, It.IsAny<UpdatePatientRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.PutAsJsonAsync($"/api/patients/{patientId}", ValidUpdatePatientBody());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<PatientProfileResponse>(StringEnumOptions);
+        Assert.NotNull(body);
+        Assert.Equal("456 Updated Road, Colombo", body!.Address);
+        Assert.Equal("0777654321", body.PhoneNumber);
+        Assert.Equal(BloodGroup.ONegative, body.BloodGroup);
+    }
+
+    [Fact]
+    public async Task UpdatePatientWithMissingRequiredFieldsReturns400()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = CreateClientWithRole(factory, "Receptionist");
+
+        var response = await client.PutAsJsonAsync($"/api/patients/{patientId}", new { });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var errors = await ReadValidationErrorsAsync(response);
+        Assert.True(errors.ContainsKey("Address"));
+        Assert.True(errors.ContainsKey("PhoneNumber"));
+        Assert.True(errors.ContainsKey("BloodGroup"));
+        factory.PatientProfileServiceMock.Verify(
+            s => s.UpdatePatientAsync(
+                It.IsAny<Guid>(), It.IsAny<UpdatePatientRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdatePatientForUnknownIdReturns404()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientProfileServiceMock
+            .Setup(s => s.UpdatePatientAsync(
+                patientId, It.IsAny<UpdatePatientRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PatientProfileResponse?)null);
+        var client = CreateClientWithRole(factory, "Receptionist");
+
+        var response = await client.PutAsJsonAsync($"/api/patients/{patientId}", ValidUpdatePatientBody());
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task UpdatePatientWithNonReceptionistRoleReturns403(string role)
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = CreateClientWithRole(factory, role);
+
+        var response = await client.PutAsJsonAsync($"/api/patients/{patientId}", ValidUpdatePatientBody());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.PatientProfileServiceMock.Verify(
+            s => s.UpdatePatientAsync(
+                It.IsAny<Guid>(), It.IsAny<UpdatePatientRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdatePatientWithoutGatewaySecretReturns401()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(UserRoleHeaderName, "Receptionist");
+
+        var response = await client.PutAsJsonAsync($"/api/patients/{patientId}", ValidUpdatePatientBody());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.PatientProfileServiceMock.Verify(
+            s => s.UpdatePatientAsync(
+                It.IsAny<Guid>(), It.IsAny<UpdatePatientRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private static async Task<Dictionary<string, string[]>> ReadValidationErrorsAsync(HttpResponseMessage response)

@@ -53,3 +53,19 @@ export interface PatientProfile {
 export function getPatient(patientId: string): Promise<PatientProfile> {
   return apiRequest<PatientProfile>(`/api/patients/${encodeURIComponent(patientId)}`);
 }
+
+export interface UpdatePatientRequestBody {
+  address: string;
+  phoneNumber: string;
+  bloodGroup: BloodGroup;
+}
+
+export function updatePatient(
+  patientId: string,
+  request: UpdatePatientRequestBody,
+): Promise<PatientProfile> {
+  return apiRequest<PatientProfile>(`/api/patients/${encodeURIComponent(patientId)}`, {
+    method: 'PUT',
+    body: request,
+  });
+}
