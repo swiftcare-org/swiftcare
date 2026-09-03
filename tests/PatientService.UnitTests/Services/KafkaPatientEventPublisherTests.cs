@@ -83,6 +83,35 @@ public class KafkaPatientEventPublisherTests
     }
 
     [Fact]
+    public async Task ReturningPatientEventHasIsNewPatientFalse()
+    {
+        var producerMock = new Mock<IProducer<string, string>>();
+        Message<string, string>? capturedMessage = null;
+
+        producerMock
+            .Setup(producer => producer.ProduceAsync(
+                It.IsAny<string>(),
+                It.IsAny<Message<string, string>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, Message<string, string>, CancellationToken>(
+                (_, message, _) => capturedMessage = message)
+            .ReturnsAsync(new DeliveryResult<string, string>());
+
+        var publisher = CreatePublisher(producerMock);
+        var patientId = Guid.NewGuid();
+
+        await publisher.PublishPatientCheckedInAsync(
+            patientId,
+            isNewPatient: false,
+            correlationId: "returning-correlation-id");
+
+        var payload = JsonSerializer.Deserialize<PatientCheckedInEvent>(capturedMessage!.Value)!;
+        Assert.Equal(patientId, payload.PatientId);
+        Assert.False(payload.IsNewPatient);
+        Assert.Equal("returning-correlation-id", payload.CorrelationId);
+    }
+
+    [Fact]
     public async Task CorrelationIdIsAttachedAsAMessageHeader()
     {
         var producerMock = new Mock<IProducer<string, string>>();

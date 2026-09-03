@@ -16,12 +16,14 @@ namespace PatientService.UnitTests.Controllers;
 // isolation. The database is swapped for EF Core InMemory, IPatientRegistrationService and
 // IPatientSearchService are swapped for mocks (their own behavior is covered by
 // PatientRegistrationServiceTests and PatientSearchServiceTests respectively), and
-// IPatientEventPublisher is swapped for a mock so no real Kafka producer is constructed.
+// IPatientCheckInService is also mocked for controller-level check-in coverage, and
+// IPatientEventPublisher is swapped so no real Kafka producer is constructed.
 public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<Program>
 {
     public const string ValidGatewaySecret = "integration-test-gateway-secret-value";
 
     public Mock<IPatientRegistrationService> PatientRegistrationServiceMock { get; } = new();
+    public Mock<IPatientCheckInService> PatientCheckInServiceMock { get; } = new();
     public Mock<IPatientSearchService> PatientSearchServiceMock { get; } = new();
     public Mock<IPatientProfileService> PatientProfileServiceMock { get; } = new();
     public Mock<IAllergyService> AllergyServiceMock { get; } = new();
@@ -53,6 +55,9 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
 
             services.RemoveAll<IPatientRegistrationService>();
             services.AddScoped(_ => PatientRegistrationServiceMock.Object);
+
+            services.RemoveAll<IPatientCheckInService>();
+            services.AddScoped(_ => PatientCheckInServiceMock.Object);
 
             services.RemoveAll<IPatientSearchService>();
             services.AddScoped(_ => PatientSearchServiceMock.Object);
