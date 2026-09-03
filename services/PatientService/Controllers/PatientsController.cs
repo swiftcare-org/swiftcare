@@ -15,17 +15,20 @@ public sealed class PatientsController : ControllerBase
     private const string CorrelationIdHeaderName = "X-Correlation-ID";
 
     private readonly IPatientRegistrationService _patientRegistrationService;
+    private readonly IPatientCheckInService _patientCheckInService;
     private readonly IPatientSearchService _patientSearchService;
     private readonly IPatientProfileService _patientProfileService;
     private readonly ILogger<PatientsController> _logger;
 
     public PatientsController(
         IPatientRegistrationService patientRegistrationService,
+        IPatientCheckInService patientCheckInService,
         IPatientSearchService patientSearchService,
         IPatientProfileService patientProfileService,
         ILogger<PatientsController> logger)
     {
         _patientRegistrationService = patientRegistrationService;
+        _patientCheckInService = patientCheckInService;
         _patientSearchService = patientSearchService;
         _patientProfileService = patientProfileService;
         _logger = logger;
@@ -112,6 +115,47 @@ public sealed class PatientsController : ControllerBase
         }
 
         return Ok(profile);
+    }
+
+    [HttpPost("{id:guid}/check-in")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> CheckInPatient(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfRoleNotIn("Receptionist") is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        var correlationId = HttpContext.Request.Headers[CorrelationIdHeaderName].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var outcome = await _patientCheckInService.CheckInPatientAsync(
+            id,
+            correlationId,
+            cancellationToken);
+
+        if (outcome == CheckInPatientOutcome.PatientNotFound)
+        {
+            return NotFound(new MessageResponse("Patient not found"));
+        }
+
+        if (outcome == CheckInPatientOutcome.EventPublishFailed)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new MessageResponse("Unable to check in patient. Please try again."));
+        }
+
+        _logger.LogInformation(
+            "Returning patient check-in accepted: patientId={PatientId} by userId={UserId}",
+            id,
+            ParseUserIdHeader());
+
+        return Accepted(new MessageResponse("Patient check-in accepted"));
     }
 
     [HttpPut("{id:guid}")]
