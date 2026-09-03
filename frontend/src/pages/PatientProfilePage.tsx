@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { getPatient, updatePatient } from '../api/patients';
+import { checkInPatient, getPatient, updatePatient } from '../api/patients';
 import type { BloodGroup, PatientProfile, UpdatePatientRequestBody } from '../api/patients';
 import { getPatientQueueStatus } from '../api/queue';
 import type { PatientQueueStatus } from '../api/queue';
@@ -15,6 +15,7 @@ type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
 type QueueStatusLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type ProfileUpdateStatus = 'idle' | 'submitting' | 'saved' | 'failed';
+type CheckInStatus = 'idle' | 'submitting' | 'awaitingQueue' | 'succeeded' | 'accepted' | 'failed';
 
 interface ProfileEditFormState {
   address: string;
@@ -49,6 +50,8 @@ const EMPTY_PROFILE_FIELD_ERRORS: ProfileFieldErrors = {
 };
 const BLOOD_GROUP_OPTIONS: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 const PHONE_PATTERN = /^(0[0-9]{9}|\+94[0-9]{9})$/;
+const QUEUE_ASSIGNMENT_MAX_ATTEMPTS = 20;
+const QUEUE_ASSIGNMENT_RETRY_DELAY_MS = 500;
 
 const GENERIC_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 const FORBIDDEN_MANAGE_MESSAGE = 'You are not authorized to manage allergies.';
@@ -82,6 +85,44 @@ function calculateAge(dateOfBirth: string): number {
   }
 
   return age;
+}
+
+function wait(delayMilliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMilliseconds));
+}
+
+async function waitForQueueAssignment(patientId: string): Promise<PatientQueueStatus | null> {
+  let successfulLookup = false;
+  let lastLookupError: unknown = null;
+
+  for (let attempt = 0; attempt < QUEUE_ASSIGNMENT_MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await wait(QUEUE_ASSIGNMENT_RETRY_DELAY_MS);
+    }
+
+    try {
+      const status = await getPatientQueueStatus(patientId);
+      successfulLookup = true;
+      lastLookupError = null;
+      if (status.isCheckedIn && status.queueNumber) {
+        return status;
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        throw error;
+      }
+
+      lastLookupError = error;
+      // Queue creation is asynchronous. A transient lookup failure is retried within
+      // this bounded post-check-in window rather than starting permanent page polling.
+    }
+  }
+
+  if (!successfulLookup && lastLookupError) {
+    throw lastLookupError;
+  }
+
+  return null;
 }
 
 function validateProfileForm(form: ProfileEditFormState): ProfileFieldErrors {
@@ -123,6 +164,8 @@ export function PatientProfilePage() {
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [queueStatus, setQueueStatus] = useState<PatientQueueStatus | null>(null);
   const [queueStatusLoadState, setQueueStatusLoadState] = useState<QueueStatusLoadState>('idle');
+  const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>('idle');
+  const [checkInMessage, setCheckInMessage] = useState<string | null>(null);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState<ProfileEditFormState | null>(null);
@@ -156,6 +199,8 @@ export function PatientProfilePage() {
     setLoadStatus('loading');
     setQueueStatus(null);
     setQueueStatusLoadState(isReceptionist ? 'loading' : 'idle');
+    setCheckInStatus('idle');
+    setCheckInMessage(null);
 
     const queueStatusRequest = isReceptionist
       ? getPatientQueueStatus(patientId)
@@ -192,6 +237,69 @@ export function PatientProfilePage() {
         }
       });
   }, [isReceptionist, patientId]);
+
+  async function handleCheckIn() {
+    if (!patientId || !patient || !isReceptionist) {
+      return;
+    }
+
+    const requestId = latestRequestId.current;
+    setCheckInStatus('submitting');
+    setCheckInMessage(null);
+
+    try {
+      await checkInPatient(patientId);
+    } catch (error) {
+      if (latestRequestId.current !== requestId) {
+        return;
+      }
+
+      setCheckInStatus('failed');
+      setCheckInMessage(
+        error instanceof ApiError
+          ? error.message
+          : 'Unable to check in the patient. Please try again.',
+      );
+      return;
+    }
+
+    if (latestRequestId.current !== requestId) {
+      return;
+    }
+
+    setCheckInStatus('awaitingQueue');
+
+    try {
+      const assignedStatus = await waitForQueueAssignment(patientId);
+      if (latestRequestId.current !== requestId) {
+        return;
+      }
+
+      if (!assignedStatus) {
+        setCheckInStatus('accepted');
+        setCheckInMessage(
+          'Check-in accepted. The queue number is still being assigned. Refresh the profile to check again.',
+        );
+        return;
+      }
+
+      setQueueStatus(assignedStatus);
+      setQueueStatusLoadState('loaded');
+      setCheckInStatus('succeeded');
+    } catch (error) {
+      if (latestRequestId.current !== requestId) {
+        return;
+      }
+
+      setCheckInStatus('accepted');
+      setQueueStatusLoadState('error');
+      setCheckInMessage(
+        error instanceof ApiError && (error.status === 401 || error.status === 403)
+          ? 'Check-in was accepted, but the assigned queue number could not be retrieved. Please sign in again.'
+          : 'Check-in was accepted, but the assigned queue number could not be retrieved. Refresh the profile to check again.',
+      );
+    }
+  }
 
   function startProfileEdit() {
     if (!patient) {
@@ -430,22 +538,45 @@ export function PatientProfilePage() {
               {queueStatusLoadState === 'loading' && (
                 <p className="text-sm text-slate-500">Checking today&apos;s queue…</p>
               )}
-              {queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && (
+              {checkInStatus === 'succeeded' && queueStatus?.isCheckedIn && (
+                <div className="border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
+                  <p className="text-sm font-semibold text-emerald-900">
+                    {patient.fullName} checked in. Queue: {queueStatus.queueNumber}
+                  </p>
+                </div>
+              )}
+              {checkInStatus !== 'succeeded' && queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && (
                 <div className="border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3">
                   <p className="text-sm font-semibold text-amber-900">
                     Already checked in — Queue: {queueStatus.queueNumber}
                   </p>
                 </div>
               )}
-              {/* SWC-13 owns visibility based on today's queue status. SWC-15 will attach
-                  the check-in mutation, so the control remains non-actionable here. */}
-              {queueStatusLoadState === 'loaded' && queueStatus && !queueStatus.isCheckedIn && (
+              {checkInMessage && checkInStatus === 'failed' && (
+                <p className="mb-3 border-l-2 border-red-600 pl-2 text-sm text-red-700">
+                  {checkInMessage}
+                </p>
+              )}
+              {checkInMessage && checkInStatus === 'accepted' && (
+                <p className="border-l-2 border-amber-600 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {checkInMessage}
+                </p>
+              )}
+              {queueStatusLoadState === 'loaded' &&
+                queueStatus &&
+                !queueStatus.isCheckedIn &&
+                checkInStatus !== 'accepted' && (
                 <button
                   type="button"
-                  disabled
-                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleCheckIn}
+                  disabled={checkInStatus === 'submitting' || checkInStatus === 'awaitingQueue'}
+                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Check In
+                  {checkInStatus === 'submitting'
+                    ? 'Checking In…'
+                    : checkInStatus === 'awaitingQueue'
+                      ? 'Assigning Queue…'
+                      : 'Check In'}
                 </button>
               )}
               {queueStatusLoadState === 'error' && (

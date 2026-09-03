@@ -4,15 +4,16 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 
 ## What it does
 
-- Consumes the `patient-checked-in` Kafka topic (produced by PatientService on successful patient registration).
+- Consumes the `patient-checked-in` Kafka topic produced by PatientService for successful new-patient registration and returning-patient check-in.
 - For each event, allocates the next sequential queue number for that clinic-local day (`Q-001`, `Q-002`, ...) inside a database transaction, and creates a `QueueEntry` with `Status = Waiting` and `RoomNumber = NULL`.
 - The daily sequence resets at midnight in the clinic's local timezone (`Asia/Colombo` by default), not at UTC midnight — a UTC-date reset would roll the counter over at 05:30 local time instead.
 - Idempotent against Kafka's at-least-once delivery: a redelivered event (same `EventId`) is recognized via a `ProcessedEvents` ledger and skipped without creating a duplicate entry.
 - `UNIQUE (PatientId, QueueDate)` and `UNIQUE (QueueDate, QueueNumber)` constraints are the database-level backstop — a second event for the same patient on the same day (even with a different `EventId`) is rejected and logged, not silently duplicated.
+- `GET /api/queue/today/patient/{patientId}` — returns whether a patient is in today's queue and their assigned queue number. Receptionist only.
 - `GET /health` — liveness/readiness check.
-- Enforces the Gateway trust boundary via `GatewaySecretMiddleware`, matching every other service, even though this service currently exposes no other HTTP endpoint.
+- Enforces the Gateway trust boundary via `GatewaySecretMiddleware`, matching every other service.
 
-This story (SWC-19) is deliberately consume-only. There is no read API yet — no endpoint returns queue entries, and no frontend surface exists. Displaying the queue (queue number, waiting list, calling patients) is a separate future story.
+The read API is deliberately limited to one patient's status for the reception profile workflow. It does not expose the full queue, waiting pool, room assignments, or public display data.
 
 ## Port
 
@@ -53,7 +54,7 @@ docker compose up --detach --no-deps --wait queueservice
 curl http://localhost:5003/health
 ```
 
-Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes Kafka messages in the background; it is not called by the API Gateway for the current SWC-19 scope.
+Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes Kafka messages in the background and serves the receptionist-only patient-status lookup through ApiGateway.
 
 For controlled deployments, the published service image can apply migrations and
 exit without starting the web host:
@@ -67,7 +68,7 @@ returns a non-zero exit code on failure, and is safe to run repeatedly.
 
 ## API documentation
 
-With `ASPNETCORE_ENVIRONMENT=Development`, an interactive API explorer (Scalar) is served at [`http://localhost:5003/scalar/v1`](http://localhost:5003/scalar/v1), reading the raw OpenAPI document at `/openapi/v1.json`. Both are reachable without an `X-Gateway-Secret` header — `GatewaySecretMiddleware` exempts them the same way it exempts `/health` — but they do not exist at all outside Development. There is currently nothing to document beyond `/health`, since this service exposes no business endpoints yet.
+With `ASPNETCORE_ENVIRONMENT=Development`, an interactive API explorer (Scalar) is served at [`http://localhost:5003/scalar/v1`](http://localhost:5003/scalar/v1), reading the raw OpenAPI document at `/openapi/v1.json`. Both are reachable without an `X-Gateway-Secret` header — `GatewaySecretMiddleware` exempts them the same way it exempts `/health` — but they do not exist at all outside Development.
 
 ## Kafka
 
@@ -87,9 +88,8 @@ Tests use `Microsoft.EntityFrameworkCore.Sqlite` (in-memory, relational) rather 
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
+| `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber }` for today's clinic-local queue |
 | `GET` | `/health` | none | Health check |
-
-No other HTTP endpoints exist yet. See "What it does" above for the Kafka consumer's behavior instead.
 
 ## Deployment
 
@@ -99,8 +99,7 @@ Azure deployment uses a dedicated `swiftcare_queue` database account and require
 
 ## Known scope bounds
 
-- **No read API.** Nothing returns queue entries over HTTP. Displaying the queue (queue number, waiting list, calling patients, room assignment) is a separate future story.
-- **No returning-patient check-in flow exists yet.** The only current producer of `patient-checked-in` is PatientService's *new*-patient registration endpoint (see PatientService's README). A returning patient checking in again is a separate story (SWC-13); until then, Scenario 4 (same patient, same day) is only reachable by hand-publishing a second event to Kafka, not through the running application.
+- **No queue-list read API.** Only the per-patient status lookup exists. Full-queue, waiting-pool, room-assignment, and public-display APIs remain separate stories.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.
 - **Queue numbers are not gap-free.** A transaction that rolls back after incrementing the counter leaves a gap in that day's sequence. The story requires "the next daily queue number", not gapless numbering.
 - **Unknown `PatientId` is trusted, not verified.** The consumer never calls back into PatientService to confirm a patient exists — it trusts the event, since it originates from the owning service and a synchronous callback would couple this service's availability to PatientService's.

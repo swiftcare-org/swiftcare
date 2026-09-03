@@ -7,6 +7,8 @@ Registers and stores patient records for SwiftCare. PatientService owns the `swi
 - `POST /api/patients` — registers a new patient (NIC, full name, date of birth, gender, address, phone number, blood group), rejecting duplicate NICs. Publishes a `patient-checked-in` Kafka event on success.
 - `GET /api/patients/search?q=` — searches patients by partial or full name, NIC, or phone number, case insensitive. Returns up to 20 matches (name, NIC, phone, blood group only), ordered by name. A term shorter than 2 characters, or no term at all, returns an empty array rather than a validation error. Open to Doctor, Receptionist, and Admin.
 - `GET /api/patients/{id}` — returns a patient's profile for the patient-profile view. Open to Doctor, Receptionist, and Admin.
+- `PUT /api/patients/{id}` — updates a patient's address, phone number, and blood group. NIC and date of birth are not part of the update contract. Receptionist only.
+- `POST /api/patients/{id}/check-in` — verifies that a returning patient exists and publishes a `patient-checked-in` event with `isNewPatient: false`. Returns `202 Accepted` after publication; QueueService assigns the queue number asynchronously. Receptionist only.
 - `GET /api/patients/{id}/allergies` — returns a patient's recorded allergies, ordered Severe first, then Moderate, then Mild, newest first within a severity. Open to Doctor, Receptionist, and Admin.
 - `POST /api/patients/{id}/allergies` — records an allergy (name, severity, optional notes). Doctor and Receptionist only.
 - `PUT /api/patients/{id}/allergies/{allergyId}` — updates an allergy's name, severity, and notes. Doctor and Receptionist only.
@@ -23,7 +25,7 @@ Registers and stores patient records for SwiftCare. PatientService owns the `swi
 - .NET 10 SDK
 - MySQL 8.4 reachable at the connection string in `ConnectionStrings:PatientDb` (see the repository root `docker-compose.yml` for local MySQL)
 - EF Core 9 / Pomelo MySQL provider (pinned below EF Core 10 until Pomelo releases `net10` support)
-- A reachable Kafka broker for the `patient-checked-in` topic (see the repository root `docker-compose.yml`) — reachability is not required at startup, only for the publish step of registration (see "Kafka" below)
+- A reachable Kafka broker for the `patient-checked-in` topic (see the repository root `docker-compose.yml`) — reachability is not required at startup, only when registration or returning-patient check-in publishes an event (see "Kafka" below)
 - `dotnet-ef` as a local tool (already restored via the repository's `dotnet-tools.json`)
 
 ## Required environment variables
@@ -71,7 +73,7 @@ With `ASPNETCORE_ENVIRONMENT=Development`, an interactive API explorer (Scalar) 
 
 ## Kafka
 
-PatientService validates only that `Kafka:BootstrapServers` is *configured* at startup, never that the broker is *reachable* — the service must start and serve `/health` even when Kafka is down, per SwiftCare's independent-deployability rule. If the broker is unreachable when a patient is registered, the publish is bounded by `Kafka:MessageTimeoutMs` (default 5000ms) so the request cannot hang, the failure is logged at `Error` with the patient ID and correlation ID, and the registration request still returns `201 Created` — the patient record is the source of truth and is not rolled back. A transactional outbox for guaranteed event delivery is a future story; today, a lost event means the patient exists but was never queued, with no automatic reconciliation.
+PatientService validates only that `Kafka:BootstrapServers` is *configured* at startup, never that the broker is *reachable* — the service must start and serve `/health` even when Kafka is down, per SwiftCare's independent-deployability rule. Every publish is bounded by `Kafka:MessageTimeoutMs` (default 5000ms) so an unreachable broker cannot hang an HTTP request. Registration still returns `201 Created` after a publish failure because the new patient record has already been committed as the source of truth. Returning-patient check-in instead returns `503 Service Unavailable` when publication fails, because no new patient data was created and the check-in cannot reach QueueService. Successful returning check-in returns `202 Accepted`; the frontend then reads QueueService until the asynchronously assigned queue number is available.
 
 ## Testing
 
@@ -79,7 +81,7 @@ PatientService validates only that `Kafka:BootstrapServers` is *configured* at s
 dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj
 ```
 
-Tests use EF Core InMemory and Moq exclusively — no real database, network connection, or Kafka broker is required to run them. Coverage includes DTO validation (NIC/phone formats, blood group, date-of-birth bounds, allergy name/severity/notes), the Kafka publisher (topic, key, payload shape, no-PHI assertion, timeout/failure handling), the registration service (duplicate NIC including soft-deleted rows, NIC normalization, publish-failure tolerance), patient search (partial/case-insensitive matching across name/NIC/phone, soft-delete exclusion, result cap and ordering, empty-result and below-minimum-length handling, no-unnecessary-PHI response shape), the patient profile service (existing/unknown/soft-deleted patient), the allergy service (severity ordering, soft-delete exclusion, cross-patient isolation on every operation, blank-notes normalization), and the full controller pipeline via `WebApplicationFactory` (200/201/204/400/401/403/404 paths) including per-role authorization on every allergy endpoint.
+Tests use EF Core InMemory and Moq exclusively — no real database, network connection, or Kafka broker is required to run them. Coverage includes DTO validation (NIC/phone formats, blood group, date-of-birth bounds, allergy name/severity/notes), the Kafka publisher (topic, key, payload shape, `isNewPatient` values, no-PHI assertion, timeout/failure handling), the registration and returning-patient check-in services, patient search, patient profile retrieval and update, allergy management, and the full controller pipeline via `WebApplicationFactory` including role authorization and error responses.
 
 ## Endpoints
 
@@ -88,6 +90,8 @@ Tests use EF Core InMemory and Moq exclusively — no real database, network con
 | `POST` | `/api/patients` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Registers a patient, returns `{ patientId, createdAt }` on success |
 | `GET` | `/api/patients/search?q=` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist\|Admin` | Searches by name/NIC/phone, returns an array of `{ patientId, fullName, nic, phoneNumber, bloodGroup }` (possibly empty) |
 | `GET` | `/api/patients/{id}` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist\|Admin` | Returns the patient's profile, or `404` if unknown |
+| `PUT` | `/api/patients/{id}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Updates address, phone number, and blood group, or returns `404` if unknown |
+| `POST` | `/api/patients/{id}/check-in` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Publishes a returning-patient check-in and returns `202`, `404`, or `503` |
 | `GET` | `/api/patients/{id}/allergies` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist\|Admin` | Returns the patient's allergies (Severe first), or `404` if the patient is unknown |
 | `POST` | `/api/patients/{id}/allergies` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist` | Records an allergy, returns `201` with the created allergy |
 | `PUT` | `/api/patients/{id}/allergies/{allergyId}` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist` | Updates an allergy, returns `200` with the updated allergy, or `404` if the allergy doesn't belong to this patient |
@@ -98,7 +102,7 @@ See `Controllers/PatientsController.cs` and `Controllers/AllergiesController.cs`
 
 ## Known scope bounds
 
-- No queue number is returned or assigned. QueueService owns queue numbering (see its own README) — this endpoint only publishes the `patient-checked-in` event that triggers it.
+- PatientService never assigns or returns a queue number. QueueService owns numbering; after `202 Accepted`, the frontend obtains the assigned number through QueueService's patient-status endpoint.
 - No phone-number normalization: a patient stored as `+94771234567` is not found by a search for `0771234567`, or vice versa, unless the shared digits are typed.
 - Patient search is not audited — nothing records who searched for what. If searches must be audit-logged for compliance, that is a separate story.
 - QueueService consumes `patient-checked-in` (see its own README); verify publication via Kafka UI (`localhost:8080` in the local compose stack) or the resulting `QueueEntries` row.

@@ -69,3 +69,14 @@ export function updatePatient(
     body: request,
   });
 }
+
+export interface CheckInPatientAcceptedResponse {
+  message: string;
+}
+
+export function checkInPatient(patientId: string): Promise<CheckInPatientAcceptedResponse> {
+  return apiRequest<CheckInPatientAcceptedResponse>(
+    `/api/patients/${encodeURIComponent(patientId)}/check-in`,
+    { method: 'POST' },
+  );
+}
