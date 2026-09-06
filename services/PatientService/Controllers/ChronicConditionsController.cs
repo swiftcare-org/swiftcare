@@ -98,6 +98,10 @@ public sealed class ChronicConditionsController : ControllerBase
             : NotFound(new MessageResponse(ConditionNotFoundMessage));
     }
 
+    // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
+    // request that didn't originate from the Gateway - see the identical comment on
+    // PatientsController.RejectIfRoleNotIn for the full rationale. Kept local to mirror
+    // the enforcement used by the other PatientService controllers.
     private IActionResult? RejectIfRoleNotIn(params string[] allowedRoles)
     {
         var role = HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault();
