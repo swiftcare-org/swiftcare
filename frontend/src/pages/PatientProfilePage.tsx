@@ -16,6 +16,7 @@ import { roleRoutes } from '../auth/roleRoutes';
 type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
 type QueueStatusLoadState = 'idle' | 'loading' | 'loaded' | 'error';
+type ConditionsLoadState = 'loading' | 'loaded' | 'error';
 type ProfileUpdateStatus = 'idle' | 'submitting' | 'saved' | 'failed';
 type CheckInStatus = 'idle' | 'submitting' | 'awaitingQueue' | 'succeeded' | 'accepted' | 'failed';
 
@@ -200,6 +201,7 @@ export function PatientProfilePage() {
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [conditions, setConditions] = useState<ChronicCondition[]>([]);
+  const [conditionsLoadState, setConditionsLoadState] = useState<ConditionsLoadState>('loading');
   const [queueStatus, setQueueStatus] = useState<PatientQueueStatus | null>(null);
   const [queueStatusLoadState, setQueueStatusLoadState] = useState<QueueStatusLoadState>('idle');
   const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>('idle');
@@ -244,6 +246,8 @@ export function PatientProfilePage() {
 
     const requestId = ++latestRequestId.current;
     setLoadStatus('loading');
+    setConditions([]);
+    setConditionsLoadState('loading');
     setQueueStatus(null);
     setQueueStatusLoadState(isReceptionist ? 'loading' : 'idle');
     setCheckInStatus('idle');
@@ -255,14 +259,19 @@ export function PatientProfilePage() {
           .catch(() => ({ status: null, failed: true as const }))
       : Promise.resolve({ status: null, failed: false as const });
 
-    Promise.all([getPatient(patientId), getAllergies(patientId), getConditions(patientId), queueStatusRequest])
+    const conditionsRequest = getConditions(patientId)
+      .then((items) => ({ items, failed: false as const }))
+      .catch(() => ({ items: [], failed: true as const }));
+
+    Promise.all([getPatient(patientId), getAllergies(patientId), conditionsRequest, queueStatusRequest])
       .then(([loadedPatient, loadedAllergies, loadedConditions, loadedQueueStatus]) => {
         if (latestRequestId.current !== requestId) {
           return;
         }
         setPatient(loadedPatient);
         setAllergies(loadedAllergies);
-        setConditions(loadedConditions);
+        setConditions(loadedConditions.items);
+        setConditionsLoadState(loadedConditions.failed ? 'error' : 'loaded');
         setProfileForm({
           address: loadedPatient.address,
           phoneNumber: loadedPatient.phoneNumber,
@@ -1137,7 +1146,14 @@ export function PatientProfilePage() {
               </p>
             )}
 
-            {conditions.length === 0 ? (
+            {conditionsLoadState === 'error' ? (
+              <p
+                className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700"
+                role="alert"
+              >
+                Unable to load chronic conditions. The rest of the patient profile remains available.
+              </p>
+            ) : conditions.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">No chronic conditions recorded</p>
             ) : (
               <div className="mt-3 overflow-x-auto border border-slate-300">
@@ -1212,7 +1228,7 @@ export function PatientProfilePage() {
             )}
           </div>
 
-          {isReceptionist && (
+          {isReceptionist && conditionsLoadState !== 'error' && (
             <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
               <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                 Add Condition
