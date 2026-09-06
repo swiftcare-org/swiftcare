@@ -55,6 +55,7 @@ builder.Services.AddScoped<IPatientCheckInService, PatientCheckInService>();
 builder.Services.AddScoped<IPatientSearchService, PatientSearchService>();
 builder.Services.AddScoped<IPatientProfileService, PatientProfileService>();
 builder.Services.AddScoped<IAllergyService, AllergyService>();
+builder.Services.AddScoped<IChronicConditionService, ChronicConditionService>();
 
 var app = builder.Build();
 
