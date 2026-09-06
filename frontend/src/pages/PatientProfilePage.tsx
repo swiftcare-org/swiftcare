@@ -75,6 +75,7 @@ const BLOOD_GROUP_OPTIONS: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', '
 const PHONE_PATTERN = /^(0[0-9]{9}|\+94[0-9]{9})$/;
 const QUEUE_ASSIGNMENT_MAX_ATTEMPTS = 20;
 const QUEUE_ASSIGNMENT_RETRY_DELAY_MS = 500;
+const CLINIC_TIME_ZONE = 'Asia/Colombo';
 
 const GENERIC_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 const FORBIDDEN_MANAGE_MESSAGE = 'You are not authorized to manage allergies.';
@@ -111,7 +112,15 @@ function calculateAge(dateOfBirth: string): number {
 }
 
 function todayForDateInput(): string {
-  return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLINIC_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function wait(delayMilliseconds: number): Promise<void> {

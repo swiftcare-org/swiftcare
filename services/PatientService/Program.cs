@@ -35,6 +35,33 @@ builder.Services.AddHealthChecks();
 builder.Services.AddDbContext<PatientDbContext>(options =>
     options.UseMySql(builder.Configuration.GetConnectionString("PatientDb"), new MySqlServerVersion(new Version(8, 4, 0))));
 
+builder.Services.AddOptions<ClinicOptions>()
+    .Bind(builder.Configuration.GetSection(ClinicOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.TimeZoneId),
+        "Clinic:TimeZoneId is required.")
+    .Validate(
+        options =>
+        {
+            try
+            {
+                _ = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZoneId);
+                return true;
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return false;
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return false;
+            }
+        },
+        "Clinic:TimeZoneId must identify a valid time zone.")
+    .ValidateOnStart();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IClinicDateProvider, ClinicDateProvider>();
+
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 
 // Registered as a singleton - IProducer is thread-safe and expensive to construct, so one

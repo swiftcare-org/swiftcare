@@ -90,6 +90,39 @@ public class ChronicConditionsControllerTests
     }
 
     [Fact]
+    public async Task AddConditionWithClinicLocalTodayReturns201WhileUtcDateIsPreviousDay()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var expected = new ChronicConditionResponse
+        {
+            ConditionId = Guid.NewGuid(),
+            ConditionName = "Hypertension",
+            DateDiagnosed = PatientServiceWebApplicationFactory.FixedClinicToday
+        };
+        factory.ChronicConditionServiceMock
+            .Setup(service => service.AddConditionAsync(
+                patientId,
+                It.Is<ChronicConditionRequest>(request =>
+                    request.DateDiagnosed == PatientServiceWebApplicationFactory.FixedClinicToday),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var client = CreateClientWithRole(factory, "Receptionist");
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/patients/{patientId}/conditions",
+            new
+            {
+                ConditionName = "Hypertension",
+                DateDiagnosed = PatientServiceWebApplicationFactory.FixedClinicToday.ToString("yyyy-MM-dd")
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        factory.ChronicConditionServiceMock.VerifyAll();
+    }
+
+    [Fact]
     public async Task AddConditionWithFutureDiagnosedDateReturns400WithExactMessage()
     {
         using var factory = new PatientServiceWebApplicationFactory();
@@ -101,7 +134,7 @@ public class ChronicConditionsControllerTests
             new
             {
                 ConditionName = "Hypertension",
-                DateDiagnosed = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1).ToString("yyyy-MM-dd")
+                DateDiagnosed = PatientServiceWebApplicationFactory.FixedClinicToday.AddDays(1).ToString("yyyy-MM-dd")
             });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

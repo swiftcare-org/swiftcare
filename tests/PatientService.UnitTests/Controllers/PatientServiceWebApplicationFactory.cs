@@ -21,6 +21,14 @@ namespace PatientService.UnitTests.Controllers;
 public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<Program>
 {
     public const string ValidGatewaySecret = "integration-test-gateway-secret-value";
+    public static readonly DateTimeOffset FixedUtcNow =
+        new(2026, 9, 9, 20, 30, 0, TimeSpan.Zero);
+    public static readonly DateOnly FixedClinicToday = new(2026, 9, 10);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 
     public Mock<IPatientRegistrationService> PatientRegistrationServiceMock { get; } = new();
     public Mock<IPatientCheckInService> PatientCheckInServiceMock { get; } = new();
@@ -43,6 +51,7 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
             {
                 ["ConnectionStrings:PatientDb"] = "Server=localhost;Database=unused;User=unused;Password=unused;",
                 ["Gateway:InternalSecret"] = ValidGatewaySecret,
+                ["Clinic:TimeZoneId"] = "Asia/Colombo",
                 ["Kafka:BootstrapServers"] = "unused:9092",
                 ["Kafka:PatientCheckedInTopic"] = "patient-checked-in"
             });
@@ -53,6 +62,9 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
             services.RemoveAll<DbContextOptions<PatientDbContext>>();
             services.AddDbContext<PatientDbContext>(options =>
                 options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedUtcNow));
 
             services.RemoveAll<IPatientRegistrationService>();
             services.AddScoped(_ => PatientRegistrationServiceMock.Object);
