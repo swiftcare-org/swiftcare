@@ -22,6 +22,7 @@ public class PatientsControllerTests
     private const string GatewaySecretHeaderName = "X-Gateway-Secret";
     private const string UserRoleHeaderName = "X-User-Role";
     private const string UserIdHeaderName = "X-User-Id";
+    private const string CorrelationIdHeaderName = "X-Correlation-ID";
 
     private static object ValidRegisterPatientBody() => new
     {
@@ -40,6 +41,8 @@ public class PatientsControllerTests
         PhoneNumber = "0777654321",
         BloodGroup = "O-"
     };
+
+    private static bool IsValidGuid(string value) => Guid.TryParse(value, out _);
 
     private static HttpClient CreateClientWithRole(PatientServiceWebApplicationFactory factory, string role)
     {
@@ -394,6 +397,136 @@ public class PatientsControllerTests
         var response = await client.GetAsync($"/api/patients/{patientId}");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CheckInExistingPatientAsReceptionistReturns202()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        const string correlationId = "check-in-correlation-id";
+        factory.PatientCheckInServiceMock
+            .Setup(service => service.CheckInPatientAsync(
+                patientId,
+                correlationId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CheckInPatientOutcome.Success);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        client.DefaultRequestHeaders.Add(CorrelationIdHeaderName, correlationId);
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Patient check-in accepted", body!.Message);
+        factory.PatientCheckInServiceMock.Verify(
+            service => service.CheckInPatientAsync(
+                patientId,
+                correlationId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckInPatientWithWhitespaceCorrelationIdGeneratesFallback()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientCheckInServiceMock
+            .Setup(service => service.CheckInPatientAsync(
+                patientId,
+                It.Is<string>(value => IsValidGuid(value)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CheckInPatientOutcome.Success);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        client.DefaultRequestHeaders.TryAddWithoutValidation(CorrelationIdHeaderName, "   ");
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        factory.PatientCheckInServiceMock.Verify(
+            service => service.CheckInPatientAsync(
+                patientId,
+                It.Is<string>(value => IsValidGuid(value)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckInUnknownPatientReturns404()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientCheckInServiceMock
+            .Setup(service => service.CheckInPatientAsync(
+                patientId,
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CheckInPatientOutcome.PatientNotFound);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Patient not found", body!.Message);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task CheckInPatientWithNonReceptionistRoleReturns403(string role)
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = CreateClientWithRole(factory, role);
+
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.PatientCheckInServiceMock.Verify(
+            service => service.CheckInPatientAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CheckInPatientWithoutGatewaySecretReturns401()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(UserRoleHeaderName, "Receptionist");
+
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.PatientCheckInServiceMock.Verify(
+            service => service.CheckInPatientAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CheckInPatientWhenEventPublishFailsReturns503()
+    {
+        using var factory = new PatientServiceWebApplicationFactory();
+        var patientId = Guid.NewGuid();
+        factory.PatientCheckInServiceMock
+            .Setup(service => service.CheckInPatientAsync(
+                patientId,
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CheckInPatientOutcome.EventPublishFailed);
+
+        var client = CreateClientWithRole(factory, "Receptionist");
+        var response = await client.PostAsync($"/api/patients/{patientId}/check-in", null);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
     }
 
     [Fact]
