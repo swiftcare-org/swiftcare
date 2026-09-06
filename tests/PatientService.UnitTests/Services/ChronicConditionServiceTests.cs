@@ -37,13 +37,13 @@ public class ChronicConditionServiceTests
         string name,
         DateOnly diagnosedDate,
         bool isDeleted = false) => new()
-    {
-        PatientId = patientId,
-        ConditionName = name,
-        DateDiagnosed = diagnosedDate,
-        Notes = "Ongoing treatment",
-        IsDeleted = isDeleted
-    };
+        {
+            PatientId = patientId,
+            ConditionName = name,
+            DateDiagnosed = diagnosedDate,
+            Notes = "Ongoing treatment",
+            IsDeleted = isDeleted
+        };
 
     [Fact]
     public async Task AddConditionPersistsNameDiagnosedDateAndNotes()
