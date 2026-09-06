@@ -1151,7 +1151,7 @@ export function PatientProfilePage() {
                 className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700"
                 role="alert"
               >
-                Unable to load chronic conditions. The rest of the patient profile remains available.
+                Unable to load chronic conditions.
               </p>
             ) : conditions.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">No chronic conditions recorded</p>
