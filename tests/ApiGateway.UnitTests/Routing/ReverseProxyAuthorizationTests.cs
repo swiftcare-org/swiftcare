@@ -527,6 +527,84 @@ public class ReverseProxyAuthorizationTests
         Assert.Equal(HttpStatusCode.Unauthorized, postResponse.StatusCode);
     }
 
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task ChronicConditionReadRouteIsReachableByAuthorizedProfileRoles(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync($"/api/patients/{Guid.NewGuid()}/conditions");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChronicConditionMutationRoutesAreReachableByReceptionist()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var postResponse = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions",
+            new StringContent("{}"));
+        Assert.NotEqual(HttpStatusCode.Unauthorized, postResponse.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, postResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions/{Guid.NewGuid()}");
+        Assert.NotEqual(HttpStatusCode.Unauthorized, deleteResponse.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task ChronicConditionMutationRoutesRejectNonReceptionists(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var postResponse = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions",
+            new StringContent("{}"));
+        Assert.Equal(HttpStatusCode.Forbidden, postResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChronicConditionRoutesWithoutBearerTokenAreRejectedWith401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var getResponse = await client.GetAsync($"/api/patients/{Guid.NewGuid()}/conditions");
+        Assert.Equal(HttpStatusCode.Unauthorized, getResponse.StatusCode);
+
+        var postResponse = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions",
+            new StringContent("{}"));
+        Assert.Equal(HttpStatusCode.Unauthorized, postResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.Unauthorized, deleteResponse.StatusCode);
+    }
+
     [Fact]
     public async Task ConfiguredFrontendOriginReceivesCorsHeader()
     {
