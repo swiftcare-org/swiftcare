@@ -7,6 +7,8 @@ import { getPatientQueueStatus } from '../api/queue';
 import type { PatientQueueStatus } from '../api/queue';
 import { addAllergy, getAllergies, removeAllergy, updateAllergy } from '../api/allergies';
 import type { Allergy, AllergyRequestBody, AllergySeverity } from '../api/allergies';
+import { addCondition, getConditions, removeCondition } from '../api/conditions';
+import type { ChronicCondition, ChronicConditionRequestBody } from '../api/conditions';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
@@ -40,9 +42,29 @@ interface AllergyFieldErrors {
   severity: string | null;
 }
 
+interface ConditionFormState {
+  conditionName: string;
+  dateDiagnosed: string;
+  notes: string;
+}
+
+interface ConditionFieldErrors {
+  conditionName: string | null;
+  dateDiagnosed: string | null;
+}
+
 const EMPTY_FIELD_ERRORS: AllergyFieldErrors = { allergyName: null, severity: null };
 const EMPTY_FORM: AllergyFormState = { allergyName: '', severity: 'Severe', notes: '' };
 const SEVERITY_OPTIONS: AllergySeverity[] = ['Severe', 'Moderate', 'Mild'];
+const EMPTY_CONDITION_FORM: ConditionFormState = {
+  conditionName: '',
+  dateDiagnosed: '',
+  notes: '',
+};
+const EMPTY_CONDITION_FIELD_ERRORS: ConditionFieldErrors = {
+  conditionName: null,
+  dateDiagnosed: null,
+};
 const EMPTY_PROFILE_FIELD_ERRORS: ProfileFieldErrors = {
   address: null,
   phoneNumber: null,
@@ -85,6 +107,12 @@ function calculateAge(dateOfBirth: string): number {
   }
 
   return age;
+}
+
+function todayForDateInput(): string {
+  const today = new Date();
+  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
 }
 
 function wait(delayMilliseconds: number): Promise<void> {
@@ -152,6 +180,17 @@ function validateForm(form: AllergyFormState): AllergyFieldErrors {
   };
 }
 
+function validateConditionForm(form: ConditionFormState): ConditionFieldErrors {
+  return {
+    conditionName: form.conditionName.trim() ? null : 'Condition name is required',
+    dateDiagnosed: !form.dateDiagnosed
+      ? 'Diagnosed date is required.'
+      : form.dateDiagnosed > todayForDateInput()
+        ? 'Diagnosed date cannot be in the future'
+        : null,
+  };
+}
+
 export function PatientProfilePage() {
   const { patientId } = useParams<{ patientId: string }>();
   const { user } = useAuth();
@@ -162,6 +201,7 @@ export function PatientProfilePage() {
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
+  const [conditions, setConditions] = useState<ChronicCondition[]>([]);
   const [queueStatus, setQueueStatus] = useState<PatientQueueStatus | null>(null);
   const [queueStatusLoadState, setQueueStatusLoadState] = useState<QueueStatusLoadState>('idle');
   const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>('idle');
@@ -187,6 +227,15 @@ export function PatientProfilePage() {
   const [confirmingRemovalId, setConfirmingRemovalId] = useState<string | null>(null);
   const [removeServerMessage, setRemoveServerMessage] = useState<string | null>(null);
 
+  const [conditionForm, setConditionForm] = useState<ConditionFormState>(EMPTY_CONDITION_FORM);
+  const [conditionFieldErrors, setConditionFieldErrors] = useState<ConditionFieldErrors>(
+    EMPTY_CONDITION_FIELD_ERRORS,
+  );
+  const [conditionAddStatus, setConditionAddStatus] = useState<FormStatus>('idle');
+  const [conditionAddServerMessage, setConditionAddServerMessage] = useState<string | null>(null);
+  const [confirmingConditionRemovalId, setConfirmingConditionRemovalId] = useState<string | null>(null);
+  const [conditionRemoveServerMessage, setConditionRemoveServerMessage] = useState<string | null>(null);
+
   const latestRequestId = useRef(0);
 
   useEffect(() => {
@@ -208,13 +257,14 @@ export function PatientProfilePage() {
           .catch(() => ({ status: null, failed: true as const }))
       : Promise.resolve({ status: null, failed: false as const });
 
-    Promise.all([getPatient(patientId), getAllergies(patientId), queueStatusRequest])
-      .then(([loadedPatient, loadedAllergies, loadedQueueStatus]) => {
+    Promise.all([getPatient(patientId), getAllergies(patientId), getConditions(patientId), queueStatusRequest])
+      .then(([loadedPatient, loadedAllergies, loadedConditions, loadedQueueStatus]) => {
         if (latestRequestId.current !== requestId) {
           return;
         }
         setPatient(loadedPatient);
         setAllergies(loadedAllergies);
+        setConditions(loadedConditions);
         setProfileForm({
           address: loadedPatient.address,
           phoneNumber: loadedPatient.phoneNumber,
@@ -503,6 +553,76 @@ export function PatientProfilePage() {
       } else {
         setRemoveServerMessage(GENERIC_ERROR_MESSAGE);
       }
+    }
+  }
+
+  async function handleConditionAddSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!patientId || !isReceptionist) {
+      return;
+    }
+
+    const errors = validateConditionForm(conditionForm);
+    setConditionFieldErrors(errors);
+    if (errors.conditionName || errors.dateDiagnosed) {
+      return;
+    }
+
+    setConditionAddStatus('submitting');
+    setConditionAddServerMessage(null);
+
+    const request: ChronicConditionRequestBody = {
+      conditionName: conditionForm.conditionName.trim(),
+      dateDiagnosed: conditionForm.dateDiagnosed,
+      notes: conditionForm.notes.trim() || null,
+    };
+
+    try {
+      const addedCondition = await addCondition(patientId, request);
+      setConditions((previous) =>
+        [...previous, addedCondition].sort(
+          (left, right) =>
+            right.dateDiagnosed.localeCompare(left.dateDiagnosed) ||
+            left.conditionName.localeCompare(right.conditionName),
+        ),
+      );
+      setConditionForm(EMPTY_CONDITION_FORM);
+      setConditionFieldErrors(EMPTY_CONDITION_FIELD_ERRORS);
+      setConditionAddStatus('idle');
+    } catch (error) {
+      setConditionAddStatus('failed');
+      if (error instanceof ApiError && error.status === 400 && Object.keys(error.fieldErrors).length > 0) {
+        setConditionFieldErrors((previous) => ({
+          conditionName: error.fieldErrors.conditionname ?? previous.conditionName,
+          dateDiagnosed: error.fieldErrors.datediagnosed ?? previous.dateDiagnosed,
+        }));
+      } else if (error instanceof ApiError && error.status === 403) {
+        setConditionAddServerMessage('You are not authorized to manage chronic conditions.');
+      } else {
+        setConditionAddServerMessage(GENERIC_ERROR_MESSAGE);
+      }
+    }
+  }
+
+  async function handleConfirmConditionRemove(conditionId: string) {
+    if (!patientId || !isReceptionist) {
+      return;
+    }
+
+    setConditionRemoveServerMessage(null);
+    try {
+      await removeCondition(patientId, conditionId);
+      setConditions((previous) =>
+        previous.filter((condition) => condition.conditionId !== conditionId),
+      );
+      setConfirmingConditionRemovalId(null);
+    } catch (error) {
+      setConfirmingConditionRemovalId(null);
+      setConditionRemoveServerMessage(
+        error instanceof ApiError && error.status === 403
+          ? 'You are not authorized to manage chronic conditions.'
+          : GENERIC_ERROR_MESSAGE,
+      );
     }
   }
 
@@ -798,6 +918,17 @@ export function PatientProfilePage() {
             </div>
           )}
 
+          {user?.role === 'Doctor' && conditions.length > 0 && (
+            <div className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3" role="alert">
+              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
+                Chronic Condition Alert
+              </p>
+              <p className="mt-1 text-sm text-amber-900">
+                {conditions.map((condition) => condition.conditionName).join(', ')}
+              </p>
+            </div>
+          )}
+
           <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Allergies</p>
 
@@ -1001,8 +1132,177 @@ export function PatientProfilePage() {
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
               Chronic Conditions
             </p>
-            <p className="mt-3 text-sm text-slate-500">No chronic conditions recorded</p>
+
+            {conditionRemoveServerMessage && (
+              <p className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700">
+                {conditionRemoveServerMessage}
+              </p>
+            )}
+
+            {conditions.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">No chronic conditions recorded</p>
+            ) : (
+              <div className="mt-3 overflow-x-auto border border-slate-300">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
+                        Condition
+                      </th>
+                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
+                        Date Diagnosed
+                      </th>
+                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
+                        Notes
+                      </th>
+                      {isReceptionist && (
+                        <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
+                          Actions
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {conditions.map((condition) => (
+                      <tr key={condition.conditionId}>
+                        <td className="px-4 py-2 font-medium text-slate-900">{condition.conditionName}</td>
+                        <td className="px-4 py-2 text-slate-700">{formatDate(condition.dateDiagnosed)}</td>
+                        <td className="px-4 py-2 text-slate-700">{condition.notes ?? '—'}</td>
+                        {isReceptionist && (
+                          <td className="px-4 py-2">
+                            {confirmingConditionRemovalId === condition.conditionId ? (
+                              <div className="flex flex-col gap-2">
+                                <p className="text-xs font-medium text-red-700">
+                                  Are you sure you want to remove this condition?
+                                </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmConditionRemove(condition.conditionId)}
+                                    className="border-2 border-red-700 bg-red-700 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-white hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmingConditionRemovalId(null)}
+                                    className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConditionRemoveServerMessage(null);
+                                  setConfirmingConditionRemovalId(condition.conditionId);
+                                }}
+                                className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-red-700 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
+
+          {isReceptionist && (
+            <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                Add Condition
+              </p>
+
+              {conditionAddStatus === 'failed' && conditionAddServerMessage && (
+                <div className="mt-3 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
+                  <p className="text-sm text-red-900">{conditionAddServerMessage}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleConditionAddSubmit} noValidate className="mt-3 space-y-4">
+                <div>
+                  <label htmlFor="condition-name" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                    Condition Name
+                  </label>
+                  <input
+                    id="condition-name"
+                    type="text"
+                    autoComplete="off"
+                    maxLength={128}
+                    value={conditionForm.conditionName}
+                    onChange={(event) => {
+                      setConditionForm((previous) => ({ ...previous, conditionName: event.target.value }));
+                      setConditionFieldErrors((previous) => ({ ...previous, conditionName: null }));
+                    }}
+                    disabled={conditionAddStatus === 'submitting'}
+                    aria-invalid={conditionFieldErrors.conditionName ? true : undefined}
+                    aria-describedby={conditionFieldErrors.conditionName ? 'condition-name-error' : undefined}
+                    className={inputClassName(!!conditionFieldErrors.conditionName)}
+                  />
+                  {conditionFieldErrors.conditionName && (
+                    <p id="condition-name-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                      {conditionFieldErrors.conditionName}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="condition-date-diagnosed" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                    Date Diagnosed
+                  </label>
+                  <input
+                    id="condition-date-diagnosed"
+                    type="date"
+                    max={todayForDateInput()}
+                    value={conditionForm.dateDiagnosed}
+                    onChange={(event) => {
+                      setConditionForm((previous) => ({ ...previous, dateDiagnosed: event.target.value }));
+                      setConditionFieldErrors((previous) => ({ ...previous, dateDiagnosed: null }));
+                    }}
+                    disabled={conditionAddStatus === 'submitting'}
+                    aria-invalid={conditionFieldErrors.dateDiagnosed ? true : undefined}
+                    aria-describedby={conditionFieldErrors.dateDiagnosed ? 'condition-date-error' : undefined}
+                    className={inputClassName(!!conditionFieldErrors.dateDiagnosed)}
+                  />
+                  {conditionFieldErrors.dateDiagnosed && (
+                    <p id="condition-date-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                      {conditionFieldErrors.dateDiagnosed}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="condition-notes" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                    Notes
+                  </label>
+                  <textarea
+                    id="condition-notes"
+                    rows={3}
+                    maxLength={512}
+                    value={conditionForm.notes}
+                    onChange={(event) => setConditionForm((previous) => ({ ...previous, notes: event.target.value }))}
+                    disabled={conditionAddStatus === 'submitting'}
+                    className={inputClassName(false)}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={conditionAddStatus === 'submitting'}
+                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {conditionAddStatus === 'submitting' ? 'Saving…' : 'Add Condition'}
+                </button>
+              </form>
+            </div>
+          )}
 
           {canManage && (
             <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
