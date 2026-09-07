@@ -10,3 +10,19 @@ export function getPatientQueueStatus(patientId: string): Promise<PatientQueueSt
     `/api/queue/today/patient/${encodeURIComponent(patientId)}`,
   );
 }
+
+export type TodayQueueStatus = 'WAITING' | 'IN_CONSULTATION' | 'COMPLETED';
+
+export interface TodayQueueEntry {
+  queueId: string;
+  patientId: string;
+  queueNumber: string;
+  checkedInAt: string;
+  status: TodayQueueStatus;
+  roomNumber: string | null;
+  doctorName: string | null;
+}
+
+export function getTodayQueue(): Promise<TodayQueueEntry[]> {
+  return apiRequest<TodayQueueEntry[]>('/api/queue/today');
+}

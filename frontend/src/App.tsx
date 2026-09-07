@@ -4,6 +4,7 @@ import { UserManagementPage } from './pages/UserManagementPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
 import { PatientProfilePage } from './pages/PatientProfilePage';
+import { QueueManagementPage } from './pages/QueueManagementPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -50,6 +51,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="Receptionist">
             <PatientRegistrationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reception/queue"
+        element={
+          <ProtectedRoute allowedRole="Receptionist">
+            <QueueManagementPage />
           </ProtectedRoute>
         }
       />
