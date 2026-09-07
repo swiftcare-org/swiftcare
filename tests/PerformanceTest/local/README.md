@@ -1,11 +1,14 @@
-# PerformanceTest
+# PerformanceTest / local
 
 JMeter load and stress tests for the Sprint 1 API (AuthService + PatientService +
 API Gateway), driven through the Gateway on `:8000`. Jira: **SWC-67**.
 
+The Azure counterpart (a second, network-inclusive run against the deployed
+environment) lives in [`../azure/`](../azure/) and does not depend on anything here.
+
 The plan, the workload justification and the **pre-defined** pass/fail thresholds
-are in [`TEST-PLAN.md`](TEST-PLAN.md). Record run results in
-[`results/REPORT-template.md`](results/REPORT-template.md) (copy per run).
+are in [`TEST-PLAN.md`](TEST-PLAN.md). Record run results in the `results/` folder
+following the format of the existing `RESULT-*.md` reports.
 
 ## Prerequisites
 
@@ -22,7 +25,7 @@ are in [`TEST-PLAN.md`](TEST-PLAN.md). Record run results in
   instead:
 
   ```powershell
-  docker compose -f docker-compose.yml -f tests/PerformanceTest/docker-compose.perf.yml up -d
+  docker compose -f docker-compose.yml -f tests/PerformanceTest/local/docker-compose.perf.yml up -d
   ```
 
 - `AUTH_SEED_PASSWORD` set to the value in the repo-root `.env` (only needed for
@@ -33,8 +36,8 @@ are in [`TEST-PLAN.md`](TEST-PLAN.md). Record run results in
 Load tests need a realistic data volume; searching against 3 rows proves nothing.
 
 ```powershell
-cd C:\swiftcare\tests\PerformanceTest
-$env:AUTH_SEED_PASSWORD = "<value from C:\swiftcare\.env>"
+cd C:\swiftcare\tests\PerformanceTest\local
+# set AUTH_SEED_PASSWORD to the value in C:\swiftcare\.env, then:
 ./seed.ps1                      # ~25 users, ~500 patients; use -PatientCount / -UserCount to change
 ```
 
@@ -46,11 +49,11 @@ re-seed.
 
 ## 2. Run
 
-All commands are run from `tests/PerformanceTest/` (the `.jmx` resolves `data/…`
-relative to the working directory). Non-GUI only; never run a real load from the
-JMeter GUI.
+All commands are run from `tests/PerformanceTest/local/` (the `.jmx` resolves
+`data/...` relative to the working directory). Non-GUI only; never run a real load
+from the JMeter GUI.
 
-### Smoke — validates the script (gate for the others)
+### Smoke - validates the script (gate for the others)
 
 ```powershell
 jmeter -n -t swiftcare-load.jmx -q user.properties `
@@ -61,7 +64,7 @@ jmeter -n -t swiftcare-load.jmx -q user.properties `
 Pass = every sampler 2xx, zero assertion failures, `token` extracted (no
 `LOGIN_FAILED`).
 
-### Load — the baseline
+### Load - the baseline
 
 ```powershell
 jmeter -n -t swiftcare-load.jmx -q user.properties `
@@ -69,14 +72,14 @@ jmeter -n -t swiftcare-load.jmx -q user.properties `
   -l results/load.jtl -e -o results/load-report
 ```
 
-### Stress — find the knee
+### Stress - find the knee
 
 Run against the CPU/memory-capped stack so the knee is attributable:
 
 ```powershell
 cd C:\swiftcare
-docker compose -f docker-compose.yml -f tests/PerformanceTest/docker-compose.perf.yml up -d
-cd tests/PerformanceTest
+docker compose -f docker-compose.yml -f tests/PerformanceTest/local/docker-compose.perf.yml up -d
+cd tests/PerformanceTest/local
 jmeter -n -t swiftcare-load.jmx -q user.properties `
   -Jthreads=400 -Jrampup=600 -Jduration=600 -Jthinkdelay=300 -Jthinkrange=300 `
   -l results/stress.jtl -e -o results/stress-report
@@ -84,15 +87,15 @@ jmeter -n -t swiftcare-load.jmx -q user.properties `
 
 Read the breaking point off the dashboard's **Active Threads Over Time** vs
 **Response Times Over Time** / **error %** charts, against the triggers in
-`TEST-PLAN.md` §5.2. Afterwards, restore the normal stack with
+`TEST-PLAN.md` section 5.2. Afterwards, restore the normal stack with
 `docker compose up -d` (drops the limits).
 
 ### While a run is going, in another terminal
 
 ```powershell
 docker stats                                   # per-container CPU / memory
-# MySQL connection use:
-docker exec swiftcare-mysql-1 mysql -uroot -p"<MYSQL_ROOT_PASSWORD>" `
+# MySQL connection use (MYSQL_ROOT_PASSWORD from the repo-root .env):
+docker exec swiftcare-mysql-1 mysql -uroot -p"$env:MYSQL_ROOT_PASSWORD" `
   -e "SHOW GLOBAL STATUS LIKE 'Threads_connected'; SHOW GLOBAL STATUS LIKE 'Max_used_connections';"
 ```
 
@@ -100,26 +103,28 @@ docker exec swiftcare-mysql-1 mysql -uroot -p"<MYSQL_ROOT_PASSWORD>" `
 
 Open `results/<run>-report/index.html`. The key views:
 
-- **APDEX** and the **Statistics** table (p95 / p99 / error % per label) → the
+- **APDEX** and the **Statistics** table (p95 / p99 / error % per label) feed the
   Load pass/fail table.
 - **Response Times Over Time**, **Active Threads Over Time**, **Transactions Per
-  Second** → the Stress breaking point.
+  Second** feed the Stress breaking point.
 
-Copy `results/REPORT-template.md`, fill it in, commit the filled copy (the raw
-`.jtl` and the generated `-report/` folders are git-ignored).
+Write the run up as `results/RESULT-<type>-<yyyymmdd>.md` following the format of
+the existing reports, and commit it (the raw `.jtl` and the generated `-report/`
+folders are git-ignored).
 
 ## Notes / known limitations
 
 - Results are environment-bound (local Docker). They are for relative comparison
   and locating the knee, not an absolute capacity figure.
-- `POST /api/patients` publishes a `patient-checked-in` Kafka event. QueueService
-  (the consumer) is not built yet, so events accumulate in the topic - harmless
-  for these run lengths; note broker disk on a long soak.
+- `POST /api/patients` publishes a `patient-checked-in` Kafka event. On this local
+  stack QueueService was not consuming at the time of the 2026-08-27 runs, so
+  events accumulated in the topic; harmless for these run lengths, but note broker
+  disk on a long soak.
 - The `.NET` services have no APM. Server-side signal = `docker stats` + service
   logs + MySQL `SHOW GLOBAL STATUS`.
 - Registering patients and adding allergies during a run mutates the DB. Re-seed
   or `docker compose down -v` between comparable runs.
 - MySQL 8.4 default `max_connections` is 151; AuthService + PatientService pools
   can approach that under stress. If you see connection errors before CPU
-  saturates, that is a legitimate finding - record it, do not pre-emptively
-  raise the limit unless you are specifically testing past it.
+  saturates, that is a legitimate finding; record it, do not pre-emptively raise
+  the limit unless you are specifically testing past it.

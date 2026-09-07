@@ -1,4 +1,4 @@
-# SwiftCare Sprint 1 — Performance Test Plan
+# SwiftCare Sprint 1 - Performance Test Plan
 
 **Jira:** SWC-67  **Tool:** Apache JMeter 5.6.x  **Target:** Sprint 1 API slice
 
@@ -6,10 +6,10 @@
 
 Establish, on the local `docker-compose` environment:
 
-1. **Baseline** — latency and throughput at expected clinic load.
-2. **Headroom** — how far past expected load the system holds before latency or
+1. **Baseline** - latency and throughput at expected clinic load.
+2. **Headroom** - how far past expected load the system holds before latency or
    errors breach the thresholds in §5.
-3. **Bottleneck** — which resource saturates first at the breaking point.
+3. **Bottleneck** - which resource saturates first at the breaking point.
 
 Results are for relative comparison (before/after a change) and for locating the
 knee **on this environment**. They are not an absolute capacity guarantee for
@@ -17,7 +17,7 @@ production hardware.
 
 ## 2. Scope
 
-- **In:** AuthService, PatientService, API Gateway, MySQL, Kafka — exercised only
+- **In:** AuthService, PatientService, API Gateway, MySQL, Kafka - exercised only
   through the API Gateway on `:8000` (so JWT validation, header rewriting and
   YARP routing are part of what is measured).
 - **Out:** the frontend (tested separately via Selenium E2E), QueueService and
@@ -41,13 +41,13 @@ execution, so by raw request count reads are > 85% of traffic.
 
 | # | Action | Method + path | Weight | Data source |
 |---|---|---|---:|---|
-| — | Login | `POST /api/auth/login` | setup | `data/users.csv` |
+| - | Login | `POST /api/auth/login` | setup | `data/users.csv` |
 | 1 | Search patient | `GET /api/patients/search?q={term}` | 55% | `data/search-terms.csv` |
 | 2 | Open patient profile | `GET /api/patients/{id}` then `GET /api/patients/{id}/allergies` | 30% | `data/patients.csv` |
 | 3 | Register patient | `POST /api/patients` | 10% | generated (unique NIC + phone per request) |
 | 4 | Add allergy | `POST /api/patients/{id}/allergies` | 5% | `data/patients.csv` |
 
-**Justification.** SWC-12 states patient search is "used dozens of times daily" —
+**Justification.** SWC-12 states patient search is "used dozens of times daily" -
 every patient interaction begins with a lookup, and opening a profile is the
 usual follow-up, so reads dominate. Registration happens only for new patients;
 allergy edits are occasional. The mix is deliberately read-heavy to match a
@@ -61,7 +61,7 @@ clinic front desk, not balanced across CRUD.
 state. Split endpoints into **reads** (search, profile, allergies) and **writes**
 (register, add allergy). "Sustained" = holds for ≥ 60 s.
 
-### 5.1 Load run — PASS requires all six
+### 5.1 Load run - PASS requires all six
 
 Profile: 20 users, 30 s ramp, 15 min steady state.
 
@@ -74,7 +74,7 @@ Profile: 20 users, 30 s ramp, 15 min steady state.
 | Error rate (all requests) | ≤ 0.5% |
 | Latency drift | last-third p95 within 20% of first-third p95 |
 
-### 5.2 Stress run — breaking point
+### 5.2 Stress run - breaking point
 
 Profile (calibrated after the Load baseline): ramp 10 → **400** users over 10 min,
 against the **CPU/memory-capped stack** (`docker-compose.perf.yml`), think-time
@@ -111,18 +111,18 @@ error rate, and the first resource to saturate (container CPU / memory from
 
 | Type | Profile | Status |
 |---|---|---|
-| Smoke | 1 user, 60 s | Required — gate for the rest |
+| Smoke | 1 user, 60 s | Required - gate for the rest |
 | Load | 20 users / 30 s / 900 s | Required |
 | Stress | 80 users / 480 s ramp / 600 s | Required |
 | Spike | normal → 3× for 2 min → normal | Stretch |
-| Soak | normal load, 1–2 h (watch memory, MySQL connections, GC, latency drift) | Stretch |
+| Soak | normal load, 1-2 h (watch memory, MySQL connections, GC, latency drift) | Stretch |
 
 ## 7. Environment
 
 - Local `docker-compose`, full Sprint 1 stack.
 - For attributable stress results, apply `docker-compose.perf.yml` (per-service
   CPU/memory limits) and record the limits used.
-- Load generator (JMeter) and system-under-test on the same machine — acceptable
+- Load generator (JMeter) and system-under-test on the same machine - acceptable
   for relative comparison; note it as a limitation.
 - Observability: JMeter client-side timings + `docker stats` + service structured
   logs + MySQL `SHOW GLOBAL STATUS`. No APM in the services yet.
