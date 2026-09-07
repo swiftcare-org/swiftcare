@@ -10,10 +10,11 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 - Idempotent against Kafka's at-least-once delivery: a redelivered event (same `EventId`) is recognized via a `ProcessedEvents` ledger and skipped without creating a duplicate entry.
 - `UNIQUE (PatientId, QueueDate)` and `UNIQUE (QueueDate, QueueNumber)` constraints are the database-level backstop — a second event for the same patient on the same day (even with a different `EventId`) is rejected and logged, not silently duplicated.
 - `GET /api/queue/today/patient/{patientId}` — returns whether a patient is in today's queue and their assigned queue number. Receptionist only.
+- `GET /api/queue/today` — returns all entries for the current clinic-local day in queue-number order, including check-in time, operational status, and nullable room/doctor assignment. Receptionist only.
 - `GET /health` — liveness/readiness check.
 - Enforces the Gateway trust boundary via `GatewaySecretMiddleware`, matching every other service.
 
-The read API is deliberately limited to one patient's status for the reception profile workflow. It does not expose the full queue, waiting pool, room assignments, or public display data.
+QueueService returns `PatientId`, never a copied patient name. The receptionist queue page resolves names through PatientService's existing patient-profile endpoint and caches successful lookups between five-second polls. This preserves service data ownership and keeps personal information out of the Kafka check-in event. QueueService does not call PatientService or PrescriptionService.
 
 ## Port
 
@@ -54,7 +55,7 @@ docker compose up --detach --no-deps --wait queueservice
 curl http://localhost:5003/health
 ```
 
-Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes Kafka messages in the background and serves the receptionist-only patient-status lookup through ApiGateway.
+Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes Kafka messages in the background and serves the receptionist-only patient-status and full daily queue reads through ApiGateway.
 
 For controlled deployments, the published service image can apply migrations and
 exit without starting the web host:
@@ -84,10 +85,13 @@ CI runs this suite, applies the committed migrations to a clean MySQL database, 
 
 Tests use `Microsoft.EntityFrameworkCore.Sqlite` (in-memory, relational) rather than the `InMemory` provider PatientService's tests use — `InMemory` enforces neither unique indexes nor transactions, so it cannot verify the `UNIQUE (PatientId, QueueDate)` / `UNIQUE (QueueDate, QueueNumber)` constraints or the transactional counter allocation this story's Definition of Done requires. Coverage includes: sequential queue-number assignment across multiple patients on the same day, `Status = Waiting` / `RoomNumber = NULL` on creation, the daily reset (a new clinic day restarts at `Q-001`, the prior day's entries are untouched), the `Asia/Colombo` midnight-boundary conversion (a UTC timestamp late in the evening correctly lands on the next local day), duplicate-`EventId` idempotency, same-patient-same-day rejection with a distinct `EventId`, confirmation that a rejected duplicate does not consume a queue number, `Q-010`/`Q-100` number-padding boundaries, both unique indexes verified directly against `QueueDbContext` independent of the service logic, and the Kafka consumer's message handling (valid dispatch and commit, malformed-payload skip, empty-`EventId` skip, and a processing failure causing `Seek` without `Commit`).
 
+SWC-76 additionally covers the full daily queue's numeric ordering (including the `Q-999` to `Q-1000` boundary), empty results, `WAITING` / `IN_CONSULTATION` / `COMPLETED` response values, display fields, previous-day exclusion, clinic-local midnight assignment and retrieval, preservation of the original check-in timestamp, and controller authorization.
+
 ## Endpoints
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
+| `GET` | `/api/queue/today` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns all current clinic-day queue entries ordered by queue number |
 | `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber }` for today's clinic-local queue |
 | `GET` | `/health` | none | Health check |
 
@@ -99,7 +103,9 @@ Azure deployment uses a dedicated `swiftcare_queue` database account and require
 
 ## Known scope bounds
 
-- **No queue-list read API.** Only the per-patient status lookup exists. Full-queue, waiting-pool, room-assignment, and public-display APIs remain separate stories.
+- **No waiting-pool, queue-mutation, or public-display APIs.** SWC-20 adds only the receptionist's full-queue read. Calling patients, changing queue status, assigning doctors/rooms, and the public display remain separate stories.
+- **No patient names in QueueService.** The frontend resolves names through PatientService and caches them locally; the queue database and Kafka event retain only `PatientId`.
+- **No prescription integration yet.** The queue page displays a neutral placeholder until SWC-30 implements PrescriptionService's status endpoint. QueueService must never query PrescriptionService directly.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.
 - **Queue numbers are not gap-free.** A transaction that rolls back after incrementing the counter leaves a gap in that day's sequence. The story requires "the next daily queue number", not gapless numbering.
 - **Unknown `PatientId` is trusted, not verified.** The consumer never calls back into PatientService to confirm a patient exists — it trusts the event, since it originates from the owning service and a synchronous callback would couple this service's availability to PatientService's.

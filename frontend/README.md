@@ -9,7 +9,9 @@ The React app used by clinic staff (Doctors, Receptionists, Admins). It talks on
 - `ProtectedRoute` — redirects unauthenticated visitors to `/login` and role-mismatched visitors to their own dashboard.
 - `UserManagementPage` (Admin) — create-staff-account form (username, password, full name, role, room number for Doctors) with server-error mapping, plus a table of existing accounts.
 - `PatientRegistrationPage` (Receptionist) — patient intake form (NIC, full name, date of birth, gender, address, phone number, blood group) mirroring PatientService's validation rules client-side.
-- `PatientSearchPage` (Receptionist) — debounced (300ms) live search by name, NIC, or phone number, suppressed below 2 characters. Distinct idle/searching/results/empty/error states; the empty state links to patient registration.
+- `PatientSearchPage` (Doctor, Receptionist, Admin) — debounced (300ms) live search by name, NIC, or phone number, suppressed below 2 characters. Distinct idle/searching/results/empty/error states; the receptionist empty state links to patient registration.
+- `PatientProfilePage` (Doctor, Receptionist, Admin) — full patient details, allergies, and chronic conditions. Receptionists can update permitted profile fields, check in returning patients, and manage chronic conditions.
+- `QueueManagementPage` (Receptionist) — displays the current clinic day's full queue and polls every five seconds. It resolves names from PatientService by `PatientId`, caches successful lookups across polls, and leaves prescription status neutral until SWC-30 provides PrescriptionService.
 - Placeholder `DoctorDashboard` (real content lands in a later story).
 
 ## Port
@@ -38,7 +40,7 @@ npm install
 npm run dev
 ```
 
-Requires the API Gateway (port 8000) and AuthService (port 5000) running for the login flow to actually authenticate — the frontend itself will start and render without them, but sign-in requests will fail.
+Requires the API Gateway (port 8000) and AuthService (port 5000) for login. PatientService (port 5002) supplies patient details, while QueueService (port 5003) supplies check-in and queue data. The frontend itself starts without them, but the corresponding requests fail.
 
 ## Build
 
@@ -58,7 +60,7 @@ Runs `oxlint`.
 
 ## Testing
 
-No automated frontend test suite (Vitest/React Testing Library) exists yet — it is explicitly deferred to a QA-owned story, not part of SWC-6's developer scope. Client-side validation (empty/whitespace fields) was verified manually against the running dev server.
+No automated frontend test suite (Vitest/React Testing Library) exists yet. Frontend changes are checked with `npm run lint`, `npm run build`, and manual verification against the running application.
 
 ## Stack
 
