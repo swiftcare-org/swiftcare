@@ -61,7 +61,12 @@ public sealed class QueueEntryCreationService : IQueueEntryCreationService
 
             try
             {
-                var result = await TryCreateEntryAsync(eventId, patientId, queueDate, cancellationToken);
+                var result = await TryCreateEntryAsync(
+                    eventId,
+                    patientId,
+                    queueDate,
+                    checkedInAtUtc,
+                    cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return result;
             }
@@ -97,6 +102,7 @@ public sealed class QueueEntryCreationService : IQueueEntryCreationService
         Guid eventId,
         Guid patientId,
         DateOnly queueDate,
+        DateTime checkedInAtUtc,
         CancellationToken cancellationToken)
     {
         var alreadyQueuedToday = await _dbContext.QueueEntries
@@ -153,6 +159,7 @@ public sealed class QueueEntryCreationService : IQueueEntryCreationService
             QueueDate = queueDate,
             QueueNumber = queueNumber,
             Status = QueueStatus.Waiting,
+            CheckedInAt = DateTime.SpecifyKind(checkedInAtUtc, DateTimeKind.Utc),
             RoomNumber = null
         });
         _dbContext.ProcessedEvents.Add(new ProcessedEvent { EventId = eventId, ProcessedAt = DateTime.UtcNow });

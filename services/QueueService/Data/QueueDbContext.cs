@@ -17,6 +17,7 @@ public sealed class QueueDbContext(DbContextOptions<QueueDbContext> options) : D
             entity.Property(e => e.QueueNumber).HasMaxLength(8).IsRequired();
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
             entity.Property(e => e.RoomNumber).HasMaxLength(16);
+            entity.Property(e => e.DoctorName).HasMaxLength(128);
 
             // Scenario 4: a patient already checked in today cannot get a second entry.
             entity.HasIndex(e => new { e.PatientId, e.QueueDate }).IsUnique();

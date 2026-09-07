@@ -452,6 +452,47 @@ public class ReverseProxyAuthorizationTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task TodayQueueRouteWithAReceptionistTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task TodayQueueRouteWithANonReceptionistTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TodayQueueRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     [Theory]
     [InlineData("Doctor")]
     [InlineData("Receptionist")]

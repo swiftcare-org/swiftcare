@@ -17,7 +17,13 @@ public sealed class QueueEntry : IHasTimestamps
 
     public required string QueueNumber { get; set; }
     public QueueStatus Status { get; set; }
+
+    // Preserves the time the receptionist checked the patient in. CreatedAt records when
+    // QueueService processed the Kafka event, which can be later if delivery was delayed.
+    public DateTime CheckedInAt { get; set; }
+
     public string? RoomNumber { get; set; }
+    public string? DoctorName { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

@@ -73,6 +73,7 @@ public class QueueEntryCreationServiceTests
 
         var entry = await dbContext.QueueEntries.SingleAsync();
         Assert.Equal(QueueStatus.Waiting, entry.Status);
+        Assert.Equal(FixedCheckedInAtUtc, entry.CheckedInAt);
         Assert.Null(entry.RoomNumber);
     }
 
@@ -103,23 +104,28 @@ public class QueueEntryCreationServiceTests
         Assert.Equal(["Q-001", "Q-002"], day1Numbers.OrderBy(n => n));
     }
 
-    [Fact]
-    public async Task CreateQueueEntry_ForAUtcInstantAfterClinicMidnight_IsAssignedToTheNextLocalDate()
+    [Theory]
+    [InlineData(18, 29, 29)]
+    [InlineData(18, 30, 30)]
+    public async Task CreateQueueEntry_AroundClinicMidnight_IsAssignedToTheCorrectLocalDate(
+        int utcHour,
+        int utcMinute,
+        int expectedLocalDay)
     {
         using var connection = OpenConnection();
         var options = OptionsFor(connection);
         await using var dbContext = new QueueDbContext(options);
         await dbContext.Database.EnsureCreatedAsync();
 
-        // 2026-08-29T20:00:00Z is 2026-08-30 01:30 in Asia/Colombo (UTC+5:30) - a UTC-date
-        // reset would have put this on 2026-08-29 instead, 05:30 too early for the clinic.
-        var lateUtcCheckIn = new DateTime(2026, 8, 29, 20, 0, 0, DateTimeKind.Utc);
+        // Asia/Colombo is UTC+05:30: these UTC instants fall immediately before and at
+        // clinic-local midnight, even though both still have the same UTC calendar date.
+        var checkedInAt = new DateTime(2026, 8, 29, utcHour, utcMinute, 0, DateTimeKind.Utc);
 
         var service = CreateService(dbContext);
-        await service.CreateQueueEntryAsync(Guid.NewGuid(), Guid.NewGuid(), lateUtcCheckIn);
+        await service.CreateQueueEntryAsync(Guid.NewGuid(), Guid.NewGuid(), checkedInAt);
 
         var entry = await dbContext.QueueEntries.SingleAsync();
-        Assert.Equal(new DateOnly(2026, 8, 30), entry.QueueDate);
+        Assert.Equal(new DateOnly(2026, 8, expectedLocalDay), entry.QueueDate);
     }
 
     [Fact]
