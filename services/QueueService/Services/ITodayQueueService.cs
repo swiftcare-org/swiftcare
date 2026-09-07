@@ -6,4 +6,7 @@ public interface ITodayQueueService
 {
     Task<IReadOnlyList<TodayQueueEntryResponse>> GetTodayAsync(
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TodayQueueEntryResponse>> GetWaitingAsync(
+        CancellationToken cancellationToken = default);
 }

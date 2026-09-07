@@ -39,6 +39,24 @@ public sealed class QueueController : ControllerBase
         return Ok(entries);
     }
 
+    [HttpGet("today/waiting")]
+    [ProducesResponseType(typeof(IReadOnlyList<TodayQueueEntryResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetWaiting(CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault(),
+                "Doctor",
+                StringComparison.Ordinal))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse("Forbidden"));
+        }
+
+        var entries = await _todayQueueService.GetWaitingAsync(cancellationToken);
+        return Ok(entries);
+    }
+
     [HttpGet("today/patient/{patientId:guid}")]
     [ProducesResponseType(typeof(PatientQueueStatusResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]

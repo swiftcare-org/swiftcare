@@ -26,14 +26,34 @@ public sealed class TodayQueueService : ITodayQueueService
     public async Task<IReadOnlyList<TodayQueueEntryResponse>> GetTodayAsync(
         CancellationToken cancellationToken = default)
     {
+        return await GetTodayEntriesAsync(status: null, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<TodayQueueEntryResponse>> GetWaitingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await GetTodayEntriesAsync(QueueStatus.Waiting, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<TodayQueueEntryResponse>> GetTodayEntriesAsync(
+        QueueStatus? status,
+        CancellationToken cancellationToken)
+    {
         var clinicNow = TimeZoneInfo.ConvertTime(
             _timeProvider.GetUtcNow(),
             _clinicTimeZone);
         var queueDate = DateOnly.FromDateTime(clinicNow.DateTime);
 
-        var entries = await _dbContext.QueueEntries
+        var query = _dbContext.QueueEntries
             .AsNoTracking()
-            .Where(entry => entry.QueueDate == queueDate)
+            .Where(entry => entry.QueueDate == queueDate);
+
+        if (status.HasValue)
+        {
+            query = query.Where(entry => entry.Status == status.Value);
+        }
+
+        var entries = await query
             // Queue numbers are zero-padded to three digits but may grow beyond Q-999.
             // Length followed by ordinal value preserves numeric order across that boundary.
             .OrderBy(entry => entry.QueueNumber.Length)
