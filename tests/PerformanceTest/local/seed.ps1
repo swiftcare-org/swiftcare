@@ -25,7 +25,7 @@
     Password assigned to every created load-test account. Default: LoadTest#Pass1
 
 .EXAMPLE
-    $env:AUTH_SEED_PASSWORD = "<value from repo-root .env>"
+    # Set AUTH_SEED_PASSWORD to the value in the repo-root .env, then run:
     ./seed.ps1
 
 .EXAMPLE
