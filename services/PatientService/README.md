@@ -13,6 +13,9 @@ Registers and stores patient records for SwiftCare. PatientService owns the `swi
 - `POST /api/patients/{id}/allergies` — records an allergy (name, severity, optional notes). Doctor and Receptionist only.
 - `PUT /api/patients/{id}/allergies/{allergyId}` — updates an allergy's name, severity, and notes. Doctor and Receptionist only.
 - `DELETE /api/patients/{id}/allergies/{allergyId}` — soft-deletes an allergy (`IsDeleted = true`); the row is never hard-deleted, preserving the clinical audit trail. Doctor and Receptionist only.
+- `GET /api/patients/{id}/conditions` — returns a patient's active chronic conditions, ordered by diagnosed date descending. Open to Doctor, Receptionist, and Admin.
+- `POST /api/patients/{id}/conditions` — records a chronic condition (name, diagnosed date, optional notes), rejecting future diagnosed dates. Receptionist only.
+- `DELETE /api/patients/{id}/conditions/{conditionId}` — soft-deletes a chronic condition so it no longer appears in clinical views. Receptionist only.
 - `GET /health` — liveness/readiness check.
 - Enforces the Gateway trust boundary: every request except `/health` must carry a valid `X-Gateway-Secret` header.
 
@@ -81,7 +84,7 @@ PatientService validates only that `Kafka:BootstrapServers` is *configured* at s
 dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj
 ```
 
-Tests use EF Core InMemory and Moq exclusively — no real database, network connection, or Kafka broker is required to run them. Coverage includes DTO validation (NIC/phone formats, blood group, date-of-birth bounds, allergy name/severity/notes), the Kafka publisher (topic, key, payload shape, `isNewPatient` values, no-PHI assertion, timeout/failure handling), the registration and returning-patient check-in services, patient search, patient profile retrieval and update, allergy management, and the full controller pipeline via `WebApplicationFactory` including role authorization and error responses.
+Tests use EF Core InMemory and Moq exclusively — no real database, network connection, or Kafka broker is required to run them. Coverage includes DTO validation (NIC/phone formats, blood group, date-of-birth bounds, allergy fields, and chronic-condition fields), the Kafka publisher (topic, key, payload shape, `isNewPatient` values, no-PHI assertion, timeout/failure handling), the registration and returning-patient check-in services, patient search, patient profile retrieval and update, allergy and chronic-condition management, and the full controller pipeline via `WebApplicationFactory` including role authorization and error responses.
 
 ## Endpoints
 
@@ -96,9 +99,12 @@ Tests use EF Core InMemory and Moq exclusively — no real database, network con
 | `POST` | `/api/patients/{id}/allergies` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist` | Records an allergy, returns `201` with the created allergy |
 | `PUT` | `/api/patients/{id}/allergies/{allergyId}` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist` | Updates an allergy, returns `200` with the updated allergy, or `404` if the allergy doesn't belong to this patient |
 | `DELETE` | `/api/patients/{id}/allergies/{allergyId}` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist` | Soft-deletes an allergy, returns `204` |
+| `GET` | `/api/patients/{id}/conditions` | `X-Gateway-Secret`, `X-User-Role: Doctor\|Receptionist\|Admin` | Returns the patient's active chronic conditions, or `404` if the patient is unknown |
+| `POST` | `/api/patients/{id}/conditions` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Records a chronic condition, returns `201` with the created condition |
+| `DELETE` | `/api/patients/{id}/conditions/{conditionId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Soft-deletes a chronic condition, returns `204` |
 | `GET` | `/health` | none | Health check |
 
-See `Controllers/PatientsController.cs` and `Controllers/AllergiesController.cs` for the exact request/response contracts and status-code mapping.
+See `Controllers/PatientsController.cs`, `Controllers/AllergiesController.cs`, and `Controllers/ChronicConditionsController.cs` for the exact request/response contracts and status-code mapping.
 
 ## Known scope bounds
 
@@ -106,6 +112,6 @@ See `Controllers/PatientsController.cs` and `Controllers/AllergiesController.cs`
 - No phone-number normalization: a patient stored as `+94771234567` is not found by a search for `0771234567`, or vice versa, unless the shared digits are typed.
 - Patient search is not audited — nothing records who searched for what. If searches must be audit-logged for compliance, that is a separate story.
 - QueueService consumes `patient-checked-in` (see its own README); verify publication via Kafka UI (`localhost:8080` in the local compose stack) or the resulting `QueueEntries` row.
-- **Allergies live in PatientService, not MedicalRecordService.** The README and PRODUCT.md assign allergies (and other clinical records) to MedicalRecordService, which does not exist yet (an empty placeholder directory, not in `SwiftCare.slnx`). SWC-17 was placed here by explicit stakeholder decision rather than waiting on that service. This is a deliberate database-boundary trade-off: when MedicalRecordService is eventually built, the `Allergies` table will need to migrate out of `swiftcare_patient` into `swiftcare_medical_record` via each service's API, not a direct database copy, per SwiftCare's cross-service data rule.
+- **Allergies and chronic conditions live in PatientService, not MedicalRecordService.** The README and PRODUCT.md assign clinical records to MedicalRecordService, which does not exist yet (an empty placeholder directory, not in `SwiftCare.slnx`). SWC-17 and SWC-18 were implemented in the existing patient-profile service rather than waiting on that service. This is a deliberate database-boundary trade-off: when MedicalRecordService is eventually built, the `Allergies` and `ChronicConditions` tables will need to migrate out of `swiftcare_patient` through service APIs, not direct cross-database access.
 - No optimistic concurrency on allergy updates — two concurrent edits to the same allergy resolve last-write-wins, silently.
 - Duplicate allergy names for the same patient are permitted; there is no uniqueness constraint.

@@ -75,8 +75,8 @@ builder.Services.AddAuthorization(options =>
     // resource-level rules (e.g. ownership) on top of the identity headers this forwards.
     options.AddPolicy("AdminOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
     options.AddPolicy("ReceptionistOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Receptionist"));
-    // SWC-17: patient search, patient profile, and allergy reads are open to all clinical
-    // staff, since a doctor's only route to a patient's allergy alert is through search.
+    // Patient search, patient profile, allergy reads, and chronic-condition reads are open
+    // to all authorized profile roles so doctors can see clinical alerts before consulting.
     options.AddPolicy("PatientSearchAndReadPolicy", policy => policy.RequireAuthenticatedUser()
         .RequireRole("Doctor", "Receptionist", "Admin"));
     // Admin is read-only for allergies by stakeholder decision - only Doctor and
