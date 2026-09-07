@@ -34,7 +34,10 @@ public sealed class TodayQueueService : ITodayQueueService
         var entries = await _dbContext.QueueEntries
             .AsNoTracking()
             .Where(entry => entry.QueueDate == queueDate)
-            .OrderBy(entry => entry.QueueNumber)
+            // Queue numbers are zero-padded to three digits but may grow beyond Q-999.
+            // Length followed by ordinal value preserves numeric order across that boundary.
+            .OrderBy(entry => entry.QueueNumber.Length)
+            .ThenBy(entry => entry.QueueNumber)
             .ToListAsync(cancellationToken);
 
         return entries

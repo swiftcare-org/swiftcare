@@ -15,6 +15,7 @@ public sealed class QueueServiceWebApplicationFactory : WebApplicationFactory<Pr
     public const string ValidGatewaySecret = "integration-test-gateway-secret-value";
 
     public Mock<IPatientQueueStatusService> PatientQueueStatusServiceMock { get; } = new();
+    public Mock<ITodayQueueService> TodayQueueServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -38,7 +39,9 @@ public sealed class QueueServiceWebApplicationFactory : WebApplicationFactory<Pr
         {
             services.RemoveAll<IHostedService>();
             services.RemoveAll<IPatientQueueStatusService>();
+            services.RemoveAll<ITodayQueueService>();
             services.AddScoped(_ => PatientQueueStatusServiceMock.Object);
+            services.AddScoped(_ => TodayQueueServiceMock.Object);
         });
     }
 }

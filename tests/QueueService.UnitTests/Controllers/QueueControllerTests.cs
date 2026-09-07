@@ -22,6 +22,66 @@ public class QueueControllerTests
     }
 
     [Fact]
+    public async Task GetTodayAsReceptionistReturnsQueueEntries()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var expected = new TodayQueueEntryResponse
+        {
+            QueueId = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            QueueNumber = "Q-003",
+            CheckedInAt = new DateTime(2026, 9, 2, 5, 30, 0, DateTimeKind.Utc),
+            Status = "WAITING"
+        };
+        factory.TodayQueueServiceMock
+            .Setup(service => service.GetTodayAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([expected]);
+        var client = CreateClientWithRole(factory, "Receptionist");
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<List<TodayQueueEntryResponse>>();
+        var entry = Assert.Single(body!);
+        Assert.Equal(expected.QueueId, entry.QueueId);
+        Assert.Equal(expected.PatientId, entry.PatientId);
+        Assert.Equal("Q-003", entry.QueueNumber);
+        Assert.Equal("WAITING", entry.Status);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    [InlineData("Nurse")]
+    public async Task GetTodayAsNonReceptionistReturns403(string role)
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var client = CreateClientWithRole(factory, role);
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.TodayQueueServiceMock.Verify(
+            service => service.GetTodayAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetTodayWithoutGatewaySecretReturns401()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(UserRoleHeaderName, "Receptionist");
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.TodayQueueServiceMock.Verify(
+            service => service.GetTodayAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task GetTodayPatientStatusAsReceptionistReturnsQueueStatus()
     {
         using var factory = new QueueServiceWebApplicationFactory();
