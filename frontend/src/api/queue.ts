@@ -30,3 +30,18 @@ export function getTodayQueue(): Promise<TodayQueueEntry[]> {
 export function getWaitingPool(): Promise<TodayQueueEntry[]> {
   return apiRequest<TodayQueueEntry[]>('/api/queue/today/waiting');
 }
+
+export interface CalledPatient {
+  queueId: string;
+  patientId: string;
+  queueNumber: string;
+  status: 'IN_CONSULTATION';
+  doctorId: string;
+  doctorName: string;
+  roomNumber: string;
+  calledAt: string;
+}
+
+export function callNextPatient(): Promise<CalledPatient> {
+  return apiRequest<CalledPatient>('/api/queue/call-next', { method: 'PUT' });
+}

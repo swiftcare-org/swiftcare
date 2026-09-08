@@ -2,12 +2,22 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
-import { getWaitingPool, type TodayQueueEntry } from '../api/queue';
+import {
+  callNextPatient,
+  getWaitingPool,
+  type CalledPatient,
+  type TodayQueueEntry,
+} from '../api/queue';
 import { DashboardShell } from './DashboardShell';
 
 type WaitingPoolLoadState = 'loading' | 'loaded' | 'error';
+type CallNextState = 'idle' | 'calling';
 
 interface WaitingPoolRow extends TodayQueueEntry {
+  patientName: string;
+}
+
+interface CurrentPatient extends CalledPatient {
   patientName: string;
 }
 
@@ -66,10 +76,44 @@ function waitingPoolErrorMessage(error: unknown): string {
   return 'Unable to load the shared waiting pool. Please try again.';
 }
 
+function callNextErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return 'You are not authorized to call the next patient.';
+    }
+
+    if (error.status === 409 || error.status === 503) {
+      return error.message;
+    }
+  }
+
+  return 'Unable to call the next patient. Please try again.';
+}
+
+async function resolveCalledPatientName(
+  calledPatient: CalledPatient,
+  waitingRows: WaitingPoolRow[],
+): Promise<string> {
+  const waitingRow = waitingRows.find((row) => row.patientId === calledPatient.patientId);
+  if (waitingRow && waitingRow.patientName !== PATIENT_UNAVAILABLE) {
+    return waitingRow.patientName;
+  }
+
+  try {
+    return (await getPatient(calledPatient.patientId)).fullName;
+  } catch {
+    return PATIENT_UNAVAILABLE;
+  }
+}
+
 export function DoctorDashboard() {
   const [loadState, setLoadState] = useState<WaitingPoolLoadState>('loading');
   const [rows, setRows] = useState<WaitingPoolRow[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [callNextState, setCallNextState] = useState<CallNextState>('idle');
+  const [callNextError, setCallNextError] = useState<string | null>(null);
+  const [currentPatient, setCurrentPatient] = useState<CurrentPatient | null>(null);
+  const [callNextBlocked, setCallNextBlocked] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -120,6 +164,45 @@ export function DoctorDashboard() {
     };
   }, []);
 
+  const callNextDisabled =
+    loadState !== 'loaded' ||
+    rows.length === 0 ||
+    callNextState === 'calling' ||
+    currentPatient !== null ||
+    callNextBlocked;
+
+  async function handleCallNext() {
+    if (callNextDisabled) {
+      return;
+    }
+
+    setCallNextState('calling');
+    setCallNextError(null);
+
+    try {
+      const calledPatient = await callNextPatient();
+      const patientName = await resolveCalledPatientName(calledPatient, rows);
+
+      setCurrentPatient({ ...calledPatient, patientName });
+      setRows((currentRows) =>
+        currentRows.filter((row) => row.queueId !== calledPatient.queueId),
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        setRows([]);
+        return;
+      }
+
+      if (error instanceof ApiError && error.status === 409) {
+        setCallNextBlocked(true);
+      }
+
+      setCallNextError(callNextErrorMessage(error));
+    } finally {
+      setCallNextState('idle');
+    }
+  }
+
   return (
     <DashboardShell sectionLabel="Doctor Dashboard">
       <div className="mt-6 flex flex-wrap gap-3">
@@ -145,16 +228,37 @@ export function DoctorDashboard() {
             <p className="text-xs text-slate-500">Refreshes every 5 seconds</p>
             <button
               type="button"
-              disabled
-              title="Call Next Patient will be available in the next workflow"
-              className="border-2 border-slate-300 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400 disabled:cursor-not-allowed"
+              disabled={callNextDisabled}
+              onClick={() => void handleCallNext()}
+              className="bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Call Next Patient
+              {callNextState === 'calling' ? 'Calling…' : 'Call Next Patient'}
             </button>
           </div>
         </div>
 
         <div aria-live="polite" className="mt-6">
+          {currentPatient && (
+            <div className="mb-4 border-t-4 border-b border-brand-blue bg-blue-50 px-6 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-brand-blue-dark">
+                Current Consultation
+              </p>
+              <p className="mt-1 text-base font-semibold text-slate-900">
+                {`Currently with you: ${currentPatient.queueNumber} ${currentPatient.patientName}`}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
+            </div>
+          )}
+
+          {callNextError && (
+            <div className="mb-4 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3" role="alert">
+              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
+                Unable to Call Patient
+              </p>
+              <p className="mt-1 text-sm text-amber-900">{callNextError}</p>
+            </div>
+          )}
+
           {errorMessage && (
             <div className="mb-4 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
               <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
