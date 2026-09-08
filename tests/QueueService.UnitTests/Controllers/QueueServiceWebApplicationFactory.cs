@@ -30,6 +30,7 @@ public sealed class QueueServiceWebApplicationFactory : WebApplicationFactory<Pr
                 ["Gateway:InternalSecret"] = ValidGatewaySecret,
                 ["Kafka:BootstrapServers"] = "unused:9092",
                 ["Kafka:PatientCheckedInTopic"] = "patient-checked-in",
+                ["Kafka:PatientCalledTopic"] = "patient-called",
                 ["Kafka:ConsumerGroupId"] = "queue-service-tests",
                 ["Queue:ClinicTimeZone"] = "Asia/Colombo"
             });

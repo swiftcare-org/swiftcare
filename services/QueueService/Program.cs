@@ -38,6 +38,19 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 
+// IProducer is thread-safe and expensive to construct, so one instance is shared by all
+// call-next requests. Keeping it injectable lets unit tests replace the Kafka dependency.
+builder.Services.AddSingleton<IProducer<string, string>>(sp =>
+{
+    var kafkaOptions = sp.GetRequiredService<IOptions<KafkaOptions>>().Value;
+    return new ProducerBuilder<string, string>(new ProducerConfig
+    {
+        BootstrapServers = kafkaOptions.BootstrapServers,
+        MessageTimeoutMs = kafkaOptions.MessageTimeoutMs
+    }).Build();
+});
+builder.Services.AddSingleton<IQueueEventPublisher, KafkaQueueEventPublisher>();
+
 // Registered as a singleton - IConsumer is not thread-safe for concurrent Consume() calls,
 // but this app only ever has one loop calling it (PatientCheckedInConsumer), so a single
 // instance shared with DI is correct here and lets tests substitute a fake consumer.
