@@ -35,10 +35,11 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `patient-condition-delete-route` | `DELETE /api/patients/{id:guid}/conditions/{conditionId:guid}` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
 | `patient-read-route` | `GET /api/patients/{id:guid}` (`Order: 2`) | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
 | `patient-queue-status-route` | `GET /api/queue/today/patient/{patientId:guid}` | `ReceptionistOnly` | `http://localhost:5003` (QueueService) |
+| `call-next-route` | `PUT /api/queue/call-next` | `DoctorOnly` | `http://localhost:5003` (QueueService) |
 | `waiting-pool-route` | `GET /api/queue/today/waiting` | `DoctorOnly` | `http://localhost:5003` (QueueService) |
 | `today-queue-route` | `GET /api/queue/today` | `ReceptionistOnly` | `http://localhost:5003` (QueueService) |
 
-`patient-read-route` is deliberately constrained to `{id:guid}` and ordered after `patients-search-route`: this guarantees `/api/patients/search` can never be shadowed by the parameterized route regardless of Order, since `"search"` fails the guid constraint outright. `PatientSearchAndReadPolicy` permits Doctor, Receptionist, and Admin access to patient-profile clinical reads. Chronic-condition creation and removal reuse `ReceptionistOnly`; no condition update route is configured. `AllergyWritePolicy` remains limited to Doctor and Receptionist. `DoctorOnly` restricts the shared waiting-pool route to authenticated doctors.
+`patient-read-route` is deliberately constrained to `{id:guid}` and ordered after `patients-search-route`: this guarantees `/api/patients/search` can never be shadowed by the parameterized route regardless of Order, since `"search"` fails the guid constraint outright. `PatientSearchAndReadPolicy` permits Doctor, Receptionist, and Admin access to patient-profile clinical reads. Chronic-condition creation and removal reuse `ReceptionistOnly`; no condition update route is configured. `AllergyWritePolicy` remains limited to Doctor and Receptionist. `DoctorOnly` restricts the shared waiting-pool and call-next routes to authenticated doctors.
 
 As more services come online (PatientService, QueueService, etc.), add a route + cluster entry per service rather than a shared routing abstraction — each route maps one URL prefix to one service's base address. Give each new protected route an explicit `AuthorizationPolicy` rather than relying on an implicit default.
 
@@ -107,5 +108,6 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 | `POST` | `/api/patients/{id}/conditions` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
 | `DELETE` | `/api/patients/{id}/conditions/{conditionId}` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
 | `GET` | `/api/queue/today/patient/{patientId}` | Bearer JWT, `Receptionist` role | Proxied to QueueService |
+| `PUT` | `/api/queue/call-next` | Bearer JWT, `Doctor` role | Proxied to QueueService |
 | `GET` | `/api/queue/today/waiting` | Bearer JWT, `Doctor` role | Proxied to QueueService |
 | `GET` | `/api/queue/today` | Bearer JWT, `Receptionist` role | Proxied to QueueService |
