@@ -12,7 +12,7 @@ The React app used by clinic staff (Doctors, Receptionists, Admins). It talks on
 - `PatientSearchPage` (Doctor, Receptionist, Admin) — debounced (300ms) live search by name, NIC, or phone number, suppressed below 2 characters. Distinct idle/searching/results/empty/error states; the receptionist empty state links to patient registration.
 - `PatientProfilePage` (Doctor, Receptionist, Admin) — full patient details, allergies, and chronic conditions. Receptionists can update permitted profile fields, check in returning patients, and manage chronic conditions.
 - `QueueManagementPage` (Receptionist) — displays the current clinic day's full queue and polls every five seconds. It resolves names from PatientService by `PatientId`, caches successful lookups across polls, and leaves prescription status neutral until SWC-30 provides PrescriptionService.
-- Placeholder `DoctorDashboard` (real content lands in a later story).
+- `DoctorDashboard` (Doctor) — displays the shared `WAITING` pool in queue-number order and polls every five seconds. It resolves and caches patient names through PatientService; the Call Next Patient control remains disabled until SWC-22 implements that workflow.
 
 ## Port
 

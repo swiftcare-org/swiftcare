@@ -26,3 +26,7 @@ export interface TodayQueueEntry {
 export function getTodayQueue(): Promise<TodayQueueEntry[]> {
   return apiRequest<TodayQueueEntry[]>('/api/queue/today');
 }
+
+export function getWaitingPool(): Promise<TodayQueueEntry[]> {
+  return apiRequest<TodayQueueEntry[]>('/api/queue/today/waiting');
+}

@@ -144,6 +144,84 @@ public class TodayQueueServiceTests
         Assert.Equal(afterMidnightEntry.Id, Assert.Single(afterMidnight).QueueId);
     }
 
+    [Fact]
+    public async Task GetWaitingReturnsOnlyWaitingEntriesWithNullAssignmentFields()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var today = new DateOnly(2026, 9, 2);
+        var waiting = NewEntry(today, "Q-001", QueueStatus.Waiting);
+        var inConsultation = NewEntry(today, "Q-002", QueueStatus.InConsultation);
+        inConsultation.RoomNumber = "2";
+        inConsultation.DoctorName = "Dr Nimal Silva";
+        dbContext.QueueEntries.AddRange(
+            waiting,
+            inConsultation,
+            NewEntry(today, "Q-003", QueueStatus.Completed));
+        await dbContext.SaveChangesAsync();
+
+        var entries = await CreateService(dbContext).GetWaitingAsync();
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(waiting.Id, entry.QueueId);
+        Assert.Equal("WAITING", entry.Status);
+        Assert.Null(entry.RoomNumber);
+        Assert.Null(entry.DoctorName);
+    }
+
+    [Fact]
+    public async Task GetWaitingReturnsEntriesInNumericQueueNumberOrder()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var today = new DateOnly(2026, 9, 2);
+        dbContext.QueueEntries.AddRange(
+            NewEntry(today, "Q-1000"),
+            NewEntry(today, "Q-999"),
+            NewEntry(today, "Q-002"));
+        await dbContext.SaveChangesAsync();
+
+        var entries = await CreateService(dbContext).GetWaitingAsync();
+
+        Assert.Equal(["Q-002", "Q-999", "Q-1000"], entries.Select(entry => entry.QueueNumber));
+    }
+
+    [Fact]
+    public async Task GetWaitingWhenNoPatientsAreWaitingReturnsEmptyCollection()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var today = new DateOnly(2026, 9, 2);
+        dbContext.QueueEntries.AddRange(
+            NewEntry(today, "Q-001", QueueStatus.InConsultation),
+            NewEntry(today, "Q-002", QueueStatus.Completed));
+        await dbContext.SaveChangesAsync();
+
+        var entries = await CreateService(dbContext).GetWaitingAsync();
+
+        Assert.Empty(entries);
+    }
+
+    [Fact]
+    public async Task GetWaitingAfterPatientEntersConsultationNoLongerReturnsPatient()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var entry = NewEntry(new DateOnly(2026, 9, 2), "Q-001");
+        dbContext.QueueEntries.Add(entry);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        Assert.Single(await service.GetWaitingAsync());
+
+        entry.Status = QueueStatus.InConsultation;
+        entry.RoomNumber = "1";
+        entry.DoctorName = "Dr Ayesha Perera";
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(await service.GetWaitingAsync());
+    }
+
     private static async Task<QueueDbContext> CreateDbContextAsync(SqliteConnection connection)
     {
         var dbContext = new QueueDbContext(
