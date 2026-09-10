@@ -9,4 +9,7 @@ public interface ITodayQueueService
 
     Task<IReadOnlyList<TodayQueueEntryResponse>> GetWaitingAsync(
         CancellationToken cancellationToken = default);
+
+    Task<WaitingRoomDisplayResponse> GetDisplayAsync(
+        CancellationToken cancellationToken = default);
 }

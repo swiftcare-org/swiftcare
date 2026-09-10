@@ -45,3 +45,17 @@ export interface CalledPatient {
 export function callNextPatient(): Promise<CalledPatient> {
   return apiRequest<CalledPatient>('/api/queue/call-next', { method: 'PUT' });
 }
+
+export interface RoomQueueAssignment {
+  roomNumber: string;
+  queueNumber: string;
+}
+
+export interface WaitingRoomDisplay {
+  currentRooms: RoomQueueAssignment[];
+  nextQueueNumbers: string[];
+}
+
+export function getWaitingRoomDisplay(): Promise<WaitingRoomDisplay> {
+  return apiRequest<WaitingRoomDisplay>('/api/queue/display');
+}
