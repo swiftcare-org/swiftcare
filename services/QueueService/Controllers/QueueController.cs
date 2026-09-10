@@ -29,6 +29,17 @@ public sealed class QueueController : ControllerBase
         _callNextPatientService = callNextPatientService;
     }
 
+    [HttpGet("display")]
+    [ProducesResponseType(typeof(WaitingRoomDisplayResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDisplay(CancellationToken cancellationToken)
+    {
+        // Intentionally anonymous: the waiting-room screen is public and the response
+        // contains only room and queue numbers. GatewaySecretMiddleware still enforces
+        // the service-to-service trust boundary for direct QueueService requests.
+        var display = await _todayQueueService.GetDisplayAsync(cancellationToken);
+        return Ok(display);
+    }
+
     [HttpGet("today")]
     [ProducesResponseType(typeof(IReadOnlyList<TodayQueueEntryResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]

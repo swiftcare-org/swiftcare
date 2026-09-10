@@ -35,6 +35,58 @@ public sealed class TodayQueueService : ITodayQueueService
         return await GetTodayEntriesAsync(QueueStatus.Waiting, cancellationToken);
     }
 
+    public async Task<WaitingRoomDisplayResponse> GetDisplayAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var clinicNow = TimeZoneInfo.ConvertTime(
+            _timeProvider.GetUtcNow(),
+            _clinicTimeZone);
+        var queueDate = DateOnly.FromDateTime(clinicNow.DateTime);
+
+        // Select only public-display fields so patient and doctor identifiers never enter
+        // the display read model or its serialized response.
+        var entries = await _dbContext.QueueEntries
+            .AsNoTracking()
+            .Where(entry =>
+                entry.QueueDate == queueDate
+                && (entry.Status == QueueStatus.Waiting
+                    || entry.Status == QueueStatus.InConsultation))
+            .Select(entry => new
+            {
+                entry.QueueNumber,
+                entry.Status,
+                entry.RoomNumber
+            })
+            .ToListAsync(cancellationToken);
+
+        var currentRooms = entries
+            .Where(entry =>
+                entry.Status == QueueStatus.InConsultation
+                && !string.IsNullOrWhiteSpace(entry.RoomNumber))
+            .OrderBy(entry => entry.RoomNumber!.Length)
+            .ThenBy(entry => entry.RoomNumber)
+            .Select(entry => new RoomQueueAssignmentResponse
+            {
+                RoomNumber = entry.RoomNumber!,
+                QueueNumber = entry.QueueNumber
+            })
+            .ToList();
+
+        var nextQueueNumbers = entries
+            .Where(entry => entry.Status == QueueStatus.Waiting)
+            .OrderBy(entry => entry.QueueNumber.Length)
+            .ThenBy(entry => entry.QueueNumber)
+            .Take(3)
+            .Select(entry => entry.QueueNumber)
+            .ToList();
+
+        return new WaitingRoomDisplayResponse
+        {
+            CurrentRooms = currentRooms,
+            NextQueueNumbers = nextQueueNumbers
+        };
+    }
+
     private async Task<IReadOnlyList<TodayQueueEntryResponse>> GetTodayEntriesAsync(
         QueueStatus? status,
         CancellationToken cancellationToken)
