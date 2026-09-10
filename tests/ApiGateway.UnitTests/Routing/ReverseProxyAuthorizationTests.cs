@@ -453,6 +453,22 @@ public class ReverseProxyAuthorizationTests
     }
 
     [Fact]
+    public async Task WaitingRoomDisplayRouteWithoutBearerTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+
+        var response = await client.GetAsync("/api/queue/display");
+
+        // QueueService isn't running in this environment, so a successful proxy attempt
+        // fails downstream rather than succeeding. The Gateway must not reject the public
+        // waiting-room display for lacking a bearer token.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task TodayQueueRouteWithAReceptionistTokenPassesGatewayAuthorization()
     {
         using var factory = new ApiGatewayWebApplicationFactory();
