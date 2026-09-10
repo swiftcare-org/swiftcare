@@ -222,6 +222,81 @@ public class TodayQueueServiceTests
         Assert.Empty(await service.GetWaitingAsync());
     }
 
+    [Fact]
+    public async Task GetDisplayReturnsCurrentRoomAssignmentsInRoomNumberOrder()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var today = new DateOnly(2026, 9, 2);
+        var roomTen = NewEntry(today, "Q-010", QueueStatus.InConsultation);
+        roomTen.RoomNumber = "10";
+        roomTen.DoctorName = "Dr Ten";
+        var roomTwo = NewEntry(today, "Q-002", QueueStatus.InConsultation);
+        roomTwo.RoomNumber = "2";
+        roomTwo.DoctorName = "Dr Two";
+        var unassigned = NewEntry(today, "Q-003", QueueStatus.InConsultation);
+        dbContext.QueueEntries.AddRange(
+            roomTen,
+            roomTwo,
+            unassigned,
+            NewEntry(today, "Q-004", QueueStatus.Waiting),
+            NewEntry(today, "Q-005", QueueStatus.Completed),
+            NewEntry(new DateOnly(2026, 9, 1), "Q-001", QueueStatus.InConsultation));
+        await dbContext.SaveChangesAsync();
+
+        var display = await CreateService(dbContext).GetDisplayAsync();
+
+        Assert.Collection(
+            display.CurrentRooms,
+            room =>
+            {
+                Assert.Equal("2", room.RoomNumber);
+                Assert.Equal("Q-002", room.QueueNumber);
+            },
+            room =>
+            {
+                Assert.Equal("10", room.RoomNumber);
+                Assert.Equal("Q-010", room.QueueNumber);
+            });
+    }
+
+    [Fact]
+    public async Task GetDisplayReturnsOnlyNextThreeWaitingQueueNumbersInNumericOrder()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var today = new DateOnly(2026, 9, 2);
+        dbContext.QueueEntries.AddRange(
+            NewEntry(today, "Q-1001"),
+            NewEntry(today, "Q-1000"),
+            NewEntry(today, "Q-999"),
+            NewEntry(today, "Q-002"),
+            NewEntry(today, "Q-001", QueueStatus.InConsultation),
+            NewEntry(today, "Q-003", QueueStatus.Completed),
+            NewEntry(new DateOnly(2026, 9, 1), "Q-001"));
+        await dbContext.SaveChangesAsync();
+
+        var display = await CreateService(dbContext).GetDisplayAsync();
+
+        Assert.Equal(["Q-002", "Q-999", "Q-1000"], display.NextQueueNumbers);
+    }
+
+    [Fact]
+    public async Task GetDisplayWhenNoActiveEntriesExistReturnsEmptyCollections()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.QueueEntries.AddRange(
+            NewEntry(new DateOnly(2026, 9, 2), "Q-001", QueueStatus.Completed),
+            NewEntry(new DateOnly(2026, 9, 1), "Q-001", QueueStatus.Waiting));
+        await dbContext.SaveChangesAsync();
+
+        var display = await CreateService(dbContext).GetDisplayAsync();
+
+        Assert.Empty(display.CurrentRooms);
+        Assert.Empty(display.NextQueueNumbers);
+    }
+
     private static async Task<QueueDbContext> CreateDbContextAsync(SqliteConnection connection)
     {
         var dbContext = new QueueDbContext(
