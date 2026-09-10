@@ -13,6 +13,7 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 - `GET /api/queue/today` — returns all entries for the current clinic-local day in queue-number order, including check-in time, operational status, and nullable room/doctor assignment. Receptionist only.
 - `GET /api/queue/today/waiting` — returns only `WAITING` entries in queue-number order for the shared doctor pool. Doctor only.
 - `PUT /api/queue/call-next` — assigns the first waiting patient to the authenticated doctor and room, changes the entry to `IN_CONSULTATION`, records `CalledAt`, and publishes `patient-called`. Doctor only.
+- `GET /api/queue/display` — returns active room-to-queue assignments and the next three waiting queue numbers for the public waiting-room screen. No user authentication required and no personal information returned.
 - `GET /health` — liveness/readiness check.
 - Enforces the Gateway trust boundary via `GatewaySecretMiddleware`, matching every other service.
 
@@ -57,7 +58,7 @@ docker compose up --detach --no-deps --wait queueservice
 curl http://localhost:5003/health
 ```
 
-Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes check-in messages in the background and serves the receptionist queue reads, doctor shared waiting-pool read, and doctor call-next action through ApiGateway.
+Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes check-in messages in the background and serves the receptionist queue reads, doctor shared waiting-pool read, doctor call-next action, and public waiting-room display through ApiGateway.
 
 For controlled deployments, the published service image can apply migrations and
 exit without starting the web host:
@@ -95,6 +96,8 @@ SWC-77 covers the doctor shared waiting pool: only `WAITING` entries are returne
 
 SWC-78 covers call-next selection and assignment, `IN_CONSULTATION` status, doctor and room occupancy, `CalledAt`, empty-pool handling, removal from the waiting pool, Kafka payload and correlation headers, rollback after publication failure, controller responses, and doctor-only authorization.
 
+SWC-79 covers anonymous public-display access, current room mappings, numeric next-three ordering, empty results, exclusion of completed and previous-day entries, and the serialized response shape to ensure patient and doctor information cannot be exposed.
+
 ## Endpoints
 
 | Method | Path | Auth | Description |
@@ -103,6 +106,7 @@ SWC-78 covers call-next selection and assignment, `IN_CONSULTATION` status, doct
 | `GET` | `/api/queue/today/waiting` | `X-Gateway-Secret`, `X-User-Role: Doctor` | Returns the shared pool of current clinic-day `WAITING` entries ordered by queue number |
 | `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber }` for today's clinic-local queue |
 | `PUT` | `/api/queue/call-next` | `X-Gateway-Secret`, trusted doctor identity headers | Calls the first waiting patient or returns the empty/occupied outcome |
+| `GET` | `/api/queue/display` | `X-Gateway-Secret`; no user identity required | Returns only current room assignments and the next three queue numbers |
 | `GET` | `/health` | none | Health check |
 
 ## Deployment
@@ -113,7 +117,7 @@ Azure deployment uses a dedicated `swiftcare_queue` database account and require
 
 ## Known scope bounds
 
-- **No consultation-completion or public-display APIs.** SWC-22 adds only the call-next transition into `IN_CONSULTATION`. Completing consultations and serving the public waiting-room display remain separate stories.
+- **No consultation-completion API.** The public display reflects current queue state, but completing a consultation and moving its queue entry to `COMPLETED` remain separate stories.
 - **No patient names in QueueService.** The frontend resolves names through PatientService and caches them locally; the queue database and Kafka event retain only `PatientId`.
 - **No prescription integration yet.** The queue page displays a neutral placeholder until SWC-30 implements PrescriptionService's status endpoint. QueueService must never query PrescriptionService directly.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.
