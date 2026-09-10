@@ -12,6 +12,7 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 - `GET /api/queue/today/patient/{patientId}` — returns whether a patient is in today's queue and their assigned queue number. Receptionist only.
 - `GET /api/queue/today` — returns all entries for the current clinic-local day in queue-number order, including check-in time, operational status, and nullable room/doctor assignment. Receptionist only.
 - `GET /api/queue/today/waiting` — returns only `WAITING` entries in queue-number order for the shared doctor pool. Doctor only.
+- `PUT /api/queue/call-next` — assigns the first waiting patient to the authenticated doctor and room, changes the entry to `IN_CONSULTATION`, records `CalledAt`, and publishes `patient-called`. Doctor only.
 - `GET /health` — liveness/readiness check.
 - Enforces the Gateway trust boundary via `GatewaySecretMiddleware`, matching every other service.
 
@@ -39,7 +40,7 @@ QueueService fails fast at startup if any of these are missing — it will not s
 | `Gateway__InternalSecret` | Shared secret validated on every non-health request | Required, must match the API Gateway's `Gateway__InternalSecret` |
 | `Kafka__BootstrapServers` | Address of the Kafka broker | Required to be *configured*; the broker itself does not need to be *reachable* for the service to start |
 
-`Kafka:PatientCheckedInTopic` (`patient-checked-in`), `Kafka:ConsumerGroupId` (`queue-service`), `Kafka:RetryDelay` (5 seconds), `Queue:ClinicTimeZone` (`Asia/Colombo`), and `Queue:MaxAllocationAttempts` (3) are non-secret and already set in `appsettings.json`.
+`Kafka:PatientCheckedInTopic` (`patient-checked-in`), `Kafka:PatientCalledTopic` (`patient-called`), `Kafka:MessageTimeoutMs` (5000), `Kafka:ConsumerGroupId` (`queue-service`), `Kafka:RetryDelay` (5 seconds), `Queue:ClinicTimeZone` (`Asia/Colombo`), and `Queue:MaxAllocationAttempts` (3) are non-secret and already set in `appsettings.json`.
 
 Never hardcode these values in source or commit them to `.env`. Set them via your shell, a local `.env` (never committed), or the orchestrator's secret store.
 
@@ -56,7 +57,7 @@ docker compose up --detach --no-deps --wait queueservice
 curl http://localhost:5003/health
 ```
 
-Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes Kafka messages in the background and serves the receptionist queue reads and doctor shared waiting-pool read through ApiGateway.
+Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes check-in messages in the background and serves the receptionist queue reads, doctor shared waiting-pool read, and doctor call-next action through ApiGateway.
 
 For controlled deployments, the published service image can apply migrations and
 exit without starting the web host:
@@ -76,6 +77,8 @@ With `ASPNETCORE_ENVIRONMENT=Development`, an interactive API explorer (Scalar) 
 
 QueueService validates only that `Kafka:BootstrapServers` is *configured* at startup, never that the broker is *reachable* — the service must start and serve `/health` even when Kafka is down, per SwiftCare's independent-deployability rule. The consumer uses manual offset commits (`EnableAutoCommit = false`): an offset is only committed after the database transaction for that event has committed, so a crash between processing and committing causes Kafka to redeliver the message rather than lose it — safe because of the `ProcessedEvents` idempotency ledger. A malformed or undeserializable message is logged and its offset committed past (skipped), since no amount of redelivery would ever let it succeed. A database failure while processing a well-formed message is logged, the consumer's local position is rewound via `Seek` so the same message is redelivered, and it waits `Kafka:RetryDelay` before trying again — this means a genuinely broken message never blocks the partition, but a real database outage retries the same message indefinitely until the database recovers.
 
+The call-next producer publishes `patient-called` with queue, patient, doctor, room, call-time, and correlation identifiers, but no patient demographic or contact data. Publishing is bounded by `Kafka:MessageTimeoutMs`; a failed publication rolls back the queue assignment and returns a service-unavailable response.
+
 ## Testing
 
 ```bash
@@ -90,6 +93,8 @@ SWC-76 additionally covers the full daily queue's numeric ordering (including th
 
 SWC-77 covers the doctor shared waiting pool: only `WAITING` entries are returned, results use numeric queue-number ordering, room and doctor fields remain null, an empty pool returns an empty collection, and an entry disappears after its status changes to `IN_CONSULTATION`. Controller tests also verify doctor-only authorization.
 
+SWC-78 covers call-next selection and assignment, `IN_CONSULTATION` status, doctor and room occupancy, `CalledAt`, empty-pool handling, removal from the waiting pool, Kafka payload and correlation headers, rollback after publication failure, controller responses, and doctor-only authorization.
+
 ## Endpoints
 
 | Method | Path | Auth | Description |
@@ -97,6 +102,7 @@ SWC-77 covers the doctor shared waiting pool: only `WAITING` entries are returne
 | `GET` | `/api/queue/today` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns all current clinic-day queue entries ordered by queue number |
 | `GET` | `/api/queue/today/waiting` | `X-Gateway-Secret`, `X-User-Role: Doctor` | Returns the shared pool of current clinic-day `WAITING` entries ordered by queue number |
 | `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber }` for today's clinic-local queue |
+| `PUT` | `/api/queue/call-next` | `X-Gateway-Secret`, trusted doctor identity headers | Calls the first waiting patient or returns the empty/occupied outcome |
 | `GET` | `/health` | none | Health check |
 
 ## Deployment
@@ -107,7 +113,7 @@ Azure deployment uses a dedicated `swiftcare_queue` database account and require
 
 ## Known scope bounds
 
-- **No queue-mutation or public-display APIs.** SWC-21 adds only the doctor's shared waiting-pool read. Calling patients, changing queue status, assigning doctors/rooms, and the public display remain separate stories.
+- **No consultation-completion or public-display APIs.** SWC-22 adds only the call-next transition into `IN_CONSULTATION`. Completing consultations and serving the public waiting-room display remain separate stories.
 - **No patient names in QueueService.** The frontend resolves names through PatientService and caches them locally; the queue database and Kafka event retain only `PatientId`.
 - **No prescription integration yet.** The queue page displays a neutral placeholder until SWC-30 implements PrescriptionService's status endpoint. QueueService must never query PrescriptionService directly.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.

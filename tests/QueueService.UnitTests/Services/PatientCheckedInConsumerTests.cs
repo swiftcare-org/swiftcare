@@ -20,6 +20,7 @@ public class PatientCheckedInConsumerTests
     {
         BootstrapServers = "localhost:9092",
         PatientCheckedInTopic = "patient-checked-in",
+        PatientCalledTopic = "patient-called",
         ConsumerGroupId = "queue-service",
         // Kept short so the failure-path test (which waits out one retry delay) stays fast.
         RetryDelay = TimeSpan.FromMilliseconds(10)

@@ -16,6 +16,7 @@ public sealed class QueueServiceWebApplicationFactory : WebApplicationFactory<Pr
 
     public Mock<IPatientQueueStatusService> PatientQueueStatusServiceMock { get; } = new();
     public Mock<ITodayQueueService> TodayQueueServiceMock { get; } = new();
+    public Mock<ICallNextPatientService> CallNextPatientServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -30,6 +31,7 @@ public sealed class QueueServiceWebApplicationFactory : WebApplicationFactory<Pr
                 ["Gateway:InternalSecret"] = ValidGatewaySecret,
                 ["Kafka:BootstrapServers"] = "unused:9092",
                 ["Kafka:PatientCheckedInTopic"] = "patient-checked-in",
+                ["Kafka:PatientCalledTopic"] = "patient-called",
                 ["Kafka:ConsumerGroupId"] = "queue-service-tests",
                 ["Queue:ClinicTimeZone"] = "Asia/Colombo"
             });
@@ -40,8 +42,10 @@ public sealed class QueueServiceWebApplicationFactory : WebApplicationFactory<Pr
             services.RemoveAll<IHostedService>();
             services.RemoveAll<IPatientQueueStatusService>();
             services.RemoveAll<ITodayQueueService>();
+            services.RemoveAll<ICallNextPatientService>();
             services.AddScoped(_ => PatientQueueStatusServiceMock.Object);
             services.AddScoped(_ => TodayQueueServiceMock.Object);
+            services.AddScoped(_ => CallNextPatientServiceMock.Object);
         });
     }
 }
