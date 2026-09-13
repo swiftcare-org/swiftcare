@@ -111,7 +111,16 @@ SWC-79 covers anonymous public-display access, current room mappings, numeric ne
 
 ## Deployment
 
-CD publishes `swiftcare-queue:<commit-sha>` to GHCR, runs `--migrate` through a finite Azure Container Apps Job, and deploys QueueService as a private background Container App without ingress. The worker keeps one replica active while the Azure environment is running so it can continuously consume `patient-checked-in` events. Credit-saving operations may explicitly stop the app; a later deployment starts it again.
+CD publishes `swiftcare-queue:<commit-sha>` to GHCR, runs `--migrate` through a finite Azure Container Apps Job, and deploys QueueService with internal HTTP ingress targeting port `5003`. It continues consuming `patient-checked-in` events in the background. The worker keeps one replica active while the Azure environment is running. Credit-saving operations may explicitly stop the app; a later deployment starts it again.
+
+Both app creation and updates enable internal ingress. The public API Gateway forwards queue requests to `https://<QueueService internal hostname>` using the `queue-cluster` destination override. QueueService is not directly exposed to the public internet; its gateway-secret middleware continues protecting non-health API requests. The waiting-room display is anonymous through the gateway, which supplies the internal gateway secret.
+
+Deployment verifies that the latest QueueService revision is ready, ingress is internal (`external=false`), and the target port is `5003`. After gateway deployment, smoke checks use bounded retries to verify:
+
+- `GET /api/queue/display` through the gateway returns HTTP `200` with `currentRooms` and `nextQueueNumbers` arrays. Room entries contain string `roomNumber` and `queueNumber` fields; upcoming queue numbers are strings. Empty arrays are valid.
+- `GET /api/queue/today` through the gateway without a token returns HTTP `401`.
+
+Response bodies are not printed to workflow logs, and the temporary display response file is removed when the smoke-test step exits. These checks cover HTTP routing and anonymous-access rejection; Kafka consumption and authenticated role behavior still require separate verification.
 
 Azure deployment uses a dedicated `swiftcare_queue` database account and requires the GitHub Environment values documented in the repository root README.
 
