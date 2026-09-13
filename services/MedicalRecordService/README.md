@@ -18,7 +18,7 @@ The Gateway supplies the authenticated doctor's ID, name, and room number. These
 
 ## Database schema
 
-The service schema is defined in `Database/schema.sql`. It creates the `ConsultationTemplates` and `Consultations` tables and seeds the general consultation template.
+The service schema is defined in `Database/schema.sql`. It creates the `ConsultationTemplates` and `Consultations` tables and seeds general, respiratory, gastrointestinal, and musculoskeletal consultation templates.
 
 With the repository environment variables loaded and the MySQL container running, apply it from the repository root:
 

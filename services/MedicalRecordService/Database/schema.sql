@@ -44,12 +44,40 @@ INSERT IGNORE INTO ConsultationTemplates (
     IsActive,
     CreatedAt
 )
-VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'General Consultation',
-    'Presenting symptoms:\n- ',
-    'Examination findings:\n- ',
-    'Assessment and plan:\n- ',
-    TRUE,
-    UTC_TIMESTAMP(6)
-);
+VALUES
+    (
+        '00000000-0000-0000-0000-000000000001',
+        'General Consultation',
+        'Presenting symptoms:\n- ',
+        'Examination findings:\n- ',
+        'Assessment and plan:\n- ',
+        TRUE,
+        UTC_TIMESTAMP(6)
+    ),
+    (
+        '00000000-0000-0000-0000-000000000002',
+        'Respiratory Consultation',
+        'Respiratory symptoms:\n- ',
+        'Respiratory examination findings:\n- ',
+        'Respiratory assessment and plan:\n- ',
+        TRUE,
+        UTC_TIMESTAMP(6)
+    ),
+    (
+        '00000000-0000-0000-0000-000000000003',
+        'Gastrointestinal Consultation',
+        'Gastrointestinal symptoms:\n- ',
+        'Abdominal examination findings:\n- ',
+        'Gastrointestinal assessment and plan:\n- ',
+        TRUE,
+        UTC_TIMESTAMP(6)
+    ),
+    (
+        '00000000-0000-0000-0000-000000000004',
+        'Musculoskeletal Consultation',
+        'Musculoskeletal symptoms:\n- ',
+        'Musculoskeletal examination findings:\n- ',
+        'Musculoskeletal assessment and plan:\n- ',
+        TRUE,
+        UTC_TIMESTAMP(6)
+    );
