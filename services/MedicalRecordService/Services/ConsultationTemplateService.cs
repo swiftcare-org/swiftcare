@@ -37,7 +37,7 @@ public sealed class ConsultationTemplateService : IConsultationTemplateService
         {
             templates.Add(new ConsultationTemplateResponse
             {
-                Id = Guid.Parse(reader.GetString(idOrdinal)),
+                Id = reader.GetGuid(idOrdinal),
                 Name = reader.GetString(nameOrdinal),
                 Symptoms = reader.GetString(symptomsOrdinal),
                 ExaminationFindings = reader.GetString(examinationFindingsOrdinal),
