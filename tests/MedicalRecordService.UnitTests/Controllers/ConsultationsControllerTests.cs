@@ -162,15 +162,16 @@ public class ConsultationsControllerTests
 
     private static CreateConsultationRequest ValidRequest(
         string symptoms = "Reported symptoms",
-        string diagnosis = "Confirmed diagnosis") => new()
-    {
-        QueueId = Guid.NewGuid(),
-        PatientId = Guid.NewGuid(),
-        Symptoms = symptoms,
-        ExaminationFindings = "Recorded findings",
-        Diagnosis = diagnosis,
-        Notes = "Consultation notes"
-    };
+        string diagnosis = "Confirmed diagnosis") =>
+        new()
+        {
+            QueueId = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            Symptoms = symptoms,
+            ExaminationFindings = "Recorded findings",
+            Diagnosis = diagnosis,
+            Notes = "Consultation notes"
+        };
 
     private static async Task<Dictionary<string, string[]>> ReadValidationErrorsAsync(
         HttpResponseMessage response)
