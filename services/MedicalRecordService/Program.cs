@@ -1,4 +1,6 @@
+using MedicalRecordService.Data;
 using MedicalRecordService.Middleware;
+using MedicalRecordService.Services;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,6 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton<IMedicalRecordConnectionFactory, MySqlMedicalRecordConnectionFactory>();
+builder.Services.AddScoped<IConsultationTemplateService, ConsultationTemplateService>();
 
 var app = builder.Build();
 
