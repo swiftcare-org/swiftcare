@@ -819,7 +819,7 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy QueueService as a private background worker
+      - name: Deploy QueueService with internal ingress
         shell: bash
         run: |
           set -euo pipefail
@@ -856,6 +856,7 @@ jobs:
               --image "$image" \
               --registry-server ghcr.io \
               --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --ingress internal --target-port 5003 \
               --cpu 0.25 --memory 0.5Gi \
               --min-replicas 1 --max-replicas 1 \
               --secrets \
@@ -872,14 +873,10 @@ jobs:
               --only-show-errors >/dev/null
           fi
 
-          ingress_external=$(az containerapp show \
+          az containerapp ingress enable \
             --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-            --query properties.configuration.ingress.external --output tsv)
-          if [ -n "$ingress_external" ]; then
-            az containerapp ingress disable \
-              --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
-              --only-show-errors >/dev/null
-          fi
+            --type internal --target-port 5003 --transport auto \
+            --only-show-errors >/dev/null
 
           az containerapp revision set-mode \
             --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
@@ -912,12 +909,13 @@ jobs:
               ingress=$(az containerapp show \
                 --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
                 --query properties.configuration.ingress --output json)
-              if [ -n "$ingress" ] && [ "$ingress" != "null" ]; then
-                echo "::error::QueueService must not expose ingress"
+              if ! jq -e '.external == false and .targetPort == 5003' \
+                <<< "$ingress" >/dev/null; then
+                echo "::error::QueueService requires internal ingress on port 5003"
                 exit 1
               fi
 
-              echo "QueueService revision $ready is ready without ingress."
+              echo "QueueService revision $ready is ready with internal ingress."
               exit 0
             fi
 
@@ -990,9 +988,18 @@ jobs:
             exit 1
           fi
 
+          queue_fqdn=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$QUEUE_APP" \
+            --query properties.configuration.ingress.fqdn --output tsv)
+          if [ -z "$queue_fqdn" ]; then
+            echo "::error::QueueService has no internal ingress FQDN"
+            exit 1
+          fi
+
           image="$GATEWAY_IMAGE:$DEPLOY_SHA"
           auth_proxy_address="https://${auth_fqdn}"
           patient_proxy_address="https://${patient_fqdn}"
+          queue_proxy_address="https://${queue_fqdn}"
 
           if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" >/dev/null 2>&1; then
             az containerapp registry set \
@@ -1020,6 +1027,7 @@ jobs:
                 "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN" \
                 "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$auth_proxy_address" \
                 "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
+                "ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address=$queue_proxy_address" \
               --only-show-errors >/dev/null
           else
             az containerapp create \
@@ -1045,6 +1053,7 @@ jobs:
                 "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN" \
                 "ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address=$auth_proxy_address" \
                 "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
+                "ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address=$queue_proxy_address" \
               --only-show-errors >/dev/null
           fi
 
@@ -1166,7 +1175,52 @@ jobs:
             exit 1
           fi
 
-          echo "Gateway health, AuthService routing, and PatientService routing passed."
+          queue_display_response=$(mktemp)
+          trap 'rm -f "$queue_display_response"' EXIT
+          queue_display_ok=false
+          for attempt in $(seq 1 30); do
+            code=$(curl --silent --output "$queue_display_response" --write-out '%{http_code}' \
+              --max-time 20 "$GATEWAY_URL/api/queue/display" || true)
+            if [ "$code" = "200" ] && jq -e '
+              type == "object"
+              and (.currentRooms | type == "array")
+              and (.nextQueueNumbers | type == "array")
+              and all(.currentRooms[];
+                type == "object"
+                and (.roomNumber | type == "string")
+                and (.queueNumber | type == "string"))
+              and all(.nextQueueNumbers[]; type == "string")
+            ' "$queue_display_response" >/dev/null 2>&1; then
+              queue_display_ok=true
+              break
+            fi
+            echo "Queue display returned ${code:-no response} or an invalid response shape; attempt $attempt/30"
+            sleep 10
+          done
+
+          if [ "$queue_display_ok" != "true" ]; then
+            echo "::error::Queue display did not return HTTP 200 with the expected JSON structure"
+            exit 1
+          fi
+
+          queue_auth_ok=false
+          for attempt in $(seq 1 30); do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --max-time 20 "$GATEWAY_URL/api/queue/today" || true)
+            if [ "$code" = "401" ]; then
+              queue_auth_ok=true
+              break
+            fi
+            echo "Unauthenticated queue request returned ${code:-no response}; attempt $attempt/30"
+            sleep 10
+          done
+
+          if [ "$queue_auth_ok" != "true" ]; then
+            echo "::error::Protected queue route did not reject an unauthenticated request with HTTP 401"
+            exit 1
+          fi
+
+          echo "Gateway health, AuthService routing, PatientService routing, QueueService display routing, and queue authentication checks passed."
 
   deploy-frontend:
     name: Build and deploy frontend
