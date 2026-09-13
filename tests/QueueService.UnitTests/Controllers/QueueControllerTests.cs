@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Moq;
 using QueueService.Models.Dtos;
 using QueueService.Models.Enums;
@@ -37,6 +38,60 @@ public class QueueControllerTests
         client.DefaultRequestHeaders.Add(RoomNumberHeaderName, "R-204");
         client.DefaultRequestHeaders.Add(CorrelationIdHeaderName, correlationId);
         return client;
+    }
+
+    [Fact]
+    public async Task GetDisplayWithoutUserIdentityReturnsOnlyPublicQueueData()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var expected = new WaitingRoomDisplayResponse
+        {
+            CurrentRooms =
+            [
+                new RoomQueueAssignmentResponse
+                {
+                    RoomNumber = "2",
+                    QueueNumber = "Q-007"
+                }
+            ],
+            NextQueueNumbers = ["Q-008", "Q-009", "Q-010"]
+        };
+        factory.TodayQueueServiceMock
+            .Setup(service => service.GetDisplayAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(
+            GatewaySecretHeaderName,
+            QueueServiceWebApplicationFactory.ValidGatewaySecret);
+
+        var response = await client.GetAsync("/api/queue/display");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("patient", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("doctor", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("checkedIn", json, StringComparison.OrdinalIgnoreCase);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(
+            ["currentRooms", "nextQueueNumbers"],
+            document.RootElement
+                .EnumerateObject()
+                .Select(property => property.Name)
+                .OrderBy(name => name));
+        Assert.Equal(
+            ["queueNumber", "roomNumber"],
+            document.RootElement
+                .GetProperty("currentRooms")[0]
+                .EnumerateObject()
+                .Select(property => property.Name)
+                .OrderBy(name => name));
+
+        var body = await response.Content.ReadFromJsonAsync<WaitingRoomDisplayResponse>();
+        var room = Assert.Single(body!.CurrentRooms);
+        Assert.Equal("2", room.RoomNumber);
+        Assert.Equal("Q-007", room.QueueNumber);
+        Assert.Equal(["Q-008", "Q-009", "Q-010"], body.NextQueueNumbers);
     }
 
     [Fact]

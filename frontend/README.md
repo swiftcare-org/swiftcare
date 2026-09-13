@@ -13,6 +13,7 @@ The React app used by clinic staff (Doctors, Receptionists, Admins). It talks on
 - `PatientProfilePage` (Doctor, Receptionist, Admin) — full patient details, allergies, and chronic conditions. Receptionists can update permitted profile fields, check in returning patients, and manage chronic conditions.
 - `QueueManagementPage` (Receptionist) — displays the current clinic day's full queue and polls every five seconds. It resolves names from PatientService by `PatientId`, caches successful lookups across polls, and leaves prescription status neutral until SWC-30 provides PrescriptionService.
 - `DoctorDashboard` (Doctor) — displays the shared `WAITING` pool in queue-number order and polls every five seconds. Doctors can call the first waiting patient, see the current patient assignment, and are prevented from calling another while occupied. Patient names are resolved and cached through PatientService.
+- `WaitingRoomDisplayPage` (public) — available at `/queue/display` without login. Shows only current room-to-queue assignments and the next three waiting queue numbers, polls every five seconds, and uses a responsive layout suitable for a TV or monitor.
 
 ## Port
 
@@ -40,7 +41,7 @@ npm install
 npm run dev
 ```
 
-Requires the API Gateway (port 8000) and AuthService (port 5000) for login. PatientService (port 5002) supplies patient details, while QueueService (port 5003) supplies check-in and queue data. The frontend itself starts without them, but the corresponding requests fail.
+Requires the API Gateway (port 8000) and AuthService (port 5000) for login. PatientService (port 5002) supplies patient details, while QueueService (port 5003) supplies check-in, queue, and public waiting-room display data. The frontend itself starts without them, but the corresponding requests fail. The public `/queue/display` page does not require AuthService or a user session.
 
 ## Build
 
