@@ -9,7 +9,10 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<IMedicalRecordConnectionFactory, MySqlMedicalRecordConnectionFactory>();
+builder.Services.AddScoped<IConsultationRepository, AdoNetConsultationRepository>();
 builder.Services.AddScoped<IConsultationTemplateService, ConsultationTemplateService>();
+builder.Services.AddScoped<IConsultationService, ConsultationService>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();
 
