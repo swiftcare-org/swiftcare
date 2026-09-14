@@ -700,7 +700,7 @@ jobs:
             az containerapp update \
               --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
               --image "$image" --cpu 0.25 --memory 0.5Gi \
-              --min-replicas 0 --max-replicas 1 \
+              --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
                 "ASPNETCORE_URLS=http://+:5000" \
@@ -720,7 +720,7 @@ jobs:
               --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
               --ingress internal --target-port 5000 \
               --cpu 0.25 --memory 0.5Gi \
-              --min-replicas 0 --max-replicas 1 \
+              --min-replicas 1 --max-replicas 1 \
               --secrets \
                 "auth-db=$AUTH_DB_CONNECTION" \
                 "jwt-key=$JWT_SIGNING_KEY" \
@@ -773,7 +773,7 @@ jobs:
             az containerapp update \
               --resource-group "$RESOURCE_GROUP" --name "$PATIENT_APP" \
               --image "$image" --cpu 0.25 --memory 0.5Gi \
-              --min-replicas 0 --max-replicas 1 \
+              --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
                 "ASPNETCORE_URLS=http://+:5002" \
@@ -790,7 +790,7 @@ jobs:
               --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
               --ingress internal --target-port 5002 \
               --cpu 0.25 --memory 0.5Gi \
-              --min-replicas 0 --max-replicas 1 \
+              --min-replicas 1 --max-replicas 1 \
               --secrets \
                 "patient-db=$PATIENT_DB_CONNECTION" \
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
@@ -1015,7 +1015,7 @@ jobs:
             az containerapp update \
               --resource-group "$RESOURCE_GROUP" --name "$GATEWAY_APP" \
               --image "$image" --cpu 0.25 --memory 0.5Gi \
-              --min-replicas 0 --max-replicas 1 \
+              --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
                 "ASPNETCORE_URLS=http://+:8000" \
@@ -1038,7 +1038,7 @@ jobs:
               --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
               --ingress external --target-port 8000 \
               --cpu 0.25 --memory 0.5Gi \
-              --min-replicas 0 --max-replicas 1 \
+              --min-replicas 1 --max-replicas 1 \
               --secrets \
                 "jwt-key=$JWT_SIGNING_KEY" \
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
