@@ -75,3 +75,18 @@ dotnet test tests/E2ETests --filter Category=Smoke
 
 `WebDriverManager` resolves and downloads a matching `chromedriver` for the
 locally installed Chrome automatically, so no manual driver setup is needed.
+
+## CI setup
+
+The CI E2E job builds AuthService, PatientService, QueueService,
+MedicalRecordService and Gateway from the main Compose file. It starts MySQL and
+Kafka, applies the three EF migration sets and the medical-record SQL schema,
+then creates the Kafka topics. All four backend services must pass their Compose
+health checks before Gateway starts; Gateway must be healthy before Selenium
+runs. The job supplies a disposable MySQL user/password to both Compose and the
+test process so the queue precondition helper connects to the same database.
+
+On failure, the `e2e-test-results` artifact contains Compose status, logs from
+QueueService and MedicalRecordService alongside the other services, frontend
+output and test results. CI removes its temporary containers and database volume
+afterward.
