@@ -181,9 +181,9 @@ terraform -chdir=deployment/terraform apply "messaging-on.tfplan"
 
 Terraform destroys and recreates these resources; it does not pause them. The new private IP is written automatically to the Kafka private DNS record.
 
-MySQL runtime start and stop are operational actions rather than desired infrastructure changes. Use Azure CLI for those actions. CD sets `min-replicas=1` and `max-replicas=1` for Gateway, AuthService, PatientService, and QueueService on both creation and update. Running apps keep a replica when idle, so do not rely on inactivity to stop their compute usage.
+MySQL runtime start and stop are operational actions rather than desired infrastructure changes. Use Azure CLI for those actions. Terraform also manages the `swiftcare_medical_record` database; review its plan before applying, and import an existing database instead of recreating it. CD sets `min-replicas=1` and `max-replicas=1` for Gateway, AuthService, PatientService, QueueService, and MedicalRecordService on both creation and update. Running apps keep a replica when idle, so do not rely on inactivity to stop their compute usage.
 
-For a planned shutdown, first ensure no CD deployment is running or queued, then explicitly stop all four application Container Apps in Azure and verify their status is `Stopped`. Remove messaging using the reviewed plan above, then stop MySQL. Retained storage and other resources can still incur charges. A subsequent CD deployment can start the apps again, so coordinate deployments with the team during the shutdown period.
+For a planned shutdown, first ensure no CD deployment is running or queued, then explicitly stop all five application Container Apps in Azure (including MedicalRecordService) and verify their status is `Stopped`. Remove messaging using the reviewed plan above, then stop MySQL. Retained storage and other resources can still incur charges. A subsequent CD deployment can start the apps again, so coordinate deployments with the team during the shutdown period.
 
 ## Sprint handover
 

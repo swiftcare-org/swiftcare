@@ -20,12 +20,13 @@ The Gateway supplies the authenticated doctor's ID, name, and room number. These
 
 The service schema is defined in `Database/schema.sql`. It creates the `ConsultationTemplates` and `Consultations` tables and seeds general, respiratory, gastrointestinal, and musculoskeletal consultation templates.
 
-With the repository environment variables loaded and the MySQL container running, apply it from the repository root:
+With Docker Compose, `medicalrecord-migrate` applies this schema automatically before MedicalRecordService starts. To apply it separately with the service image:
 
 ```powershell
-Get-Content -Raw services/MedicalRecordService/Database/schema.sql |
-    docker compose exec -T mysql mysql "-u$env:MYSQL_USER" "-p$env:MYSQL_PASSWORD" $env:MEDICAL_RECORD_DB_NAME
+docker compose run --rm --no-deps medicalrecord-migrate
 ```
+
+The same `--migrate` command runs in a manual Azure Container Apps job inside the VNet. CD waits for it to succeed before deploying MedicalRecordService and fails if the job fails or times out. `CREATE TABLE IF NOT EXISTS` and `INSERT IGNORE` make repeated runs safe.
 
 Each queue entry can have at most one consultation record. The chosen template ID and name are stored on the consultation so the template used for the visit remains identifiable.
 

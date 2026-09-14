@@ -140,7 +140,7 @@ The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 
 
 ## Running the application locally
 
-For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
+For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. Compose initializes the medical-record schema and four consultation templates before starting MedicalRecordService. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
 
 ### One-time database preparation
 
@@ -289,7 +289,7 @@ Each microservice owns its entities, DbContext, logical MySQL database, and comm
 | AuthService | AuthDbContext | swiftcare_auth |
 | PatientService | PatientDbContext | swiftcare_patient |
 | QueueService | QueueDbContext | swiftcare_queue |
-| MedicalRecordService | MedicalRecordDbContext | swiftcare_medical_record |
+| MedicalRecordService | ADO.NET schema in `Database/schema.sql` | swiftcare_medical_record |
 | PrescriptionService | PrescriptionDbContext | swiftcare_prescription |
 | NotificationService | NotificationDbContext | swiftcare_notification |
 
@@ -303,7 +303,7 @@ The CD workflow reads deployment configuration from the `azure-development` GitH
 
 Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. Custom-domain deployment requires `GATEWAY_ORIGIN`, `FRONTEND_ORIGIN`, and `FRONTEND_WWW_ORIGIN` to contain HTTPS origins without trailing slashes. AuthService, PatientService, and QueueService use separate non-administrator MySQL accounts restricted to `swiftcare_auth`, `swiftcare_patient`, and `swiftcare_queue` respectively, never the flexible-server administrator account.
 
-PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
+PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. MedicalRecordService deployment requires `AZURE_MEDICAL_RECORD_APP` (for example, `swiftcare-medical-record`), `AZURE_MEDICAL_RECORD_SCHEMA_JOB` (for example, `swiftcare-medical-record-schema`), and `MEDICAL_RECORD_DB_USER` environment variables plus the `MEDICAL_RECORD_DB_PASSWORD` environment secret. The medical-record account needs privileges only on `swiftcare_medical_record`; create that account inside the Azure VNet before running CD and keep its password in the `azure-development` GitHub Environment secret. Review and apply the Terraform plan that creates `swiftcare_medical_record` first. If the database already exists outside Terraform state, import it instead of attempting to create it again. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
 
 ## CI/CD
 
@@ -335,9 +335,9 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 ### Continuous deployment
 
-A successful CI run for `main` automatically deploys the current Sprint 1 application slice to the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, and QueueService images to GHCR; run each service's migrations as finite Container Apps jobs; deploy AuthService and PatientService behind internal ingress; deploy QueueService as a Kafka consumer with internal HTTP ingress on port `5003`; deploy the public Gateway last with the QueueService internal HTTPS hostname as its queue destination; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
+A successful CI run for `main` automatically deploys the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, QueueService, and MedicalRecordService images to GHCR; run EF migrations and the medical-record SQL schema as finite Container Apps jobs inside the VNet; deploy the services with internal ingress, including MedicalRecordService on port `5004`; deploy the public Gateway last with internal HTTPS destinations for QueueService and MedicalRecordService; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
 
-CD sets both minimum and maximum replicas to `1` for Gateway, AuthService, PatientService, and QueueService on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
+CD sets both minimum and maximum replicas to `1` for Gateway, AuthService, PatientService, QueueService, and MedicalRecordService on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
 
 The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. The three placeholder services are not fabricated or deployed until their projects exist.
 
