@@ -11,6 +11,10 @@
     <!-- Pins the transitive AngleSharp version pulled in by WebDriverManager past a known moderate-severity ReDoS advisory (GHSA-pgww-w46g-26qg). -->
     <PackageReference Include="AngleSharp" Version="1.7.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <!-- SWC-15 only: the "registered but not in today's queue" precondition is unreachable
+         over HTTP, so Support/QueueDatabase.cs deletes that one row directly. Same version
+         MedicalRecordService already pins. -->
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
     <PackageReference Include="Selenium.WebDriver" Version="4.27.0" />
     <PackageReference Include="Selenium.Support" Version="4.27.0" />
     <PackageReference Include="WebDriverManager" Version="2.17.5" />
