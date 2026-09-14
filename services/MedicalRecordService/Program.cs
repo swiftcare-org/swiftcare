@@ -3,6 +3,12 @@ using MedicalRecordService.Middleware;
 using MedicalRecordService.Services;
 using Scalar.AspNetCore;
 
+if (args.Contains("--migrate"))
+{
+    Environment.ExitCode = await SchemaInstaller.RunAsync();
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
