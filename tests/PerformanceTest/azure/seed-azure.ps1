@@ -39,6 +39,16 @@
 .PARAMETER PatientCount
     Number of patient records to register. Default: 500
 
+.PARAMETER DoctorCount
+    Number of load-test Doctor accounts to create, each with its own room number, and
+    therefore the number of pre-called queue entries written to data/called-queue.csv.
+    One pre-called entry buys exactly one consultation (SWC-24), so this sets the size of
+    the write pool for the Load run. Default: 70
+
+.PARAMETER QueueSettleSeconds
+    Seconds to wait after the last registration before pre-calling, so QueueService has
+    consumed the patient-checked-in events. Default: 20
+
 .PARAMETER UserPassword
     Password assigned to every created load-test account. Default: LoadTest#Pass1
 
@@ -56,7 +66,9 @@ param(
     [string]$AdminPassword = $env:AZURE_ADMIN_PASSWORD,
     [int]$UserCount = 25,
     [int]$PatientCount = 500,
-    [string]$UserPassword = "LoadTest#Pass1"
+    [string]$UserPassword = "LoadTest#Pass1",
+    [int]$DoctorCount = 70,
+    [int]$QueueSettleSeconds = 20
 )
 
 $ErrorActionPreference = "Stop"
@@ -180,5 +192,91 @@ $terms = @(
 Set-Content -Path (Join-Path $dataDir "search-terms.csv") -Value $terms -Encoding utf8
 Write-Host "  wrote data/search-terms.csv ($($terms.Count - 1) rows)" -ForegroundColor Green
 
+# --- Doctor accounts + pre-called queue entries (SWC-88) -------------------
+# The SWC-24 consultation sampler needs a queue entry that is already
+# IN_CONSULTATION, and QueueService allows one open consultation per doctor and
+# per room at a time. So each pre-called entry costs one doctor account with its
+# own room number, and each entry is good for exactly one 201 (a second
+# consultation on the same queueId answers 409). DoctorCount therefore sets the
+# size of the write pool for the whole Load run.
+Write-Host "`nCreating $DoctorCount load-test Doctor accounts..." -ForegroundColor Cyan
+$doctorRows = [System.Collections.Generic.List[string]]::new()
+$doctorRows.Add("username,password,roomNumber")
+
+for ($i = 1; $i -le $DoctorCount; $i++) {
+    $username = "load.doctor.{0:D3}" -f $i
+    $room = "PR{0:D3}" -f $i          # never "1" etc, so real clinic rooms stay free
+    $body = @{
+        username   = $username
+        password   = $UserPassword
+        fullName   = "Load Doctor $i"
+        role       = "Doctor"
+        roomNumber = $room
+    } | ConvertTo-Json -Compress
+
+    try {
+        Invoke-RestMethod -Method Post -Uri "$GatewayUrl/api/users" `
+            -Headers @{ Authorization = "Bearer $adminToken" } `
+            -ContentType "application/json" -Body $body | Out-Null
+    }
+    catch {
+        $status = $_.Exception.Response.StatusCode.value__
+        if ($status -eq 409 -or $status -eq 400) {
+            Write-Host "  $username already exists - reusing (assumes same password and room)." -ForegroundColor DarkYellow
+        }
+        else {
+            throw
+        }
+    }
+    $doctorRows.Add("$username,$UserPassword,$room")
+    if ($i % 20 -eq 0) { Write-Host "  $i / $DoctorCount" -ForegroundColor DarkGray }
+}
+
+Set-Content -Path (Join-Path $dataDir "doctors.csv") -Value $doctorRows -Encoding utf8
+Write-Host "  wrote data/doctors.csv ($($doctorRows.Count - 1) rows)" -ForegroundColor Green
+
+# Registration publishes patient-checked-in over Kafka and QueueService consumes it
+# asynchronously, so the waiting pool lags the last registration by a few seconds.
+Write-Host "Waiting ${QueueSettleSeconds}s for QueueService to consume the check-in events..." -ForegroundColor Cyan
+Start-Sleep -Seconds $QueueSettleSeconds
+
+Write-Host "Pre-calling one patient per doctor for the consultation sampler..." -ForegroundColor Cyan
+$calledRows = [System.Collections.Generic.List[string]]::new()
+$calledRows.Add("calledQueueId,calledPatientId")
+
+for ($i = 1; $i -le $DoctorCount; $i++) {
+    $username = "load.doctor.{0:D3}" -f $i
+    try {
+        $doctorToken = Get-Token $username $UserPassword
+        $called = Invoke-RestMethod -Method Put -Uri "$GatewayUrl/api/queue/call-next" `
+            -Headers @{ Authorization = "Bearer $doctorToken" } `
+            -ContentType "application/json"
+        $calledRows.Add("$($called.queueId),$($called.patientId)")
+    }
+    catch {
+        $status = $_.Exception.Response.StatusCode.value__
+        if ($status -eq 404) {
+            Write-Host "  waiting pool is empty after $($calledRows.Count - 1) calls - stopping." -ForegroundColor DarkYellow
+            break
+        }
+        if ($status -eq 409) {
+            Write-Host "  $username already has an open consultation - skipping." -ForegroundColor DarkYellow
+            continue
+        }
+        throw
+    }
+    if ($i % 20 -eq 0) { Write-Host "  $i / $DoctorCount" -ForegroundColor DarkGray }
+}
+
+Set-Content -Path (Join-Path $dataDir "called-queue.csv") -Value $calledRows -Encoding utf8
+Write-Host "  wrote data/called-queue.csv ($($calledRows.Count - 1) rows)" -ForegroundColor Green
+
+if (($calledRows.Count - 1) -lt $DoctorCount) {
+    Write-Host "  fewer pre-called entries than doctors: register more patients (-PatientCount) if the" -ForegroundColor DarkYellow
+    Write-Host "  consultation group should stay busy for the whole Load run." -ForegroundColor DarkYellow
+}
+
 Write-Host "`nAzure seeding complete. ~$PatientCount patient-checked-in events were" -ForegroundColor Green
-Write-Host "published and consumed by the deployed QueueService during this run." -ForegroundColor Green
+Write-Host "published and consumed by the deployed QueueService during this run, and" -ForegroundColor Green
+Write-Host "$($calledRows.Count - 1) of those queue entries are now IN_CONSULTATION, held open for the" -ForegroundColor Green
+Write-Host "SWC-24 consultation sampler. They stay open: nothing closes a consultation yet." -ForegroundColor Green
