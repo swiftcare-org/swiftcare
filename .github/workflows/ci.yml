@@ -41,6 +41,7 @@ jobs:
             services/AuthService/Dockerfile
             services/PatientService/Dockerfile
             services/QueueService/Dockerfile
+            services/MedicalRecordService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -109,6 +110,7 @@ jobs:
           dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/QueueService.UnitTests/QueueService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
@@ -385,6 +387,16 @@ jobs:
           push: false
           cache-from: type=gha,scope=swiftcare-queue
           cache-to: type=gha,mode=max,scope=swiftcare-queue
+
+      - name: Build the MedicalRecordService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/MedicalRecordService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-medical-record
+          cache-to: type=gha,mode=max,scope=swiftcare-medical-record
 
   security-scan:
     name: Scan dependencies for vulnerabilities
