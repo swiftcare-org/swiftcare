@@ -202,6 +202,8 @@ jobs:
       AUTH_SEED_PASSWORD: ci-only-e2e-seed-password
       E2E_BASE_URL: http://localhost:5173
       E2E_HEADLESS: "true"
+      MYSQL_USER: swiftcare_user
+      MYSQL_PASSWORD: ci-only-e2e-db-password
       VITE_GATEWAY_URL: http://localhost:8000
     steps:
       - name: Check out repository
@@ -237,7 +239,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Build backend images
-        run: docker compose build authservice patientservice apigateway
+        run: docker compose build authservice patientservice queueservice medicalrecord-migrate medicalrecordservice apigateway
 
       - name: Start infrastructure and apply migrations
         shell: bash
@@ -271,13 +273,15 @@ jobs:
 
           apply_migrations authservice AuthService
           apply_migrations patientservice PatientService
+          apply_migrations queueservice QueueService
+          apply_migrations medicalrecord-migrate MedicalRecordService
 
           docker compose run --rm --no-deps kafka-init
 
       - name: Start application services
         run: |
-          docker compose up --detach --no-build --no-deps --wait authservice patientservice
-          docker compose up --detach --no-build --no-deps --wait apigateway
+          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice
+          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 apigateway
 
       - name: Run Selenium E2E tests
         shell: bash
@@ -319,7 +323,7 @@ jobs:
             docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
             docker compose logs --no-color \
               mysql zookeeper kafka kafka-init \
-              authservice patientservice apigateway \
+              authservice patientservice queueservice medicalrecord-migrate medicalrecordservice apigateway \
               > TestResults/E2E/docker-compose.log 2>&1 || true
           fi
 
