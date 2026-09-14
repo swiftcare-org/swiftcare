@@ -171,6 +171,37 @@ services:
     networks:
       - swiftcare-network
 
+  medicalrecord-migrate:
+    build:
+      context: .
+      dockerfile: services/MedicalRecordService/Dockerfile
+    command: ["--migrate"]
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__MedicalRecordDb: "Server=mysql;Port=3306;Database=${MEDICAL_RECORD_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+    networks:
+      - swiftcare-network
+
+  medicalrecordservice:
+    build:
+      context: .
+      dockerfile: services/MedicalRecordService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      medicalrecord-migrate:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__MedicalRecordDb: "Server=mysql;Port=3306;Database=${MEDICAL_RECORD_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+    ports:
+      - "${MEDICAL_RECORD_SERVICE_PORT:-5004}:5004"
+    networks:
+      - swiftcare-network
+
   apigateway:
     build:
       context: .
@@ -180,6 +211,8 @@ services:
       authservice:
         condition: service_healthy
       patientservice:
+        condition: service_healthy
+      medicalrecordservice:
         condition: service_healthy
       queueservice:
         condition: service_healthy
@@ -191,6 +224,7 @@ services:
       Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
       ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address: http://authservice:5000
       ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address: http://patientservice:5002
+      ReverseProxy__Clusters__medical-record-cluster__Destinations__medical-record-destination__Address: http://medicalrecordservice:5004
       ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address: http://queueservice:5003
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
