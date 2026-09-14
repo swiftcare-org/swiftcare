@@ -36,3 +36,13 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  # Added for SWC-87: the Sprint 1 version of this file excluded QueueService
+  # (out of scope then - see TEST-PLAN.md §2). SWC-87 stresses it directly, so it
+  # needs a limit too or its breaking point is not attributable.
+  queueservice:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M

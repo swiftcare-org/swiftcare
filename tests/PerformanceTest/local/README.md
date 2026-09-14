@@ -3,12 +3,17 @@
 JMeter load and stress tests for the Sprint 1 API (AuthService + PatientService +
 API Gateway), driven through the Gateway on `:8000`. Jira: **SWC-67**.
 
+This folder also holds a second, independent suite for the Sprint 2 queue-polling
+endpoints (SWC-20, SWC-21, SWC-23) - see [SWC-87 queue polling](#swc-87-queue-polling)
+below. It shares this folder's conventions but has its own plan file, seed script
+and result naming.
+
 The Azure counterpart (a second, network-inclusive run against the deployed
 environment) lives in [`../azure/`](../azure/) and does not depend on anything here.
 
 The plan, the workload justification and the **pre-defined** pass/fail thresholds
-are in [`TEST-PLAN.md`](TEST-PLAN.md). Record run results in the `results/` folder
-following the format of the existing `RESULT-*.md` reports.
+for the Sprint 1 suite are in [`TEST-PLAN.md`](TEST-PLAN.md). Record run results in
+the `results/` folder following the format of the existing `RESULT-*.md` reports.
 
 ## Prerequisites
 
@@ -128,3 +133,74 @@ folders are git-ignored).
   can approach that under stress. If you see connection errors before CPU
   saturates, that is a legitimate finding; record it, do not pre-emptively raise
   the limit unless you are specifically testing past it.
+
+## SWC-87 - queue polling
+
+`SWC-87-queue-polling.jmx` covers the three fixed-interval polling endpoints added
+in Sprint 2: the public waiting-room display (SWC-23, unauthenticated), the full
+queue view (SWC-20, Receptionist) and the doctor's shared waiting pool (SWC-21,
+Doctor). All three read the same `QueueEntries` table on the same ~5 s cadence, so
+this plan runs them as three independent Thread Groups in one file, sized
+independently via `-J` properties - set any group's user count to 0 to isolate the
+other two for a per-endpoint run.
+
+`SWC-23-display.jmx` (the original single-endpoint plan) stays in this folder as
+the SWC-23-only baseline; `SWC-87-queue-polling.jmx` is the combined suite used for
+the Smoke/Load/Stress profiles below.
+
+### Seed data (once)
+
+Needs a Doctor and a Receptionist account pool, plus enough today-dated queue
+volume that the three endpoints return realistic result sets:
+
+```powershell
+cd C:\swiftcare\tests\PerformanceTest\local
+# set AUTH_SEED_PASSWORD to the value in C:\swiftcare\.env, then:
+./seed-queue-polling.ps1        # 10 Doctor + 10 Receptionist accounts, 150 check-ins
+```
+
+Writes `data/doctors.csv` and `data/receptionists.csv` (git-ignored, credentials).
+Queue entries are produced indirectly - PatientService's `patient-checked-in`
+Kafka event is consumed by QueueService, which creates the today-dated `Waiting`
+row. Give the stack a few seconds to drain the topic after seeding before running
+a profile that expects the full volume.
+
+### Run
+
+Properties: `usersDisplay` (default 15), `usersToday` (default 10), `usersWaiting`
+(default 10), `rampUp`, `duration` (seconds), `pollDelay`/`pollRange` (ms, default
+4500/1000 - the real ~5 s poll; cut for Stress so request rate climbs with
+concurrency).
+
+```powershell
+# Smoke - gate for the others
+jmeter -n -t SWC-87-queue-polling.jmx -q user.properties `
+  -JusersDisplay=1 -JusersToday=1 -JusersWaiting=1 -JrampUp=1 -Jduration=60 `
+  -l results/smoke-SWC-87.jtl
+
+# Load - 15/10/10 users, real poll interval, 10 min steady state
+jmeter -n -t SWC-87-queue-polling.jmx -q user.properties `
+  -JusersDisplay=15 -JusersToday=10 -JusersWaiting=10 -JrampUp=15 -Jduration=600 `
+  -l results/load-SWC-87.jtl -e -o results/load-SWC-87-report
+
+# Stress - against the capped stack, calibrated ceiling (see RESULT-stress-SWC-87-*.md
+# for how 150/100/100 was chosen), reduced think time
+docker compose -f docker-compose.yml -f tests/PerformanceTest/local/docker-compose.perf.yml up -d
+jmeter -n -t SWC-87-queue-polling.jmx -q user.properties `
+  -JusersDisplay=150 -JusersToday=100 -JusersWaiting=100 -JrampUp=600 -Jduration=600 `
+  -JpollDelay=300 -JpollRange=300 `
+  -l results/stress-SWC-87.jtl -e -o results/stress-SWC-87-report
+docker compose up -d   # restore the uncapped stack afterwards
+```
+
+`docker-compose.perf.yml` was extended this ticket to add a `queueservice` limit
+(1.0 CPU / 512 MB) - the Sprint 1 version of that file excluded it as out of scope
+then. Results follow the same `RESULT-<type>-SWC-87-<date>.md` naming as the rest
+of this folder.
+
+**Known limitation, recorded for follow-up:** these runs used 219 today-dated
+queue entries - realistic for a quiet day, not a busy one. The Stress result
+identifies a CPU-bound, unindexed table scan as the saturating factor in
+QueueService, so a production-scale row count is expected to lower the
+concurrency at which it saturates, not raise it. Re-test once the queue table
+holds that volume.
