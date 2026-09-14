@@ -1,7 +1,9 @@
-# SwiftCare Sprint 1 - Azure Deployment Performance Test Plan
+# SwiftCare - Azure Deployment Performance Test Plan
 
-**Jira:** SWC-67  **Tool:** Apache JMeter 5.6.3
+**Jira:** SWC-67, extended by SWC-88  **Tool:** Apache JMeter 5.6.3
 **Target:** Real Azure deployment (AuthService, PatientService, API Gateway; QueueService present but see section 6.2)
+
+Sections 1 to 10 are the original SWC-67 round, unchanged. Section 11 adds the Sprint 2 endpoints (SWC-20, SWC-21, SWC-23, SWC-24) to the same suite.
 
 This is the additive Azure counterpart to the local plan at
 [`../local/TEST-PLAN.md`](../local/TEST-PLAN.md). Nothing in the local setup
@@ -215,3 +217,98 @@ All commands run from `tests/PerformanceTest/azure/`. Non-GUI only.
 - Direct load-testing of QueueService; it has no ingress by design.
 - QueueService data/lag verification (section 6.2); deferred pending in-VNet access.
 - Any change to the existing local SWC-67 results or artifacts; they remain as-is.
+
+## 11. Sprint 2 extension (SWC-88)
+
+Sections 1 to 10 describe the original SWC-67 round and still hold for it. This section adds the Sprint 2 endpoints to the same deployed-environment suite, so the Azure baseline reflects the current API surface instead of only the Sprint 1 one. Same target, same tool, same thresholds, same no-Stress decision.
+
+### 11.1 Scope
+
+**In:** four endpoints, all through the Gateway only.
+
+| Story | Endpoint | Auth | Class |
+|---|---|---|---|
+| SWC-23 | `GET /api/queue/display` | none, the one public route | read |
+| SWC-20 | `GET /api/queue/today` | Receptionist | read |
+| SWC-21 | `GET /api/queue/today/waiting` | Doctor | read |
+| SWC-24 | `POST /api/consultations` | Doctor, needs a pre-called queue entry | write |
+
+**Out:** Stress against Azure (unchanged from section 5); QueueService-level verification, database row counts and Kafka consumer lag (unchanged from section 6.2, and for the same reason: `swiftcare_queue` and the broker are private to the Azure VNet); `PUT /api/queue/call-next` as a load sampler, since one doctor can hold only one open consultation at a time so it cannot be driven concurrently (it is used during seeding instead).
+
+### 11.2 Workload model
+
+Four independently sized Thread Groups in `swiftcare-load-azure.jmx`, one per endpoint. Every new group defaults to 0 users, so all the SWC-67 command lines in section 9 keep their original meaning; the Sprint 2 profile switches the Sprint 1 group off with `-Jthreads=0` and sizes the four new ones.
+
+| Group | `-J` property | Load run | Pacing | Data source |
+|---|---|---:|---|---|
+| SWC-23 public display screens | `usersDisplay` | 8 | 4500 +/- 1000 ms, the UI poll cadence | none |
+| SWC-20 Receptionist full queue | `usersToday` | 4 | 4500 +/- 1000 ms | `data/users.csv` |
+| SWC-21 Doctor waiting pool | `usersWaiting` | 4 | 4500 +/- 1000 ms | `data/doctors.csv` |
+| SWC-24 Doctor consultation writes | `usersConsult` | 4 | 60000 +/- 15000 ms | `data/doctors.csv` + `data/called-queue.csv` |
+
+Total 20 concurrent users, 30 s ramp, 900 s steady, matching section 5 and the SWC-67 baseline concurrency so the two runs are comparable. The display group is the largest because in a real clinic waiting-room screens outnumber staff sessions and poll unconditionally.
+
+The read mix is deliberately weighted 16 read users to 4 write users: on this deployment writes are rate-limited by the data model, not by the test (see 11.3), and the ticket's own acceptance criteria are split read/write.
+
+### 11.3 Test data and the write-rate ceiling
+
+`POST /api/consultations` answers a second consultation for the same `queueId` with 409, and `PUT /api/queue/call-next` allows one open consultation per doctor and per room. Nothing closes a consultation yet (no consumer moves the queue entry out of `IN_CONSULTATION`), so:
+
+- one pre-called queue entry is worth exactly one 201, and
+- one pre-called queue entry costs one Doctor account with its own room number.
+
+`seed-azure.ps1 -DoctorCount N` therefore creates N doctors, pre-calls one patient for each, and writes N rows to `data/called-queue.csv`. The SWC-24 group consumes that file one row per request, never recycles it, and stops when it is exhausted (`recycle=false`, `stopThread=true`), so a drained pool ends the write group cleanly instead of turning the rest of the run into a wall of 409s. To keep the write group busy longer, seed more rows; do not raise the write rate.
+
+At 4 users on a 60 s pacing the group asks for about 60 writes across a 900 s run, which is already about ten times a real clinic's consultation rate, and needs `-DoctorCount 70` to cover it.
+
+Seeding for this round: `-UserCount 10 -PatientCount 200 -DoctorCount 70`, which leaves about 130 entries waiting so the SWC-21 pool is never empty during the run.
+
+### 11.4 Assertions
+
+Per sampler: a Response Assertion on the status code (200 for the three reads, 201 for the write), a Response Assertion on one or two contract fields of the body, and a Duration Assertion set to that class's p99 budget (`-JreadSlaMs`, default 2000 ms; `-JwriteSlaMs`, default 3500 ms).
+
+The Duration Assertion is a per-sample tripwire, not the pass/fail rule. Section 6.1 is still decided on percentiles computed from the JTL. Because JMeter counts an assertion failure as a failed sample, the report states the error rate on response code (non-2xx / non-201), and reports duration-assertion breaches separately.
+
+### 11.5 Pass / fail criteria
+
+Section 6.1 thresholds are unchanged and apply per class: reads p95 1200 ms or less, reads p99 2000 ms or less, writes p95 2000 ms or less, writes p99 3500 ms or less, error rate 0.5% or less, and last-third p95 within 20% of first-third p95, sustained over 60 s or more. Reads are the three GET samplers; writes are `POST /api/consultations`. Per-thread logins are setup, not part of either class.
+
+The cold-start deviation recorded in `results/RESULT-load-azure-20260907.md` applies here too: with `min-replicas=0, max-replicas=1, 0.25 vCPU`, the deployment needs a warm-up before the timed run, and warm-up samples are excluded from all figures.
+
+### 11.6 Execution
+
+From `tests/PerformanceTest/azure/`, non-GUI only, after confirming the window with whoever manages the deployment.
+
+```powershell
+# 1. Seed. Set AZURE_ADMIN_PASSWORD first.
+./seed-azure.ps1 -UserCount 10 -PatientCount 200 -DoctorCount 70
+
+# 2. Warm the scale-to-zero apps. Results discarded.
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersDisplay=1 -JusersToday=1 -JusersWaiting=1 -JusersConsult=0 `
+  -Jrampup=1 -Jduration=60 -l results/warmup-swc88.jtl
+
+# 3. Smoke, the gate for Load: 1 user per group, every sampler green.
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersDisplay=1 -JusersToday=1 -JusersWaiting=1 -JusersConsult=1 `
+  -Jrampup=1 -Jduration=60 -JwriteDelay=10000 -JwriteRange=2000 `
+  -l results/smoke-swc88.jtl -e -o results/smoke-swc88-report
+
+# 4. The Smoke gate consumed rows from the top of called-queue.csv. Drop them, or the
+#    Load run reopens the file at row 1 and its first writes answer 409.
+$used = 4            # rows the Smoke gate consumed: one per usersConsult thread, per iteration
+$rows = Get-Content data/called-queue.csv
+@($rows[0]) + $rows[($used + 1)..($rows.Count - 1)] | Set-Content data/called-queue.csv
+
+# 5. Load, only if Smoke passed.
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersDisplay=8 -JusersToday=4 -JusersWaiting=4 -JusersConsult=4 `
+  -Jrampup=30 -Jduration=900 `
+  -l results/load-swc88.jtl -e -o results/load-swc88-report
+```
+
+Write up `results/RESULT-load-azure-<date>.md` against 11.5, and compare it explicitly with `results/RESULT-load-azure-20260907.md` rather than presenting it as a standalone number.
+
+### 11.7 Data footprint
+
+A seeded run of this size adds about 200 patient rows, about 200 queue rows, 70 doctor accounts, 10 receptionist accounts and up to about 60 consultation rows to the deployed databases, and leaves about 70 queue entries in `IN_CONSULTATION` with no way to close them from outside the VNet. There is no `docker compose down -v` equivalent, so agree with DevOps beforehand whether that data stays. All of it is synthetic.
