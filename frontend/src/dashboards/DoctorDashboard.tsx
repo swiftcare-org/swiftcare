@@ -9,6 +9,11 @@ import {
   type TodayQueueEntry,
 } from '../api/queue';
 import { useAuth } from '../auth/useAuth';
+import {
+  readStoredCurrentPatient,
+  storeCurrentPatient,
+  type CurrentPatient,
+} from '../consultations/currentPatientStorage';
 import { DashboardShell } from './DashboardShell';
 
 type WaitingPoolLoadState = 'loading' | 'loaded' | 'error';
@@ -18,14 +23,9 @@ interface WaitingPoolRow extends TodayQueueEntry {
   patientName: string;
 }
 
-interface CurrentPatient extends CalledPatient {
-  patientName: string;
-}
-
 const POLL_INTERVAL_MS = 5_000;
 const CLINIC_TIME_ZONE = 'Asia/Colombo';
 const PATIENT_UNAVAILABLE = 'Patient unavailable';
-const CURRENT_PATIENT_STORAGE_PREFIX = 'swiftcare.doctor.current-patient';
 
 const checkInTimeFormatter = new Intl.DateTimeFormat('en-LK', {
   hour: '2-digit',
@@ -33,85 +33,6 @@ const checkInTimeFormatter = new Intl.DateTimeFormat('en-LK', {
   second: '2-digit',
   timeZone: CLINIC_TIME_ZONE,
 });
-
-const clinicDateFormatter = new Intl.DateTimeFormat('en-CA', {
-  day: '2-digit',
-  month: '2-digit',
-  timeZone: CLINIC_TIME_ZONE,
-  year: 'numeric',
-});
-
-function clinicDateKey(): string {
-  const parts = Object.fromEntries(
-    clinicDateFormatter
-      .formatToParts(new Date())
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value]),
-  );
-
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function currentPatientStorageKey(userId: string): string {
-  return `${CURRENT_PATIENT_STORAGE_PREFIX}.${userId}.${clinicDateKey()}`;
-}
-
-function isCurrentPatient(value: unknown): value is CurrentPatient {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const patient = value as Partial<CurrentPatient>;
-  return (
-    typeof patient.queueId === 'string' &&
-    typeof patient.patientId === 'string' &&
-    typeof patient.queueNumber === 'string' &&
-    patient.status === 'IN_CONSULTATION' &&
-    typeof patient.doctorId === 'string' &&
-    typeof patient.doctorName === 'string' &&
-    typeof patient.roomNumber === 'string' &&
-    typeof patient.calledAt === 'string' &&
-    typeof patient.patientName === 'string'
-  );
-}
-
-function readStoredCurrentPatient(userId: string | undefined): CurrentPatient | null {
-  if (!userId) {
-    return null;
-  }
-
-  const storageKey = currentPatientStorageKey(userId);
-
-  try {
-    const raw = sessionStorage.getItem(storageKey);
-    if (!raw) {
-      return null;
-    }
-
-    const storedPatient: unknown = JSON.parse(raw);
-    if (isCurrentPatient(storedPatient)) {
-      return storedPatient;
-    }
-
-    sessionStorage.removeItem(storageKey);
-  } catch {
-    // Browser storage can be unavailable; the dashboard can still load without restoration.
-  }
-
-  return null;
-}
-
-function storeCurrentPatient(userId: string | undefined, patient: CurrentPatient): void {
-  if (!userId) {
-    return;
-  }
-
-  try {
-    sessionStorage.setItem(currentPatientStorageKey(userId), JSON.stringify(patient));
-  } catch {
-    // The successful call remains visible for this render even if browser storage is unavailable.
-  }
-}
 
 function formatCheckInTime(value: string): string {
   const date = new Date(value);
@@ -333,6 +254,12 @@ export function DoctorDashboard() {
                 {`Currently with you: ${currentPatient.queueNumber} ${currentPatient.patientName}`}
               </p>
               <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
+              <Link
+                to="/doctor/consultation"
+                className="mt-3 inline-block bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+              >
+                Record Consultation
+              </Link>
             </div>
           )}
 
