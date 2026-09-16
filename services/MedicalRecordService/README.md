@@ -16,17 +16,37 @@ MedicalRecordService owns consultation records and consultation templates. The S
 
 The Gateway supplies the authenticated doctor's ID, name, and room number. These values are not accepted from the request body. Symptoms and diagnosis are required; examination findings, notes, and template selection are optional.
 
-## Database schema
+## EF Core migrations
 
-The service schema is defined in `Database/schema.sql`. It creates the `ConsultationTemplates` and `Consultations` tables and seeds general, respiratory, gastrointestinal, and musculoskeletal consultation templates.
+`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates` and `Consultations` tables. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs.
 
-With Docker Compose, `medicalrecord-migrate` applies this schema automatically before MedicalRecordService starts. To apply it separately with the service image:
+With Docker Compose, `medicalrecord-migrate` runs `--migrate` before MedicalRecordService starts. To run it separately with the service image:
 
 ```powershell
 docker compose run --rm --no-deps medicalrecord-migrate
 ```
 
-The same `--migrate` command runs in a manual Azure Container Apps job inside the VNet. CD waits for it to succeed before deploying MedicalRecordService and fails if the job fails or times out. `CREATE TABLE IF NOT EXISTS` and `INSERT IGNORE` make repeated runs safe.
+To run it directly from the repository, configure the connection and execute the maintenance command:
+
+```powershell
+$env:ConnectionStrings__MedicalRecordDb = "Server=localhost;Port=3306;Database=swiftcare_medical_record;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
+dotnet run --project services/MedicalRecordService -- --migrate
+```
+
+The same command runs through the existing Azure Container Apps job inside the VNet. The process exits with a non-zero code if it cannot connect, validate a legacy schema, or apply a migration. Running it again after all migrations have been applied succeeds without recreating tables or duplicating templates.
+
+### Upgrading a database created by `schema.sql`
+
+The migration command can safely adopt the previous SQL-created schema:
+
+1. Back up `swiftcare_medical_record`, stop application writes, and record the consultation and template row counts.
+2. Run the new service image once with `--migrate`. Do not manually insert an EF migration-history row.
+3. The runner detects the two legacy tables and validates their columns, nullability, GUID representation, indexes, template foreign key, and all four stable template records.
+4. Only after validation succeeds, it records `20260916082514_InitialMedicalRecordSchema` in `__EFMigrationsHistory`. Existing consultations, templates, and their timestamps are not modified.
+5. Run `--migrate` a second time. It should report that no migrations are pending.
+6. Compare the consultation and template row counts with the values recorded before the upgrade, then allow application writes again.
+
+If the legacy schema is incomplete or incompatible, the command exits unsuccessfully before recording the baseline. Correct the schema mismatch or restore the backup, then rerun the command. Do not mark the migration as applied manually because that would bypass the compatibility checks.
 
 Each queue entry can have at most one consultation record. The chosen template ID and name are stored on the consultation so the template used for the visit remains identifiable.
 
@@ -60,4 +80,14 @@ OpenAPI is available at `/openapi/v1.json` in Development. Scalar is available a
 dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj
 ```
 
-The tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, role enforcement, and Gateway-secret enforcement.
+The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
+
+Migration compatibility tests require a disposable MySQL 8.4 instance and a test account allowed to create and drop databases. Never point this variable at a shared or production database:
+
+```powershell
+$env:MEDICAL_RECORD_MIGRATION_TEST_CONNECTION = "Server=localhost;Port=3306;Database=mysql;User Id=root;Password=<LOCAL_TEST_PASSWORD>;"
+dotnet test tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj
+Remove-Item Env:\MEDICAL_RECORD_MIGRATION_TEST_CONNECTION
+```
+
+The migration tests use randomly named temporary databases. They verify fresh creation, stable template seeds, repeated execution, existing ADO.NET repository compatibility, legacy-schema baselining without data changes, incomplete-schema rejection, and sanitized failure output.
