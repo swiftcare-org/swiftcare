@@ -617,7 +617,7 @@ jobs:
           echo "::error::QueueService migration execution timed out after 10 minutes"
           exit 1
 
-      - name: Configure the MedicalRecordService schema initialization job
+      - name: Configure the MedicalRecordService migration job
         shell: bash
         run: |
           set -euo pipefail
@@ -654,14 +654,14 @@ jobs:
               --only-show-errors >/dev/null
           fi
 
-      - name: Initialize MedicalRecordService schema inside the VNet
+      - name: Apply MedicalRecordService migrations inside the VNet
         shell: bash
         run: |
           set -euo pipefail
           execution=$(az containerapp job start \
             --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
             --query name --output tsv)
-          echo "Started MedicalRecordService schema initialization $execution"
+          echo "Started MedicalRecordService migration $execution"
 
           for attempt in $(seq 1 60); do
             status=$(az containerapp job execution show \
@@ -670,21 +670,21 @@ jobs:
               --query properties.status --output tsv 2>/dev/null || true)
             case "$status" in
               Succeeded)
-                echo "MedicalRecordService schema initialization succeeded."
+                echo "MedicalRecordService migration succeeded."
                 exit 0
                 ;;
               Failed|Degraded)
-                echo "::error::MedicalRecordService schema initialization ended with $status"
+                echo "::error::MedicalRecordService migration ended with $status"
                 exit 1
                 ;;
               *)
-                echo "MedicalRecordService schema status: ${status:-Pending} (attempt $attempt/60)"
+                echo "MedicalRecordService migration status: ${status:-Pending} (attempt $attempt/60)"
                 sleep 10
                 ;;
             esac
           done
 
-          echo "::error::MedicalRecordService schema initialization timed out after 10 minutes"
+          echo "::error::MedicalRecordService migration timed out after 10 minutes"
           exit 1
 
       - name: Bootstrap the initial administrator
