@@ -251,7 +251,14 @@ export function DoctorDashboard() {
                 Current Consultation
               </p>
               <p className="mt-1 text-base font-semibold text-slate-900">
-                {`Currently with you: ${currentPatient.queueNumber} ${currentPatient.patientName}`}
+                Currently with you:{' '}
+                <Link
+                  to={`/patients/${currentPatient.patientId}`}
+                  className="text-brand-blue-dark underline"
+                >
+                  {currentPatient.queueNumber}
+                </Link>{' '}
+                {currentPatient.patientName}
               </p>
               <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
               <Link
