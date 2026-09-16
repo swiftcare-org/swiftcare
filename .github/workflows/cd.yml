@@ -52,6 +52,7 @@ jobs:
       ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
        (github.event_name == 'workflow_dispatch' && needs.manual-quality-gate.result == 'success'))
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     permissions:
       contents: read
       packages: write
@@ -131,6 +132,7 @@ jobs:
     needs: images
     if: always() && needs.images.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 150
     environment: azure-development
     permissions:
       contents: read
@@ -1424,6 +1426,7 @@ jobs:
     needs: deploy-backend
     if: always() && needs.deploy-backend.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: azure-development
     steps:
       - name: Check out the deployment commit
