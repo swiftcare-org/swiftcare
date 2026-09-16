@@ -11,6 +11,7 @@
     <Project Path="tests/PatientService.UnitTests/PatientService.UnitTests.csproj" />
     <Project Path="tests/QueueService.UnitTests/QueueService.UnitTests.csproj" />
     <Project Path="tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj" />
+    <Project Path="tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj" />
     <Project Path="tests/E2ETests/E2ETests.csproj" />
   </Folder>
   <Project Path="ApiGateway/ApiGateway.csproj" />
