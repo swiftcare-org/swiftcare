@@ -1,5 +1,6 @@
 using MedicalRecordService.Models.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
 namespace MedicalRecordService.Data;
 
@@ -8,6 +9,13 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
 {
     public DbSet<Consultation> Consultations => Set<Consultation>();
     public DbSet<ConsultationTemplate> ConsultationTemplates => Set<ConsultationTemplate>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // The legacy production schema deliberately has no standalone TemplateId index.
+        // Suppress EF's foreign-key index convention so the initial migration is identical.
+        configurationBuilder.Conventions.Remove(typeof(ForeignKeyIndexConvention));
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +55,8 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
             entity.HasIndex(template => template.Name)
                 .IsUnique()
                 .HasDatabaseName("UX_ConsultationTemplates_Name");
+
+            entity.HasData(ConsultationTemplateSeedData.Templates);
         });
 
         modelBuilder.Entity<Consultation>(entity =>
