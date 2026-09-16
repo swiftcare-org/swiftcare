@@ -140,7 +140,7 @@ The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 
 
 ## Running the application locally
 
-For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. Compose initializes the medical-record schema and four consultation templates before starting MedicalRecordService. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
+For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. Compose applies the MedicalRecordService EF Core migrations and seeds four consultation templates before starting the service. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
 
 ### One-time database preparation
 
@@ -153,11 +153,14 @@ dotnet tool restore
 dotnet ef database update --project services/AuthService --connection "Server=localhost;Port=3306;Database=swiftcare_auth;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
 dotnet ef database update --project services/PatientService --connection "Server=localhost;Port=3306;Database=swiftcare_patient;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
 dotnet ef database update --project services/QueueService --connection "Server=localhost;Port=3306;Database=swiftcare_queue;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
+ConnectionStrings__MedicalRecordDb="Server=localhost;Port=3306;Database=swiftcare_medical_record;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;" dotnet run --project services/MedicalRecordService -- --migrate
 ```
 
-`--connection` is required. Each service's design-time DbContext factory supplies placeholder credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
+`--connection` is required for the direct `dotnet ef` commands. Each service's design-time DbContext factory supplies placeholder credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
 
-Re-run this after pulling any change that adds a migration.
+MedicalRecordService uses its `--migrate` maintenance command so it can validate and safely baseline a database created by the retired SQL installer. See the [MedicalRecordService migration guide](services/MedicalRecordService/README.md#ef-core-migrations).
+
+Re-run these commands after pulling any change that adds a migration.
 
 ### Load configuration
 
@@ -289,7 +292,7 @@ Each microservice owns its entities, DbContext, logical MySQL database, and comm
 | AuthService | AuthDbContext | swiftcare_auth |
 | PatientService | PatientDbContext | swiftcare_patient |
 | QueueService | QueueDbContext | swiftcare_queue |
-| MedicalRecordService | ADO.NET schema in `Database/schema.sql` | swiftcare_medical_record |
+| MedicalRecordService | MedicalRecordDbContext | swiftcare_medical_record |
 | PrescriptionService | PrescriptionDbContext | swiftcare_prescription |
 | NotificationService | NotificationDbContext | swiftcare_notification |
 
@@ -335,7 +338,7 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 ### Continuous deployment
 
-A successful CI run for `main` automatically deploys the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, QueueService, and MedicalRecordService images to GHCR; run EF migrations and the medical-record SQL schema as finite Container Apps jobs inside the VNet; deploy the services with internal ingress, including MedicalRecordService on port `5004`; deploy the public Gateway last with internal HTTPS destinations for QueueService and MedicalRecordService; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
+A successful CI run for `main` automatically deploys the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, QueueService, and MedicalRecordService images to GHCR; run service EF migrations as finite Container Apps jobs inside the VNet; deploy the services with internal ingress, including MedicalRecordService on port `5004`; deploy the public Gateway last with internal HTTPS destinations for QueueService and MedicalRecordService; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
 
 CD sets both minimum and maximum replicas to `1` for Gateway, AuthService, PatientService, QueueService, and MedicalRecordService on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
 
