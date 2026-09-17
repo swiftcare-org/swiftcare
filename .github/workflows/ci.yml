@@ -243,7 +243,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Build backend images
-        run: docker compose build authservice patientservice queueservice medicalrecord-migrate medicalrecordservice apigateway
+        run: docker compose build authservice patientservice queueservice medicalrecordservice apigateway
 
       - name: Start infrastructure and apply migrations
         shell: bash
@@ -278,7 +278,7 @@ jobs:
           apply_migrations authservice AuthService
           apply_migrations patientservice PatientService
           apply_migrations queueservice QueueService
-          apply_migrations medicalrecord-migrate MedicalRecordService
+          apply_migrations medicalrecordservice MedicalRecordService
 
           docker compose run --rm --no-deps kafka-init
 
@@ -327,7 +327,7 @@ jobs:
             docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
             docker compose logs --no-color \
               mysql zookeeper kafka kafka-init \
-              authservice patientservice queueservice medicalrecord-migrate medicalrecordservice apigateway \
+              authservice patientservice queueservice medicalrecordservice apigateway \
               > TestResults/E2E/docker-compose.log 2>&1 || true
           fi
 
@@ -455,6 +455,8 @@ jobs:
       AUTH_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_auth;User Id=root;Password=ci-only-root-password;"
       PATIENT_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_patient;User Id=root;Password=ci-only-root-password;"
       QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
+      MEDICAL_RECORD_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_medical_record;User Id=root;Password=ci-only-root-password;"
+      MEDICAL_RECORD_MIGRATION_TEST_CONNECTION: "Server=127.0.0.1;Port=3306;Database=mysql;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -518,6 +520,23 @@ jobs:
       - name: Check QueueService for model changes without a migration
         if: hashFiles('services/QueueService/QueueService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/QueueService
+
+      - name: Apply MedicalRecordService migrations to a clean database
+        if: hashFiles('services/MedicalRecordService/MedicalRecordService.csproj') != ''
+        run: dotnet ef database update --project services/MedicalRecordService --connection "$MEDICAL_RECORD_DB_CONNECTION"
+
+      # Re-applying confirms --migrate is idempotent: no table recreation, no duplicate template rows.
+      - name: Re-apply MedicalRecordService migrations to verify idempotency
+        if: hashFiles('services/MedicalRecordService/MedicalRecordService.csproj') != ''
+        run: dotnet ef database update --project services/MedicalRecordService --connection "$MEDICAL_RECORD_DB_CONNECTION"
+
+      - name: Check MedicalRecordService for model changes without a migration
+        if: hashFiles('services/MedicalRecordService/MedicalRecordService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/MedicalRecordService
+
+      - name: Run MedicalRecordService migration tests
+        if: hashFiles('tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj') != ''
+        run: dotnet test tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj --configuration Release
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})

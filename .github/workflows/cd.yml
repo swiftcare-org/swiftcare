@@ -150,7 +150,7 @@ jobs:
       AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
       PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
       MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
-      MEDICAL_RECORD_SCHEMA_JOB: ${{ vars.AZURE_MEDICAL_RECORD_SCHEMA_JOB }}
+      MEDICAL_RECORD_MIGRATE_JOB: ${{ vars.AZURE_MEDICAL_RECORD_MIGRATE_JOB }}
       MEDICAL_RECORD_DB_USER: ${{ vars.MEDICAL_RECORD_DB_USER }}
       MEDICAL_RECORD_DB_PASSWORD: ${{ secrets.MEDICAL_RECORD_DB_PASSWORD }}
       QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
@@ -190,7 +190,7 @@ jobs:
           required=(
             AZURE_LOCATION AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID
             RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP QUEUE_APP MEDICAL_RECORD_APP
-            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB QUEUE_MIGRATE_JOB MEDICAL_RECORD_SCHEMA_JOB AUTH_BOOTSTRAP_JOB
+            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB QUEUE_MIGRATE_JOB MEDICAL_RECORD_MIGRATE_JOB AUTH_BOOTSTRAP_JOB
             MYSQL_SERVER_NAME MYSQL_FQDN
             AUTH_DB_USER AUTH_DB_PASSWORD PATIENT_DB_USER PATIENT_DB_PASSWORD
             MEDICAL_RECORD_DB_USER MEDICAL_RECORD_DB_PASSWORD
@@ -617,30 +617,30 @@ jobs:
           echo "::error::QueueService migration execution timed out after 10 minutes"
           exit 1
 
-      - name: Configure the MedicalRecordService schema initialization job
+      - name: Configure the MedicalRecordService migration job
         shell: bash
         run: |
           set -euo pipefail
           image="$MEDICAL_RECORD_IMAGE:$DEPLOY_SHA"
 
-          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" >/dev/null 2>&1; then
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" >/dev/null 2>&1; then
             az containerapp job registry set \
-              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" \
               --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
               --only-show-errors >/dev/null
             az containerapp job secret set \
-              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" \
               --secrets "medical-record-db=$MEDICAL_RECORD_DB_CONNECTION" \
               --only-show-errors >/dev/null
             az containerapp job update \
-              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" \
               --image "$image" --args=--migrate \
               --cpu 0.25 --memory 0.5Gi \
               --set-env-vars "ConnectionStrings__MedicalRecordDb=secretref:medical-record-db" \
               --only-show-errors >/dev/null
           else
             az containerapp job create \
-              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" \
               --environment "$CONTAINERAPPS_ENVIRONMENT" \
               --trigger-type Manual \
               --replica-timeout 600 --replica-retry-limit 1 \
@@ -654,37 +654,37 @@ jobs:
               --only-show-errors >/dev/null
           fi
 
-      - name: Initialize MedicalRecordService schema inside the VNet
+      - name: Apply MedicalRecordService database migrations inside the VNet
         shell: bash
         run: |
           set -euo pipefail
           execution=$(az containerapp job start \
-            --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
+            --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" \
             --query name --output tsv)
-          echo "Started MedicalRecordService schema initialization $execution"
+          echo "Started MedicalRecordService database migration $execution"
 
           for attempt in $(seq 1 60); do
             status=$(az containerapp job execution show \
-              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_SCHEMA_JOB" \
+              --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_MIGRATE_JOB" \
               --job-execution-name "$execution" \
               --query properties.status --output tsv 2>/dev/null || true)
             case "$status" in
               Succeeded)
-                echo "MedicalRecordService schema initialization succeeded."
+                echo "MedicalRecordService database migration succeeded."
                 exit 0
                 ;;
               Failed|Degraded)
-                echo "::error::MedicalRecordService schema initialization ended with $status"
+                echo "::error::MedicalRecordService database migration ended with $status"
                 exit 1
                 ;;
               *)
-                echo "MedicalRecordService schema status: ${status:-Pending} (attempt $attempt/60)"
+                echo "MedicalRecordService migration status: ${status:-Pending} (attempt $attempt/60)"
                 sleep 10
                 ;;
             esac
           done
 
-          echo "::error::MedicalRecordService schema initialization timed out after 10 minutes"
+          echo "::error::MedicalRecordService database migration timed out after 10 minutes"
           exit 1
 
       - name: Bootstrap the initial administrator

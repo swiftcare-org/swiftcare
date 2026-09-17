@@ -140,7 +140,18 @@ The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 
 
 ## Running the application locally
 
-For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. Compose applies the MedicalRecordService EF Core migrations and seeds four consultation templates before starting the service. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
+For the closest match to deployment, start MySQL and Kafka first, apply migrations through each backend service's normal image, then start the full stack, including the API Gateway, and run the frontend on the host. Compose does not apply migrations automatically for any service:
+
+```bash
+docker compose up -d mysql kafka
+docker compose run --rm --no-deps authservice --migrate
+docker compose run --rm --no-deps patientservice --migrate
+docker compose run --rm --no-deps queueservice --migrate
+docker compose run --rm --no-deps medicalrecordservice --migrate
+docker compose up -d
+```
+
+`--no-deps` does not start a service's dependencies, so MySQL must already be running before any of these `--migrate` commands, which is why it is started first above. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
 
 ### One-time database preparation
 
@@ -158,7 +169,7 @@ ConnectionStrings__MedicalRecordDb="Server=localhost;Port=3306;Database=swiftcar
 
 `--connection` is required for the direct `dotnet ef` commands. Each service's design-time DbContext factory supplies placeholder credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
 
-MedicalRecordService uses its `--migrate` maintenance command so it can validate and safely baseline a database created by the retired SQL installer. See the [MedicalRecordService migration guide](services/MedicalRecordService/README.md#ef-core-migrations).
+MedicalRecordService uses its `--migrate` maintenance command through the same normal application image, following the pattern documented in the [MedicalRecordService migration guide](services/MedicalRecordService/README.md#ef-core-migrations).
 
 Re-run these commands after pulling any change that adds a migration.
 
@@ -306,7 +317,7 @@ The CD workflow reads deployment configuration from the `azure-development` GitH
 
 Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. Custom-domain deployment requires `GATEWAY_ORIGIN`, `FRONTEND_ORIGIN`, and `FRONTEND_WWW_ORIGIN` to contain HTTPS origins without trailing slashes. AuthService, PatientService, and QueueService use separate non-administrator MySQL accounts restricted to `swiftcare_auth`, `swiftcare_patient`, and `swiftcare_queue` respectively, never the flexible-server administrator account.
 
-PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. MedicalRecordService deployment requires `AZURE_MEDICAL_RECORD_APP` (for example, `swiftcare-medical-record`), `AZURE_MEDICAL_RECORD_SCHEMA_JOB` (for example, `swiftcare-medical-record-schema`), and `MEDICAL_RECORD_DB_USER` environment variables plus the `MEDICAL_RECORD_DB_PASSWORD` environment secret. The medical-record account needs privileges only on `swiftcare_medical_record`; create that account inside the Azure VNet before running CD and keep its password in the `azure-development` GitHub Environment secret. Review and apply the Terraform plan that creates `swiftcare_medical_record` first. If the database already exists outside Terraform state, import it instead of attempting to create it again. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
+PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. MedicalRecordService deployment requires `AZURE_MEDICAL_RECORD_APP` (for example, `swiftcare-medical-record`), `AZURE_MEDICAL_RECORD_MIGRATE_JOB` (for example, `swiftcare-medical-record-migrate`), and `MEDICAL_RECORD_DB_USER` environment variables plus the `MEDICAL_RECORD_DB_PASSWORD` environment secret. The medical-record account needs privileges only on `swiftcare_medical_record`; create that account inside the Azure VNet before running CD and keep its password in the `azure-development` GitHub Environment secret. Review and apply the Terraform plan that creates `swiftcare_medical_record` first. If the database already exists outside Terraform state, import it instead of attempting to create it again. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
 
 ## CI/CD
 
