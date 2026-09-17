@@ -171,28 +171,14 @@ services:
     networks:
       - swiftcare-network
 
-  medicalrecord-migrate:
-    build:
-      context: .
-      dockerfile: services/MedicalRecordService/Dockerfile
-    command: ["--migrate"]
-    restart: "no"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      ConnectionStrings__MedicalRecordDb: "Server=mysql;Port=3306;Database=${MEDICAL_RECORD_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
-    networks:
-      - swiftcare-network
-
   medicalrecordservice:
     build:
       context: .
       dockerfile: services/MedicalRecordService/Dockerfile
     restart: unless-stopped
     depends_on:
-      medicalrecord-migrate:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__MedicalRecordDb: "Server=mysql;Port=3306;Database=${MEDICAL_RECORD_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
