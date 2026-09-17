@@ -18,13 +18,15 @@ The Gateway supplies the authenticated doctor's ID, name, and room number. These
 
 ## EF Core migrations
 
-`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates` and `Consultations` tables. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs.
+`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates` and `Consultations` tables. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
 
-With Docker Compose, `medicalrecord-migrate` runs `--migrate` before MedicalRecordService starts. To run it separately with the service image:
+To apply migrations with the normal service image:
 
 ```powershell
-docker compose run --rm --no-deps medicalrecord-migrate
+docker compose run --rm --no-deps medicalrecordservice --migrate
 ```
+
+Docker Compose, CI, and Azure migration-job orchestration are tracked separately under SWC-108.
 
 To run it directly from the repository, configure the connection and execute the maintenance command:
 
@@ -33,20 +35,22 @@ $env:ConnectionStrings__MedicalRecordDb = "Server=localhost;Port=3306;Database=s
 dotnet run --project services/MedicalRecordService -- --migrate
 ```
 
-The same command runs through the existing Azure Container Apps job inside the VNet. The process exits with a non-zero code if it cannot connect, validate a legacy schema, or apply a migration. Running it again after all migrations have been applied succeeds without recreating tables or duplicating templates.
+The process exits with a non-zero code if it cannot connect or apply a migration. Running it again after all migrations have been applied succeeds without recreating tables or duplicating templates.
 
-### Upgrading a database created by `schema.sql`
+### Replacing a database created by `schema.sql`
 
-The migration command can safely adopt the previous SQL-created schema:
+Automatic baselining of the retired SQL-created schema is not supported. The development MedicalRecord database is disposable and must be recreated before applying the initial EF migration:
 
-1. Back up `swiftcare_medical_record`, stop application writes, and record the consultation and template row counts.
-2. Run the new service image once with `--migrate`. Do not manually insert an EF migration-history row.
-3. The runner detects the two legacy tables and validates their columns, nullability, GUID representation, indexes, template foreign key, and all four stable template records.
-4. Only after validation succeeds, it records `20260916082514_InitialMedicalRecordSchema` in `__EFMigrationsHistory`. Existing consultations, templates, and their timestamps are not modified.
-5. Run `--migrate` a second time. It should report that no migrations are pending.
-6. Compare the consultation and template row counts with the values recorded before the upgrade, then allow application writes again.
+1. Confirm that no MedicalRecord data must be retained. Export a backup if there is any doubt.
+2. Stop MedicalRecordService so the database receives no writes.
+3. Drop and recreate only the `swiftcare_medical_record` development database. Do not remove any other service database.
+4. Restore the configured MedicalRecord database user's privileges on the recreated database if required.
+5. Run the normal MedicalRecordService image with `--migrate`.
+6. Confirm that `ConsultationTemplates`, `Consultations`, and `__EFMigrationsHistory` exist and that the four templates were seeded.
+7. Run `--migrate` a second time and confirm that no migrations are pending.
+8. Start MedicalRecordService and verify `/health`, template retrieval, and consultation creation.
 
-If the legacy schema is incomplete or incompatible, the command exits unsuccessfully before recording the baseline. Correct the schema mismatch or restore the backup, then rerun the command. Do not mark the migration as applied manually because that would bypass the compatibility checks.
+Do not manually insert rows into `__EFMigrationsHistory`. Running `--migrate` against an existing SQL-created schema fails instead of silently adopting it.
 
 Each queue entry can have at most one consultation record. The chosen template ID and name are stored on the consultation so the template used for the visit remains identifiable.
 
@@ -90,4 +94,4 @@ dotnet test tests/MedicalRecordService.MigrationTests/MedicalRecordService.Migra
 Remove-Item Env:\MEDICAL_RECORD_MIGRATION_TEST_CONNECTION
 ```
 
-The migration tests use randomly named temporary databases. They verify fresh creation, stable template seeds, repeated execution, existing ADO.NET repository compatibility, legacy-schema baselining without data changes, incomplete-schema rejection, and sanitized failure output.
+The migration tests use randomly named temporary databases. They verify the exact fresh schema, stable template seeds, repeated execution, existing ADO.NET repository compatibility, rejection of an existing schema without migration history, and sanitized failure output.

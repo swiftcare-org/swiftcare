@@ -12,8 +12,8 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // The legacy production schema deliberately has no standalone TemplateId index.
-        // Suppress EF's foreign-key index convention so the initial migration is identical.
+        // The medical-record schema deliberately has no standalone TemplateId index.
+        // Suppress EF's foreign-key index convention so migrations remain deterministic.
         configurationBuilder.Conventions.Remove(typeof(ForeignKeyIndexConvention));
     }
 
