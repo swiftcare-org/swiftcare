@@ -22,8 +22,4 @@
     <ProjectReference Include="..\..\services\MedicalRecordService\MedicalRecordService.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Fixtures\LegacyMedicalRecordSchema.sql" />
-  </ItemGroup>
-
 </Project>

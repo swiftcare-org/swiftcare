@@ -4,8 +4,7 @@ namespace MedicalRecordService.Data;
 
 internal static class ConsultationTemplateSeedData
 {
-    // A fixed value keeps the migration and model snapshot deterministic. Existing
-    // databases retain their original CreatedAt values when they are baselined.
+    // A fixed value keeps the migration and model snapshot deterministic.
     private static readonly DateTime SeedCreatedAt =
         new(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
 

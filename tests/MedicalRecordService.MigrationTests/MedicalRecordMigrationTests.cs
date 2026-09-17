@@ -1,4 +1,3 @@
-using System.Reflection;
 using MedicalRecordService.Data;
 using MedicalRecordService.Maintenance;
 using MedicalRecordService.Models.Entities;
@@ -11,6 +10,8 @@ namespace MedicalRecordService.MigrationTests;
 
 public sealed class MedicalRecordMigrationTests
 {
+    private const string InitialMigrationId = "20260916082514_InitialMedicalRecordSchema";
+
     [MySqlFact]
     public async Task FreshDatabase_MigratesTwice_AndSupportsExistingRepository()
     {
@@ -20,12 +21,6 @@ public sealed class MedicalRecordMigrationTests
         Assert.Equal(
             MaintenanceCommandRunner.Success,
             await MaintenanceCommandRunner.MigrateAsync(dbContext));
-
-        // Removing only the history row makes the production baseliner validate every
-        // legacy-compatible column, index, foreign key, and seed before restoring it.
-        await database.ExecuteAsync(
-            $"DELETE FROM `__EFMigrationsHistory` WHERE MigrationId = '{LegacySchemaBaseliner.InitialMigrationId}';");
-        await LegacySchemaBaseliner.BaselineIfNeededAsync(dbContext);
 
         Assert.Equal(ExpectedTemplates(), await ReadTemplatesAsync(database.ConnectionString));
 
@@ -44,62 +39,68 @@ public sealed class MedicalRecordMigrationTests
         Assert.Equal(
             1,
             await database.ScalarAsync<int>(
-                $"SELECT COUNT(*) FROM `__EFMigrationsHistory` WHERE MigrationId = '{LegacySchemaBaseliner.InitialMigrationId}';"));
+                $"SELECT COUNT(*) FROM `__EFMigrationsHistory` WHERE MigrationId = '{InitialMigrationId}';"));
     }
 
     [MySqlFact]
-    public async Task LegacyDatabase_IsBaselined_WithoutChangingExistingData()
+    public async Task FreshDatabase_CreatesExpectedSchema()
     {
         await using var database = await MySqlMigrationTestDatabase.CreateAsync();
-        await database.ExecuteAsync(await ReadLegacySchemaAsync());
-
-        var repository = CreateRepository(database.ConnectionString);
-        var consultation = CreateConsultationDraft();
-        var result = await repository.CreateAsync(consultation);
-        Assert.Equal(ConsultationPersistenceOutcome.Success, result.Outcome);
-
-        var templatesBefore = await ReadTemplatesAsync(database.ConnectionString);
-        var consultationBefore = await ReadConsultationAsync(
-            database.ConnectionString,
-            consultation.Id);
-
         await using var dbContext = CreateDbContext(database.ConnectionString);
-        Assert.Equal(
-            MaintenanceCommandRunner.Success,
-            await MaintenanceCommandRunner.MigrateAsync(dbContext));
+
         Assert.Equal(
             MaintenanceCommandRunner.Success,
             await MaintenanceCommandRunner.MigrateAsync(dbContext));
 
-        Assert.Equal(templatesBefore, await ReadTemplatesAsync(database.ConnectionString));
+        var columns = await ReadColumnsAsync(database.ConnectionString);
+        Assert.Equal(21, columns.Count);
+        AssertColumn(columns, "ConsultationTemplates.Id", "char(36)", false, "ascii", "ascii_bin");
+        AssertColumn(columns, "ConsultationTemplates.Name", "varchar(150)", false, "utf8mb4");
+        AssertColumn(columns, "ConsultationTemplates.IsActive", "tinyint(1)", false);
+        AssertColumn(columns, "Consultations.Id", "char(36)", false, "ascii", "ascii_bin");
+        AssertColumn(columns, "Consultations.PatientId", "char(36)", false, "ascii", "ascii_bin");
+        AssertColumn(columns, "Consultations.QueueId", "char(36)", false, "ascii", "ascii_bin");
+        AssertColumn(columns, "Consultations.DoctorId", "char(36)", false, "ascii", "ascii_bin");
+        AssertColumn(columns, "Consultations.DoctorName", "varchar(200)", false, "utf8mb4");
+        AssertColumn(columns, "Consultations.RoomNumber", "varchar(50)", false, "utf8mb4");
+        AssertColumn(columns, "Consultations.ExaminationFindings", "text", true, "utf8mb4");
+        AssertColumn(columns, "Consultations.Notes", "text", true, "utf8mb4");
+        AssertColumn(columns, "Consultations.TemplateId", "char(36)", true, "ascii", "ascii_bin");
+        AssertColumn(columns, "Consultations.TemplateName", "varchar(150)", true, "utf8mb4");
+        AssertColumn(columns, "Consultations.ConsultationDate", "datetime(6)", false);
+
+        // Seven indexes are declared by the migration; MySQL creates the eighth
+        // automatically to support the TemplateId foreign key.
         Assert.Equal(
-            consultationBefore,
-            await ReadConsultationAsync(database.ConnectionString, consultation.Id));
+            8,
+            await database.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS " +
+                "WHERE TABLE_SCHEMA = DATABASE() " +
+                "AND TABLE_NAME IN ('ConsultationTemplates', 'Consultations');"));
         Assert.Equal(
             1,
             await database.ScalarAsync<int>(
-                $"SELECT COUNT(*) FROM `__EFMigrationsHistory` WHERE MigrationId = '{LegacySchemaBaseliner.InitialMigrationId}';"));
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS " +
+                "WHERE CONSTRAINT_SCHEMA = DATABASE() " +
+                "AND CONSTRAINT_NAME = 'FK_Consultations_ConsultationTemplates_TemplateId' " +
+                "AND DELETE_RULE = 'RESTRICT';"));
     }
 
     [MySqlFact]
-    public async Task IncompleteLegacyDatabase_IsRejected()
+    public async Task ExistingSchemaWithoutMigrationHistory_IsNotAutomaticallyBaselined()
     {
         await using var database = await MySqlMigrationTestDatabase.CreateAsync();
         await database.ExecuteAsync(
             "CREATE TABLE ConsultationTemplates (Id CHAR(36) NOT NULL PRIMARY KEY);");
-        await using var dbContext = CreateDbContext(database.ConnectionString);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        await using var dbContext = CreateDbContext(database.ConnectionString);
+        await Assert.ThrowsAnyAsync<Exception>(
             () => MaintenanceCommandRunner.MigrateAsync(dbContext));
 
         Assert.Equal(
-            "The legacy medical-record schema is incomplete and cannot be baselined.",
-            exception.Message);
-        Assert.Equal(
             0,
             await database.ScalarAsync<int>(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES " +
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '__EFMigrationsHistory';"));
+                $"SELECT COUNT(*) FROM `__EFMigrationsHistory` WHERE MigrationId = '{InitialMigrationId}';"));
     }
 
     [Fact]
@@ -174,16 +175,6 @@ public sealed class MedicalRecordMigrationTests
         };
     }
 
-    private static async Task<string> ReadLegacySchemaAsync()
-    {
-        const string resourceName =
-            "MedicalRecordService.MigrationTests.Fixtures.LegacyMedicalRecordSchema.sql";
-        await using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException("The legacy schema test fixture is missing.");
-        using var reader = new StreamReader(stream);
-        return await reader.ReadToEndAsync();
-    }
-
     private static async Task<IReadOnlyList<TemplateSnapshot>> ReadTemplatesAsync(
         string connectionString)
     {
@@ -211,6 +202,57 @@ public sealed class MedicalRecordMigrationTests
         }
 
         return templates;
+    }
+
+    private static async Task<IReadOnlyDictionary<string, ColumnSnapshot>> ReadColumnsAsync(
+        string connectionString)
+    {
+        await using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE,
+                   CHARACTER_SET_NAME, COLLATION_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME IN ('ConsultationTemplates', 'Consultations');
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+
+        var columns = new Dictionary<string, ColumnSnapshot>(StringComparer.Ordinal);
+        while (await reader.ReadAsync())
+        {
+            columns.Add(
+                $"{reader.GetString(0)}.{reader.GetString(1)}",
+                new ColumnSnapshot(
+                    reader.GetString(2),
+                    string.Equals(reader.GetString(3), "YES", StringComparison.Ordinal),
+                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+
+        return columns;
+    }
+
+    private static void AssertColumn(
+        IReadOnlyDictionary<string, ColumnSnapshot> columns,
+        string key,
+        string columnType,
+        bool nullable,
+        string? characterSet = null,
+        string? collation = null)
+    {
+        Assert.True(columns.TryGetValue(key, out var actual), $"Missing expected column {key}.");
+        Assert.Equal(columnType, actual.ColumnType, ignoreCase: true);
+        Assert.Equal(nullable, actual.IsNullable);
+        if (characterSet is not null)
+        {
+            Assert.Equal(characterSet, actual.CharacterSet, ignoreCase: true);
+        }
+        if (collation is not null)
+        {
+            Assert.Equal(collation, actual.Collation, ignoreCase: true);
+        }
     }
 
     private static IReadOnlyList<TemplateSnapshot> ExpectedTemplates()
@@ -253,41 +295,6 @@ public sealed class MedicalRecordMigrationTests
         ];
     }
 
-    private static async Task<ConsultationSnapshot> ReadConsultationAsync(
-        string connectionString,
-        Guid consultationId)
-    {
-        await using var connection = new MySqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id, PatientId, QueueId, DoctorId, DoctorName, RoomNumber, Symptoms,
-                   ExaminationFindings, Diagnosis, Notes, TemplateId, TemplateName,
-                   ConsultationDate, CreatedAt
-            FROM Consultations
-            WHERE Id = @Id;
-            """;
-        command.Parameters.AddWithValue("@Id", consultationId.ToString());
-        await using var reader = await command.ExecuteReaderAsync();
-
-        Assert.True(await reader.ReadAsync());
-        return new ConsultationSnapshot(
-            reader.GetGuid(0),
-            reader.GetGuid(1),
-            reader.GetGuid(2),
-            reader.GetGuid(3),
-            reader.GetString(4),
-            reader.GetString(5),
-            reader.GetString(6),
-            reader.GetString(7),
-            reader.GetString(8),
-            reader.GetString(9),
-            reader.GetGuid(10),
-            reader.GetString(11),
-            reader.GetDateTime(12),
-            reader.GetDateTime(13));
-    }
-
     private sealed record TemplateSnapshot(
         Guid Id,
         string Name,
@@ -297,19 +304,10 @@ public sealed class MedicalRecordMigrationTests
         bool IsActive,
         DateTime CreatedAt);
 
-    private sealed record ConsultationSnapshot(
-        Guid Id,
-        Guid PatientId,
-        Guid QueueId,
-        Guid DoctorId,
-        string DoctorName,
-        string RoomNumber,
-        string Symptoms,
-        string ExaminationFindings,
-        string Diagnosis,
-        string Notes,
-        Guid TemplateId,
-        string TemplateName,
-        DateTime ConsultationDate,
-        DateTime CreatedAt);
+    private sealed record ColumnSnapshot(
+        string ColumnType,
+        bool IsNullable,
+        string? CharacterSet,
+        string? Collation);
+
 }

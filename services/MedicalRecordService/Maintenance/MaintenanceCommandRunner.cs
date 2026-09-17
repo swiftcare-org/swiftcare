@@ -50,7 +50,7 @@ public static class MaintenanceCommandRunner
             // details. Report only the exception type and a safe operator action.
             Console.Error.WriteLine(
                 $"MedicalRecordService migration failed ({exception.GetType().Name}). " +
-                "Check database connectivity, permissions, and legacy schema compatibility.");
+                "Check database connectivity, permissions, and migration state.");
             return Failure;
         }
     }
@@ -59,8 +59,6 @@ public static class MaintenanceCommandRunner
         MedicalRecordDbContext dbContext,
         CancellationToken cancellationToken = default)
     {
-        await LegacySchemaBaseliner.BaselineIfNeededAsync(dbContext, cancellationToken);
-
         var pending = (await dbContext.Database.GetPendingMigrationsAsync(cancellationToken)).ToList();
         if (pending.Count == 0)
         {
