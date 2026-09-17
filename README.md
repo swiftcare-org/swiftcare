@@ -140,7 +140,18 @@ The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 
 
 ## Running the application locally
 
-For the closest match to deployment, run MySQL, ZooKeeper, Kafka, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway with `docker compose up -d`, then run the frontend on the host. Compose does not apply MedicalRecordService's EF Core migrations automatically; apply them first with `docker compose run --rm --no-deps medicalrecordservice --migrate`, then start the stack. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
+For the closest match to deployment, start MySQL and Kafka first, apply migrations through each backend service's normal image, then start the full stack, including the API Gateway, and run the frontend on the host. Compose does not apply migrations automatically for any service:
+
+```bash
+docker compose up -d mysql kafka
+docker compose run --rm --no-deps authservice --migrate
+docker compose run --rm --no-deps patientservice --migrate
+docker compose run --rm --no-deps queueservice --migrate
+docker compose run --rm --no-deps medicalrecordservice --migrate
+docker compose up -d
+```
+
+`--no-deps` does not start a service's dependencies, so MySQL must already be running before any of these `--migrate` commands, which is why it is started first above. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
 
 ### One-time database preparation
 
