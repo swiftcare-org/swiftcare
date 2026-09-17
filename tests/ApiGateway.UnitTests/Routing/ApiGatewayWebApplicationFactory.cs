@@ -50,7 +50,8 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
                 // A port nothing binds to in a test environment - see class comment above.
                 ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999",
                 ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999",
-                ["ReverseProxy:Clusters:queue-cluster:Destinations:queue-destination:Address"] = "http://localhost:59999"
+                ["ReverseProxy:Clusters:queue-cluster:Destinations:queue-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:medical-record-cluster:Destinations:medical-record-destination:Address"] = "http://localhost:59999"
             });
         });
     }
