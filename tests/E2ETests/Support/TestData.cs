@@ -2,11 +2,11 @@ namespace E2ETests.Support;
 
 // Every value a test creates (username, NIC, phone, ...) carries a per-run stamp
 // plus an incrementing counter, so the rows are identifiable as test data and
-// never collide - the suite is safe to re-run against a database that is not
-// reset between runs. See tests/E2ETests/README.md.
+// never collide. The process id also separates two suite processes launched in
+// the same second; xUnit's in-assembly worker limit cannot coordinate them.
 public static class TestData
 {
-    public static readonly string RunId = DateTime.UtcNow.ToString("MMddHHmmss");
+    public static readonly string RunId = $"{DateTime.UtcNow:MMddHHmmss}P{Environment.ProcessId}";
 
     private static int _counter;
 

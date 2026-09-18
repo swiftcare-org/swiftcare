@@ -16,7 +16,7 @@ public class SearchPatientTests : SeleniumTestBase
     public void SearchByName_ShowsMatchAndOpensProfile()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
 
         AppSession.LogIn(Driver, "reception.silva");
         AppSession.GoTo(Driver, PatientSearchPage.Path);

@@ -17,7 +17,7 @@ public class AllergiesTests : SeleniumTestBase
     public void AddAllergy_AppearsInListAndRaisesRedAlert()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
 
         AppSession.LogIn(Driver, "reception.silva");
         AppSession.GoTo(Driver, $"/patients/{patient.PatientId}");
@@ -37,7 +37,7 @@ public class AllergiesTests : SeleniumTestBase
     public void AddAllergy_WithNoName_ShowsRequiredError()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
 
         AppSession.LogIn(Driver, "reception.silva");
         AppSession.GoTo(Driver, $"/patients/{patient.PatientId}");
@@ -55,7 +55,7 @@ public class AllergiesTests : SeleniumTestBase
     public void Allergies_AreListedSevereFirst()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
         seed.AddAllergy(patient.PatientId, "Dust Mites", "Mild");
         seed.AddAllergy(patient.PatientId, "Penicillin", "Severe");
 
@@ -76,7 +76,7 @@ public class AllergiesTests : SeleniumTestBase
     public void EditAllergy_UpdatesListAndAlert()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
         seed.AddAllergy(patient.PatientId, "Peanuts", "Severe");
 
         AppSession.LogIn(Driver, "reception.silva");
@@ -99,7 +99,7 @@ public class AllergiesTests : SeleniumTestBase
     public void RemovingLastAllergy_ClearsRedAlert()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
         seed.AddAllergy(patient.PatientId, "Latex", "Moderate");
 
         AppSession.LogIn(Driver, "reception.silva");

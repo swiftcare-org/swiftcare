@@ -15,7 +15,7 @@ public class CurrentPatientProfileTests : SeleniumTestBase
     {
         using var seed = new SeedClient();
         var doctor = seed.CreateUser("Doctor");
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
         seed.AddAllergy(patient.PatientId, "Penicillin", "Severe", "SWC-110 Selenium coverage");
         seed.AddChronicCondition(patient.PatientId, "Asthma", notes: "SWC-110 Selenium coverage");
 

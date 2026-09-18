@@ -21,7 +21,7 @@ public class ChronicConditionsTests : SeleniumTestBase
     public void AddCondition_AppearsImmediatelyAndRaisesDoctorAlert()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
 
         AppSession.LogIn(Driver, "reception.silva");
         AppSession.GoTo(Driver, $"/patients/{patient.PatientId}");
@@ -51,7 +51,7 @@ public class ChronicConditionsTests : SeleniumTestBase
     public void RemovingLastCondition_RequiresConfirmationAndClearsAlert()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
         seed.AddChronicCondition(patient.PatientId, "Type 2 Diabetes");
 
         AppSession.LogIn(Driver, "dr.chen");
@@ -96,7 +96,7 @@ public class ChronicConditionsTests : SeleniumTestBase
     public void DoctorCannotMutate_AndFutureDateIsBlockedClientSide()
     {
         using var seed = new SeedClient();
-        var patient = seed.RegisterPatient();
+        var patient = seed.RegisterPatientOutsideQueue();
         seed.AddChronicCondition(patient.PatientId, "Asthma");
 
         AppSession.LogIn(Driver, "dr.chen");

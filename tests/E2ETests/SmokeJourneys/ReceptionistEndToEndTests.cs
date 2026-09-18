@@ -14,6 +14,7 @@ public class ReceptionistEndToEndTests : SeleniumTestBase
     [Fact]
     public void Receptionist_RegistersSearchesAndFlagsAnAllergy()
     {
+        using var seed = new SeedClient();
         AppSession.LogIn(Driver, "reception.silva");
 
         // Register, reached from the dashboard rather than a deep link.
@@ -25,6 +26,9 @@ public class ReceptionistEndToEndTests : SeleniumTestBase
         registration.FillForm(TestData.Nic(), fullName, "1985-03-20", "5 Journey Rd, Kandy", TestData.Phone());
         registration.Submit();
         Assert.Contains("registered successfully", registration.WaitForSuccessMessage());
+
+        var patient = seed.FindPatientByName(fullName);
+        seed.RemovePatientFromTodayQueue(patient.PatientId);
 
         // Find the patient just created and open the profile.
         AppSession.GoTo(Driver, PatientSearchPage.Path);
