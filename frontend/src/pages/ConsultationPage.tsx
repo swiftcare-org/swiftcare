@@ -10,6 +10,7 @@ import {
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { readStoredCurrentPatient } from '../consultations/currentPatientStorage';
+import { VitalSignsForm } from '../consultations/VitalSignsForm';
 import { DashboardShell } from '../dashboards/DashboardShell';
 
 type TemplateLoadState = 'loading' | 'loaded' | 'error';
@@ -396,6 +397,10 @@ export function ConsultationPage() {
               )}
             </button>
           </form>
+
+          {submissionState === 'created' && createdConsultation && (
+            <VitalSignsForm consultationId={createdConsultation.id} />
+          )}
         </>
       )}
     </DashboardShell>
