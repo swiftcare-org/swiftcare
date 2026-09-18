@@ -12,12 +12,13 @@ namespace E2ETests.Doctor;
 // the unit level when SWC-21 shipped, because no endpoint moved a patient out of WAITING
 // until SWC-22 landed - see docs/testing/SWC-21-test-results.md, AC2.
 //
-// AC3's empty pool is deliberately not automated. Reaching it means emptying today's queue,
-// and these classes run in parallel against one shared local stack, so a test that did that
-// would break whichever queue test ran beside it. It stays covered by
+// AC3's empty pool is deliberately not automated. Reaching it means deleting today's queue,
+// including records not owned by this test run. The suite only deletes rows for patients it
+// created, so the empty state stays covered by
 // GetWaitingWhenNoPatientsAreWaitingReturnsEmptyCollection and by the stubbed-network
 // browser pass recorded in SWC-21's results, TC-07 and TC-08.
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class WaitingPoolTests : SeleniumTestBase
 {
     // AC1 - the pool is shared: two doctors with different rooms, neither of them connected

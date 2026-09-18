@@ -10,6 +10,7 @@ namespace E2ETests.Queue;
 // response, responsive layout) is covered by the SWC-23 Postman collection and manual
 // screenshots - see docs/testing/SWC-23-test-results.md.
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class WaitingRoomDisplayTests : SeleniumTestBase
 {
     // Scenario 4 - No login required: a fresh browser with no session of any kind

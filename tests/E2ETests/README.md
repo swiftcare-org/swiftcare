@@ -38,6 +38,29 @@ running, over HTTP.
 AUTH_SEED_PASSWORD=<value from .env> dotnet test tests/E2ETests
 ```
 
+The suite uses bounded collection-level parallelism. Independent test classes run with a
+default maximum of two conservative workers. Workflows that select from or observe the
+clinic-wide queue belong to the `Shared queue E2E` collection; xUnit runs that collection
+without overlapping any other test. This prevents `Call Next` from consuming another
+test's patient while still allowing authentication and isolated profile tests to overlap.
+
+Override the worker limit for one run through xUnit's supported VSTest settings:
+
+```bash
+# Three bounded workers
+dotnet test tests/E2ETests -- xUnit.MaxParallelThreads=3
+
+# Diagnostic sequential run
+dotnet test tests/E2ETests -- xUnit.ParallelizeTestCollections=false
+```
+
+In PowerShell, visible Chrome execution uses the same concurrency controls:
+
+```powershell
+$env:E2E_HEADLESS = "false"
+dotnet test tests/E2ETests -- xUnit.MaxParallelThreads=2
+```
+
 Environment variables:
 
 | Variable | Default | Purpose |
@@ -46,23 +69,36 @@ Environment variables:
 | `E2E_BASE_URL` | `http://localhost:5173` | Frontend URL to drive |
 | `E2E_HEADLESS` | `true` | Set to `false` to watch the browser locally |
 | `E2E_GATEWAY_URL` | `http://localhost:8000` | Gateway the tests seed preconditions through |
-| `MYSQL_PASSWORD` | *(required for SWC-15)* | Password for the QueueService database |
+| `MYSQL_PASSWORD` | *(required)* | Password used for isolated QueueService test-data cleanup |
 | `MYSQL_USER` | `swiftcare` | User for the QueueService database |
 | `MYSQL_PORT` | `3306` | Published MySQL port |
 | `QUEUE_DB_NAME` | `swiftcare_queue` | QueueService database name |
 | `E2E_QUEUE_DB_HOST` | `localhost` | Host MySQL is published on |
 | `E2E_QUEUE_DB_CONNECTION` | *(unset)* | Full connection string, overrides the four above |
 
-### Why one test touches MySQL directly
+### Why the suite touches MySQL directly
 
-Every other test in this suite sets its preconditions up over HTTP through the Gateway. The
-SWC-15 check-in tests and the clinic-day journey cannot: their starting state is "a patient
-exists but is not in today's queue", and registering a patient publishes `patient-checked-in`
-so QueueService queues them immediately, while no shipped endpoint removes or completes a
-queue entry. `Support/QueueDatabase.cs` deletes that one row, for a patient the run
-registered itself, and nothing else. Set `MYSQL_PASSWORD` from the repo root `.env` alongside
-`AUTH_SEED_PASSWORD`, or those tests fail with an explanatory message rather than a
-connection error.
+The SWC-15 check-in tests and clinic-day journey need the state "a patient exists but is not
+in today's queue". Registering a patient publishes `patient-checked-in`, while no shipped
+endpoint removes or completes a queue entry. Bounded parallel execution also requires
+profile/search tests to remove that incidental queue row so a later `Call Next` cannot
+consume it. `Support/QueueDatabase.cs` therefore deletes one row at a time, identified by a
+patient id created by that test. It never clears the queue or deletes another test's data.
+Set `MYSQL_PASSWORD` from the repo root `.env` alongside `AUTH_SEED_PASSWORD`.
+
+## Parallel-safety classification
+
+| Classification | Test classes | Execution |
+| --- | --- | --- |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Isolated patient/profile | Allergy, chronic-condition, search, registration, current-patient-profile and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
+| Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
+
+Every generated value is tagged through `TestData.RunId`, which includes the test-process
+id so two suite processes started in the same second remain distinct. `SeedClient` removes
+each API-seeded patient's remaining queue row on disposal. UI registration tests resolve
+their uniquely generated patient name and remove that patient's row explicitly. Cleanup
+never truncates tables or depends on broad date-based deletion.
 
 ## Test categories
 

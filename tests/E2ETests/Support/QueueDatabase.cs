@@ -12,9 +12,9 @@ namespace E2ETests.Support;
 // by hand with a direct DELETE - see docs/testing/SWC-15-test-results.md, TC-02.
 //
 // Scope is deliberately narrow: one row, identified by patient id and today's clinic date,
-// for a patient this run registered itself. Nothing here ever touches another test's data,
-// which matters because xUnit runs these classes in parallel against one shared local
-// stack.
+// for a patient this run registered itself. Nothing here ever touches another test's data.
+// SWC-111 also uses this helper to remove registration's incidental queue side effect from
+// profile/search tests before those tests join the bounded parallel worker pool.
 public static class QueueDatabase
 {
     // Deletes today's queue entry for one patient and reports whether a row was actually

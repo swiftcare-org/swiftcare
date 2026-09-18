@@ -18,6 +18,7 @@ public sealed class SeedClient : IDisposable
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _http;
+    private readonly HashSet<string> _registeredPatientIds = [];
 
     public SeedClient()
     {
@@ -26,6 +27,34 @@ public sealed class SeedClient : IDisposable
 
     public SeededPatient RegisterPatient(string? fullName = null) =>
         RegisterPatientAsync(fullName).GetAwaiter().GetResult();
+
+    // Most profile/search tests need a patient record, not a queue entry. Registration
+    // necessarily publishes patient-checked-in, so wait for that asynchronous side effect
+    // and remove only this test's row before the browser steps begin.
+    public SeededPatient RegisterPatientOutsideQueue(string? fullName = null)
+    {
+        var patient = RegisterPatient(fullName);
+        RemovePatientFromTodayQueue(patient.PatientId);
+        _registeredPatientIds.Remove(patient.PatientId);
+        return patient;
+    }
+
+    // UI registration tests do not receive the new patient id from their page object.
+    // Resolve the unique generated name through the same Gateway search endpoint, then
+    // remove the registration-created queue entry without touching another test's data.
+    public SeededPatient FindPatientByName(string fullName) =>
+        FindPatientByNameAsync(fullName).GetAwaiter().GetResult();
+
+    public void RemovePatientFromTodayQueue(string patientId)
+    {
+        WaitUntilWaiting(patientId);
+        if (!QueueDatabase.DeleteTodayQueueEntry(patientId))
+        {
+            throw new InvalidOperationException(
+                $"Could not remove today's queue entry for E2E patient {patientId}.");
+        }
+        _registeredPatientIds.Remove(patientId);
+    }
 
     public string AddAllergy(string patientId, string allergyName, string severity, string? notes = null) =>
         AddAllergyAsync(patientId, allergyName, severity, notes).GetAwaiter().GetResult();
@@ -75,7 +104,32 @@ public sealed class SeedClient : IDisposable
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<RegisteredPatientBody>(Json)
                    ?? throw new InvalidOperationException("Empty response registering a seed patient.");
-        return new SeededPatient(body.PatientId, nic, name, phone, bloodGroup);
+        var patient = new SeededPatient(body.PatientId, nic, name, phone, bloodGroup);
+        _registeredPatientIds.Add(patient.PatientId);
+        return patient;
+    }
+
+    private async Task<SeededPatient> FindPatientByNameAsync(string fullName)
+    {
+        var token = await TokenForAsync("reception.silva");
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/patients/search?q={Uri.EscapeDataString(fullName)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var matches = await response.Content.ReadFromJsonAsync<List<SearchPatientBody>>(Json) ?? [];
+        var match = matches.SingleOrDefault(patient => patient.FullName == fullName)
+            ?? throw new InvalidOperationException(
+                $"Could not resolve the E2E patient registered as '{fullName}'.");
+
+        return new SeededPatient(
+            match.PatientId,
+            match.Nic,
+            match.FullName,
+            match.PhoneNumber,
+            match.BloodGroup);
     }
 
     private async Task<string> AddAllergyAsync(string patientId, string allergyName, string severity, string? notes)
@@ -186,11 +240,31 @@ public sealed class SeedClient : IDisposable
         return _http.SendAsync(request);
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        try
+        {
+            foreach (var patientId in _registeredPatientIds)
+            {
+                QueueDatabase.DeleteTodayQueueEntry(patientId);
+            }
+        }
+        finally
+        {
+            _http.Dispose();
+        }
+    }
 
     private sealed record LoginBody(string Token);
 
     private sealed record RegisteredPatientBody(string PatientId);
+
+    private sealed record SearchPatientBody(
+        string PatientId,
+        string FullName,
+        string Nic,
+        string PhoneNumber,
+        string BloodGroup);
 
     private sealed record AllergyBody(string AllergyId);
 

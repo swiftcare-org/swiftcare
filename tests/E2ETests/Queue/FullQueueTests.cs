@@ -11,12 +11,12 @@ namespace E2ETests.Queue;
 // drawn, and that the page brings in a new check-in on its own poll with no reload.
 //
 // AC4's empty state is deliberately not automated. Reaching it means clearing every entry
-// in today's queue, and these classes run in parallel against one shared local stack, so a
-// test that empties the queue would break whichever waiting-pool or call-next test happened
-// to be running beside it. It stays covered by the unit test
+// in today's queue, including records not owned by this test run. The suite only deletes
+// rows for patients it created, so the empty state stays covered by the unit test
 // GetTodayWhenNoPatientsAreQueuedReturnsEmptyCollection and by the manual pass recorded in
 // docs/testing/SWC-20-test-results.md, TC-04.
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class FullQueueTests : SeleniumTestBase
 {
     // AC1 and AC2 - the full column contract and the status badge, read off the rendered

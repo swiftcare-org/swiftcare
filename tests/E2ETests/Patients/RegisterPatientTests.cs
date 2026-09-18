@@ -16,20 +16,26 @@ public class RegisterPatientTests : SeleniumTestBase
     [Fact]
     public void RegisterPatient_WithValidDetails_ShowsSuccessMessage()
     {
+        using var seed = new SeedClient();
         AppSession.LogIn(Driver, "reception.silva");
         AppSession.GoTo(Driver, PatientRegistrationPage.Path);
 
         var page = new PatientRegistrationPage(Driver);
         page.WaitUntilLoaded();
+        var fullName = TestData.FullName("Patient");
         page.FillForm(
             TestData.Nic(),
-            TestData.FullName("Patient"),
+            fullName,
             "1990-05-15",
             "1 Test Lane, Colombo",
             TestData.Phone());
         page.Submit();
 
-        Assert.Contains("registered successfully", page.WaitForSuccessMessage());
+        var successMessage = page.WaitForSuccessMessage();
+        var patient = seed.FindPatientByName(fullName);
+        seed.RemovePatientFromTodayQueue(patient.PatientId);
+
+        Assert.Contains("registered successfully", successMessage);
     }
 
     // Scenario 3 - missing required fields: per-field errors, no request made.
