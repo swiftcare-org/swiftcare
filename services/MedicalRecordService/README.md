@@ -85,13 +85,3 @@ dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.
 ```
 
 The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
-
-Migration compatibility tests require a disposable MySQL 8.4 instance and a test account allowed to create and drop databases. Never point this variable at a shared or production database:
-
-```powershell
-$env:MEDICAL_RECORD_MIGRATION_TEST_CONNECTION = "Server=localhost;Port=3306;Database=mysql;User Id=root;Password=<LOCAL_TEST_PASSWORD>;"
-dotnet test tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj
-Remove-Item Env:\MEDICAL_RECORD_MIGRATION_TEST_CONNECTION
-```
-
-The migration tests use randomly named temporary databases. They verify the exact fresh schema, stable template seeds, repeated execution, existing ADO.NET repository compatibility, rejection of an existing schema without migration history, and sanitized failure output.

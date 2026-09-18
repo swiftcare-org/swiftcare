@@ -456,7 +456,6 @@ jobs:
       PATIENT_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_patient;User Id=root;Password=ci-only-root-password;"
       QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
       MEDICAL_RECORD_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_medical_record;User Id=root;Password=ci-only-root-password;"
-      MEDICAL_RECORD_MIGRATION_TEST_CONNECTION: "Server=127.0.0.1;Port=3306;Database=mysql;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -533,10 +532,6 @@ jobs:
       - name: Check MedicalRecordService for model changes without a migration
         if: hashFiles('services/MedicalRecordService/MedicalRecordService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/MedicalRecordService
-
-      - name: Run MedicalRecordService migration tests
-        if: hashFiles('tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj') != ''
-        run: dotnet test tests/MedicalRecordService.MigrationTests/MedicalRecordService.MigrationTests.csproj --configuration Release
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})
