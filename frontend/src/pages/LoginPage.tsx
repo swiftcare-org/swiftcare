@@ -81,6 +81,9 @@ export function LoginPage() {
       } else if (error instanceof ApiError && error.status === 403) {
         setStatus('deactivated');
         setServerMessage('Your account has been deactivated. Contact your administrator.');
+      } else if (error instanceof ApiError && error.status === 429) {
+        setStatus('rejected');
+        setServerMessage('Too many attempts. Please wait a moment and try again.');
       } else {
         setStatus('rejected');
         setServerMessage(GENERIC_ERROR_MESSAGE);
