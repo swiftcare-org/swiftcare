@@ -20,6 +20,7 @@ namespace E2ETests.SmokeJourneys;
 // display tab opened before the call is made and never navigated again afterwards.
 [Trait("Category", "E2E")]
 [Trait("Category", "Smoke")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class ClinicDayJourneyTests : SeleniumTestBase
 {
     [Fact]

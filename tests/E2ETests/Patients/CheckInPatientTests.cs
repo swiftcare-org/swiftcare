@@ -15,6 +15,7 @@ namespace E2ETests.Patients;
 // Both start from patient search, not a deep link to the profile, because the story is
 // "a receptionist finds a returning patient and checks them in without re-registering".
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class CheckInPatientTests : SeleniumTestBase
 {
     // AC1 - a patient who exists but is not in today's queue is checked in from their

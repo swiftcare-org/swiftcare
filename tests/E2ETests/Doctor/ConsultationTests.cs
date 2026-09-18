@@ -17,6 +17,7 @@ namespace E2ETests.Doctor;
 // SWC-22 Postman collection documents), and a shared account would make this suite
 // unsafe to re-run.
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class ConsultationTests : SeleniumTestBase
 {
     // Known, stable seed fixture from services/MedicalRecordService/Database/schema.sql

@@ -17,6 +17,7 @@ namespace E2ETests.Doctor;
 // occupied for the rest of the clinic day and a shared account would make the suite unsafe
 // to re-run.
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class CallNextPatientTests : SeleniumTestBase
 {
     // AC1 - the call is reflected immediately in the calling doctor's own dashboard: the
@@ -38,10 +39,9 @@ public class CallNextPatientTests : SeleniumTestBase
         var calledQueueNumber = DoctorDashboardPage.QueueNumberFrom(panel);
 
         // The panel carries the room from the doctor's own account, which the browser never
-        // sent. Which patient is first in line is not asserted here: the pool is shared and
-        // these classes run in parallel, so another test's doctor can legitimately take the
-        // head of the queue between the arrangement and the click. First-in-line selection is
-        // asserted deterministically in the SWC-22 Postman collection instead.
+        // sent. Which patient is first in line is not asserted here because the local stack
+        // may already contain older manually-created queue entries. First-in-line selection
+        // is asserted deterministically in the SWC-22 Postman collection instead.
         Assert.Contains($"Room {doctor.RoomNumber}", dashboard.CurrentRoomText);
         Assert.Matches(@"Currently with you: Q-\d+ \S", panel);
 
