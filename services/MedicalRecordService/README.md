@@ -1,6 +1,6 @@
 # MedicalRecordService
 
-MedicalRecordService owns consultation records and consultation templates. The SWC-24 implementation uses parameterized ADO.NET commands through `MySqlConnector` and accepts requests only after the API Gateway establishes its internal trust boundary.
+MedicalRecordService owns consultation records, consultation templates, and the vital signs recorded for each visit. It uses parameterized ADO.NET commands through `MySqlConnector` and accepts requests only after the API Gateway establishes its internal trust boundary.
 
 ## Port
 
@@ -13,12 +13,15 @@ MedicalRecordService owns consultation records and consultation templates. The S
 | `GET` | `/health` | none | Health check |
 | `GET` | `/api/templates` | Doctor | Returns active consultation templates ordered by name |
 | `POST` | `/api/consultations` | Doctor | Creates a consultation for the doctor's current queue assignment |
+| `POST` | `/api/consultations/{consultationId}/vitals` | Doctor | Records vital signs for the doctor's consultation and calculates BMI |
 
 The Gateway supplies the authenticated doctor's ID, name, and room number. These values are not accepted from the request body. Symptoms and diagnosis are required; examination findings, notes, and template selection are optional.
 
+Vital signs may include blood pressure, temperature, pulse rate, respiratory rate, oxygen saturation, height, and weight. Blood-pressure values must be supplied together, and every supplied measurement must be positive. BMI is calculated by the service when both height and weight are present and is rounded to two decimal places. A doctor can record one set of vital signs for a consultation assigned to that doctor.
+
 ## EF Core migrations
 
-`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates` and `Consultations` tables. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
+`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates`, `Consultations`, and `VitalSigns` tables. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
 
 To apply migrations with the normal service image:
 
@@ -52,7 +55,7 @@ Automatic baselining of the retired SQL-created schema is not supported. The dev
 
 Do not manually insert rows into `__EFMigrationsHistory`. Running `--migrate` against an existing SQL-created schema fails instead of silently adopting it.
 
-Each queue entry can have at most one consultation record. The chosen template ID and name are stored on the consultation so the template used for the visit remains identifiable.
+Each queue entry can have at most one consultation record, and each consultation can have at most one vital-sign record. The chosen template ID and name are stored on the consultation so the template used for the visit remains identifiable.
 
 ## Required environment variables
 
@@ -84,4 +87,4 @@ OpenAPI is available at `/openapi/v1.json` in Development. Scalar is available a
 dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj
 ```
 
-The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
+The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
