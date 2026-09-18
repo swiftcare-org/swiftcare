@@ -4,6 +4,7 @@ using MedicalRecordService.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace MedicalRecordService.Migrations
 {
     [DbContext(typeof(MedicalRecordDbContext))]
-    partial class MedicalRecordDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918100000_AddConsultationVitalSigns")]
+    partial class AddConsultationVitalSigns
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

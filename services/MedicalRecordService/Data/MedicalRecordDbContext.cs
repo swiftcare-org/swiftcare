@@ -9,6 +9,7 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
 {
     public DbSet<Consultation> Consultations => Set<Consultation>();
     public DbSet<ConsultationTemplate> ConsultationTemplates => Set<ConsultationTemplate>();
+    public DbSet<VitalSigns> VitalSigns => Set<VitalSigns>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -114,6 +115,48 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
                 .HasForeignKey(consultation => consultation.TemplateId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("FK_Consultations_ConsultationTemplates_TemplateId");
+        });
+
+        modelBuilder.Entity<VitalSigns>(entity =>
+        {
+            entity.ToTable("VitalSigns");
+            entity.HasKey(vitalSigns => vitalSigns.Id);
+
+            ConfigureGuid(entity.Property(vitalSigns => vitalSigns.Id));
+            ConfigureGuid(entity.Property(vitalSigns => vitalSigns.ConsultationId));
+
+            entity.Property(vitalSigns => vitalSigns.Id).ValueGeneratedNever();
+            entity.Property(vitalSigns => vitalSigns.SystolicBloodPressure)
+                .HasColumnType("int");
+            entity.Property(vitalSigns => vitalSigns.DiastolicBloodPressure)
+                .HasColumnType("int");
+            entity.Property(vitalSigns => vitalSigns.TemperatureCelsius)
+                .HasColumnType("decimal(4,1)");
+            entity.Property(vitalSigns => vitalSigns.PulseRate)
+                .HasColumnType("int");
+            entity.Property(vitalSigns => vitalSigns.RespiratoryRate)
+                .HasColumnType("int");
+            entity.Property(vitalSigns => vitalSigns.OxygenSaturation)
+                .HasColumnType("int");
+            entity.Property(vitalSigns => vitalSigns.HeightCentimeters)
+                .HasColumnType("decimal(5,2)");
+            entity.Property(vitalSigns => vitalSigns.WeightKilograms)
+                .HasColumnType("decimal(6,2)");
+            entity.Property(vitalSigns => vitalSigns.Bmi)
+                .HasColumnType("decimal(5,2)");
+            entity.Property(vitalSigns => vitalSigns.RecordedAt)
+                .HasColumnType("datetime(6)")
+                .IsRequired();
+
+            entity.HasIndex(vitalSigns => vitalSigns.ConsultationId)
+                .IsUnique()
+                .HasDatabaseName("UX_VitalSigns_ConsultationId");
+
+            entity.HasOne(vitalSigns => vitalSigns.Consultation)
+                .WithOne(consultation => consultation.VitalSigns)
+                .HasForeignKey<VitalSigns>(vitalSigns => vitalSigns.ConsultationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_VitalSigns_Consultations_ConsultationId");
         });
     }
 
