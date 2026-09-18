@@ -20,4 +20,40 @@ public static class Browser
             """,
             element, value);
     }
+
+    // Establishes SWC-92's browser-side precondition without calling QueueService's
+    // shared Call Next operation. SWC-22 already covers that operation end to end; using
+    // it again in a parallel test can consume a queue row another test is observing.
+    // This helper stores the same CurrentPatient shape that DoctorDashboard writes after
+    // a successful call, scoped to the authenticated Doctor and clinic-local date.
+    public static void StoreCurrentPatientAssignment(IWebDriver driver, SeededPatient patient)
+    {
+        ((IJavaScriptExecutor)driver).ExecuteScript(
+            """
+            const user = JSON.parse(sessionStorage.getItem('swiftcare.auth.user'));
+            if (!user || user.role !== 'Doctor') {
+              throw new Error('A Doctor must be signed in before storing a current patient.');
+            }
+
+            const storageKey = `swiftcare.doctor.current-patient.${user.userId}.${arguments[2]}`;
+            const assignment = {
+              queueId: '00000000-0000-0000-0000-000000000110',
+              patientId: arguments[0],
+              queueNumber: 'Q-110',
+              status: 'IN_CONSULTATION',
+              doctorId: user.userId,
+              doctorName: user.fullName,
+              roomNumber: user.roomNumber,
+              calledAt: new Date().toISOString(),
+              patientName: arguments[1],
+            };
+
+            sessionStorage.setItem(storageKey, JSON.stringify(assignment));
+            """,
+            patient.PatientId,
+            patient.FullName,
+            ClinicClock.TodayIsoDate());
+
+        driver.Navigate().Refresh();
+    }
 }

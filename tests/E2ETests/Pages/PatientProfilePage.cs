@@ -34,6 +34,33 @@ public class PatientProfilePage
     public void WaitUntilLoaded() =>
         _wait.Until(d => d.FindElements(By.XPath("//p[normalize-space()='Allergies']")).Count > 0);
 
+    // --- Demographics and access mode (SWC-92) ---
+
+    public string PatientId => DemographicValue("Patient ID");
+
+    public string Nic => DemographicValue("NIC");
+
+    public string PhoneNumber => DemographicValue("Phone");
+
+    public string BloodGroup => DemographicValue("Blood Group");
+
+    public string Address => DemographicValue("Address");
+
+    public bool HasAllergiesSection =>
+        _driver.FindElements(By.XPath("//p[normalize-space()='Allergies']")).Count > 0;
+
+    public bool HasChronicConditionsSection =>
+        _driver.FindElements(By.XPath("//p[normalize-space()='Chronic Conditions']")).Count > 0;
+
+    // Doctors retain the existing read access from SWC-12. The demographic edit button
+    // and its form are Receptionist-only; allergy controls are deliberately not included
+    // here because Doctors may manage allergies under the separate SWC-17 rules.
+    public bool HasEditProfileButton =>
+        _driver.FindElements(By.XPath("//button[normalize-space()='Edit Profile']")).Count > 0;
+
+    public bool HasProfileEditForm =>
+        _driver.FindElements(By.Id("profile-address")).Count > 0;
+
     // --- Red allergy-alert banner (rendered only when at least one allergy exists) ---
 
     public bool HasAllergyAlert => _driver.FindElements(AlertBanner).Count > 0;
@@ -307,6 +334,10 @@ public class PatientProfilePage
     private IWebElement RowActionButton(string allergyName, string buttonText) =>
         _driver.FindElement(By.XPath(
             $"//tr[td[normalize-space()='{allergyName}']]//button[normalize-space()='{buttonText}']"));
+
+    private string DemographicValue(string label) =>
+        _driver.FindElement(By.XPath(
+            $"//dt[normalize-space()='{label}']/following-sibling::dd[1]")).Text.Trim();
 
     private static By AlertBanner => By.CssSelector("div[role='alert']");
 

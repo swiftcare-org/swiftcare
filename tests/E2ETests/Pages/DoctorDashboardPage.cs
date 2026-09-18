@@ -130,6 +130,24 @@ public class DoctorDashboardPage
     public bool HasCurrentPatientPanel =>
         _driver.FindElements(By.XPath("//p[contains(text(), 'Currently with you:')]")).Count > 0;
 
+    // SWC-92 turns both identifiers in the current-patient line into links to the same
+    // patient profile. Keep these selectors scoped to that line so they cannot match a
+    // patient link rendered in the shared waiting pool below it.
+    public string CurrentPatientQueueNumberLinkText => CurrentPatientLink(1).Text.Trim();
+
+    public string CurrentPatientNameLinkText => CurrentPatientLink(2).Text.Trim();
+
+    public string CurrentPatientQueueNumberProfilePath => ProfilePath(CurrentPatientLink(1));
+
+    public string CurrentPatientNameProfilePath => ProfilePath(CurrentPatientLink(2));
+
+    public int CurrentPatientProfileLinkCount =>
+        _driver.FindElements(CurrentPatientLinks).Count;
+
+    public void ClickCurrentPatientQueueNumber() => CurrentPatientLink(1).Click();
+
+    public void ClickCurrentPatientName() => CurrentPatientLink(2).Click();
+
     // "Room R-204", rendered under the current-patient line from the room on the calling
     // doctor's own account rather than from anything the browser sent.
     public string CurrentRoomText =>
@@ -157,6 +175,22 @@ public class DoctorDashboardPage
     private string CellText(string queueNumber, int columnIndex) =>
         _driver.FindElement(By.XPath(
             $"//table//tr[td[1][normalize-space()='{queueNumber}']]/td[{columnIndex}]")).Text.Trim();
+
+    private IWebElement CurrentPatientLink(int position) =>
+        _wait.Until(d => d.FindElement(By.XPath(
+            $"//p[contains(normalize-space(), 'Currently with you:')]/a[{position}]")));
+
+    private static string ProfilePath(IWebElement link)
+    {
+        var href = link.GetDomAttribute("href")
+            ?? throw new InvalidOperationException("Current-patient profile link has no href.");
+        return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
+            ? absolute.AbsolutePath
+            : href;
+    }
+
+    private static readonly By CurrentPatientLinks =
+        By.XPath("//p[contains(normalize-space(), 'Currently with you:')]/a");
 
     private static By RowFor(string queueNumber) =>
         By.XPath($"//table//tr[td[1][normalize-space()='{queueNumber}']]");
