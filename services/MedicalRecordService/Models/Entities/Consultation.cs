@@ -16,4 +16,5 @@ public sealed class Consultation
     public string? TemplateName { get; set; }
     public DateTime ConsultationDate { get; set; }
     public DateTime CreatedAt { get; set; }
+    public VitalSigns? VitalSigns { get; set; }
 }
