@@ -101,4 +101,63 @@ public class VitalSignsServiceTests
         Assert.Null(persisted.Bmi);
         Assert.Null(result.VitalSigns!.Bmi);
     }
+
+    [Fact]
+    public async Task RecordPersistsUnusualPositiveMeasurements()
+    {
+        var repository = new Mock<IVitalSignsRepository>();
+        VitalSignsDraft? persisted = null;
+        repository
+            .Setup(repo => repo.CreateAsync(
+                It.IsAny<VitalSignsDraft>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<VitalSignsDraft, Guid, CancellationToken>((vitalSigns, _, _) =>
+                persisted = vitalSigns)
+            .ReturnsAsync(VitalSignsPersistenceOutcome.Success);
+        var service = new VitalSignsService(repository.Object, new FixedTimeProvider());
+
+        var result = await service.RecordAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new RecordVitalSignsRequest
+            {
+                TemperatureCelsius = 50m,
+                PulseRate = 300
+            });
+
+        Assert.Equal(RecordVitalSignsOutcome.Success, result.Outcome);
+        Assert.NotNull(persisted);
+        Assert.Equal(50m, persisted.TemperatureCelsius);
+        Assert.Equal(300, persisted.PulseRate);
+    }
+
+    [Theory]
+    [InlineData(
+        VitalSignsPersistenceOutcome.ConsultationNotFound,
+        RecordVitalSignsOutcome.ConsultationNotFound)]
+    [InlineData(
+        VitalSignsPersistenceOutcome.VitalSignsAlreadyExist,
+        RecordVitalSignsOutcome.VitalSignsAlreadyExist)]
+    public async Task RecordMapsNonSuccessPersistenceOutcomes(
+        VitalSignsPersistenceOutcome persistenceOutcome,
+        RecordVitalSignsOutcome expectedOutcome)
+    {
+        var repository = new Mock<IVitalSignsRepository>();
+        repository
+            .Setup(repo => repo.CreateAsync(
+                It.IsAny<VitalSignsDraft>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(persistenceOutcome);
+        var service = new VitalSignsService(repository.Object, new FixedTimeProvider());
+
+        var result = await service.RecordAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new RecordVitalSignsRequest { PulseRate = 72 });
+
+        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.Null(result.VitalSigns);
+    }
 }
