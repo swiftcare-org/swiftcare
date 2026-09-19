@@ -9,6 +9,7 @@ locals {
 
   virtual_network_name            = "${var.project_name}-vnet"
   log_analytics_workspace_name    = "${var.project_name}-logs"
+  application_insights_name       = "${var.project_name}-appinsights"
   container_apps_environment_name = "${var.project_name}-aca-env"
   mysql_private_dns_zone_name     = "${var.project_name}.private.mysql.database.azure.com"
   messaging_private_dns_zone_name = "${var.project_name}.internal"
