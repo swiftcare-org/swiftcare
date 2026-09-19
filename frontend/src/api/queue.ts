@@ -46,6 +46,11 @@ export function callNextPatient(): Promise<CalledPatient> {
   return apiRequest<CalledPatient>('/api/queue/call-next', { method: 'PUT' });
 }
 
+export async function getCurrentPatient(): Promise<CalledPatient | null> {
+  // The backend returns 204 when this doctor has no active queue assignment.
+  return (await apiRequest<CalledPatient | undefined>('/api/queue/today/current')) ?? null;
+}
+
 export interface RoomQueueAssignment {
   roomNumber: string;
   queueNumber: string;

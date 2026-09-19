@@ -9,11 +9,12 @@ import {
 } from '../api/consultations';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { readStoredCurrentPatient } from '../consultations/currentPatientStorage';
+import { loadCurrentPatient, type CurrentPatient } from '../consultations/currentPatient';
 import { VitalSignsForm } from '../consultations/VitalSignsForm';
 import { DashboardShell } from '../dashboards/DashboardShell';
 
 type TemplateLoadState = 'loading' | 'loaded' | 'error';
+type CurrentPatientLoadState = 'loading' | 'loaded' | 'error';
 type SubmissionState = 'idle' | 'submitting' | 'created' | 'failed';
 
 interface ConsultationFormState {
@@ -77,7 +78,8 @@ function consultationErrorMessage(error: unknown): string {
 
 export function ConsultationPage() {
   const { user } = useAuth();
-  const currentPatient = readStoredCurrentPatient(user?.userId);
+  const [currentPatient, setCurrentPatient] = useState<CurrentPatient | null>(null);
+  const [currentPatientLoadState, setCurrentPatientLoadState] = useState<CurrentPatientLoadState>('loading');
   const [templates, setTemplates] = useState<ConsultationTemplate[]>([]);
   const [templateLoadState, setTemplateLoadState] = useState<TemplateLoadState>('loading');
   const [form, setForm] = useState<ConsultationFormState>(EMPTY_FORM);
@@ -85,6 +87,30 @@ export function ConsultationPage() {
   const [submissionState, setSubmissionState] = useState<SubmissionState>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [createdConsultation, setCreatedConsultation] = useState<Consultation | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadAssignment() {
+      try {
+        const assignment = await loadCurrentPatient();
+        if (!disposed) {
+          setCurrentPatient(assignment);
+          setCurrentPatientLoadState('loaded');
+        }
+      } catch {
+        if (!disposed) {
+          setCurrentPatientLoadState('error');
+        }
+      }
+    }
+
+    void loadAssignment();
+
+    return () => {
+      disposed = true;
+    };
+  }, [user?.userId]);
 
   useEffect(() => {
     let disposed = false;
@@ -203,7 +229,18 @@ export function ConsultationPage() {
         &larr; Back to Doctor Dashboard
       </Link>
 
-      {!currentPatient ? (
+      {currentPatientLoadState === 'loading' ? (
+        <p className="mt-6 text-sm text-slate-500">Loading your current consultation…</p>
+      ) : currentPatientLoadState === 'error' ? (
+        <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-4" role="alert">
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
+            Current Consultation Unavailable
+          </p>
+          <p className="mt-1 text-sm text-red-900">
+            Unable to load your current patient. Please try again.
+          </p>
+        </div>
+      ) : !currentPatient ? (
         <div className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-4" role="alert">
           <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
             No Current Patient
