@@ -76,6 +76,34 @@ public sealed class QueueController : ControllerBase
         return Ok(entries);
     }
 
+    [HttpGet("today/current")]
+    [ProducesResponseType(typeof(CalledPatientResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetCurrent(CancellationToken cancellationToken)
+    {
+        // The Gateway supplies these trusted headers after validating the bearer token.
+        if (!string.Equals(
+                HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault(),
+                "Doctor",
+                StringComparison.Ordinal))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse("Forbidden"));
+        }
+
+        var userIdHeader = HttpContext.Request.Headers[UserIdHeaderName].FirstOrDefault();
+        if (!Guid.TryParse(userIdHeader, out var doctorId) || doctorId == Guid.Empty)
+        {
+            return Unauthorized(new MessageResponse("Doctor identity is unavailable"));
+        }
+
+        var currentPatient = await _todayQueueService.GetCurrentForDoctorAsync(
+            doctorId,
+            cancellationToken);
+        return currentPatient is null ? NoContent() : Ok(currentPatient);
+    }
+
     [HttpPut("call-next")]
     [ProducesResponseType(typeof(CalledPatientResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]

@@ -1,22 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
 import {
   callNextPatient,
   getWaitingPool,
-  type CalledPatient,
   type TodayQueueEntry,
 } from '../api/queue';
 import { useAuth } from '../auth/useAuth';
 import {
-  readStoredCurrentPatient,
-  storeCurrentPatient,
+  loadCurrentPatient,
+  PATIENT_UNAVAILABLE,
+  resolveCurrentPatient,
   type CurrentPatient,
-} from '../consultations/currentPatientStorage';
+} from '../consultations/currentPatient';
 import { DashboardShell } from './DashboardShell';
 
 type WaitingPoolLoadState = 'loading' | 'loaded' | 'error';
+type CurrentPatientLoadState = 'loading' | 'loaded' | 'error';
 type CallNextState = 'idle' | 'calling';
 
 interface WaitingPoolRow extends TodayQueueEntry {
@@ -25,7 +26,6 @@ interface WaitingPoolRow extends TodayQueueEntry {
 
 const POLL_INTERVAL_MS = 5_000;
 const CLINIC_TIME_ZONE = 'Asia/Colombo';
-const PATIENT_UNAVAILABLE = 'Patient unavailable';
 
 const checkInTimeFormatter = new Intl.DateTimeFormat('en-LK', {
   hour: '2-digit',
@@ -92,22 +92,6 @@ function callNextErrorMessage(error: unknown): string {
   return 'Unable to call the next patient. Please try again.';
 }
 
-async function resolveCalledPatientName(
-  calledPatient: CalledPatient,
-  waitingRows: WaitingPoolRow[],
-): Promise<string> {
-  const waitingRow = waitingRows.find((row) => row.patientId === calledPatient.patientId);
-  if (waitingRow && waitingRow.patientName !== PATIENT_UNAVAILABLE) {
-    return waitingRow.patientName;
-  }
-
-  try {
-    return (await getPatient(calledPatient.patientId)).fullName;
-  } catch {
-    return PATIENT_UNAVAILABLE;
-  }
-}
-
 export function DoctorDashboard() {
   const { user } = useAuth();
   const [loadState, setLoadState] = useState<WaitingPoolLoadState>('loading');
@@ -115,10 +99,12 @@ export function DoctorDashboard() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [callNextState, setCallNextState] = useState<CallNextState>('idle');
   const [callNextError, setCallNextError] = useState<string | null>(null);
-  const [currentPatient, setCurrentPatient] = useState<CurrentPatient | null>(() =>
-    readStoredCurrentPatient(user?.userId),
-  );
+  const [currentPatient, setCurrentPatient] = useState<CurrentPatient | null>(null);
+  const [currentPatientLoadState, setCurrentPatientLoadState] = useState<CurrentPatientLoadState>('loading');
+  const [currentPatientError, setCurrentPatientError] = useState<string | null>(null);
+  const [currentRefreshKey, setCurrentRefreshKey] = useState(0);
   const [callNextBlocked, setCallNextBlocked] = useState(false);
+  const assignmentVersion = useRef(0);
 
   useEffect(() => {
     let disposed = false;
@@ -169,8 +155,56 @@ export function DoctorDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    let requestInFlight = false;
+
+    async function refreshCurrentPatient() {
+      if (requestInFlight) {
+        return;
+      }
+
+      requestInFlight = true;
+      const requestedVersion = assignmentVersion.current;
+
+      try {
+        const assignment = await loadCurrentPatient();
+        if (disposed || requestedVersion !== assignmentVersion.current) {
+          return;
+        }
+
+        setCurrentPatient(assignment);
+        setCurrentPatientLoadState('loaded');
+        setCurrentPatientError(null);
+        setCallNextBlocked(false);
+        if (assignment) {
+          setCallNextError(null);
+        }
+      } catch {
+        if (disposed || requestedVersion !== assignmentVersion.current) {
+          return;
+        }
+
+        setCurrentPatientLoadState('error');
+        setCurrentPatientError('Unable to load your current consultation. Please try again.');
+      } finally {
+        requestInFlight = false;
+      }
+    }
+
+    const initialLoadId = window.setTimeout(() => void refreshCurrentPatient(), 0);
+    const pollId = window.setInterval(() => void refreshCurrentPatient(), POLL_INTERVAL_MS);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(initialLoadId);
+      window.clearInterval(pollId);
+    };
+  }, [user?.userId, currentRefreshKey]);
+
   const callNextDisabled =
     loadState !== 'loaded' ||
+    currentPatientLoadState !== 'loaded' ||
     rows.length === 0 ||
     callNextState === 'calling' ||
     currentPatient !== null ||
@@ -183,14 +217,20 @@ export function DoctorDashboard() {
 
     setCallNextState('calling');
     setCallNextError(null);
+    assignmentVersion.current += 1;
 
     try {
       const calledPatient = await callNextPatient();
-      const patientName = await resolveCalledPatientName(calledPatient, rows);
-      const assignedPatient = { ...calledPatient, patientName };
+      const waitingRow = rows.find((row) => row.patientId === calledPatient.patientId);
+      const assignedPatient = await resolveCurrentPatient(
+        calledPatient,
+        waitingRow?.patientName,
+      );
 
-      storeCurrentPatient(user?.userId, assignedPatient);
+      assignmentVersion.current += 1;
       setCurrentPatient(assignedPatient);
+      setCurrentPatientLoadState('loaded');
+      setCurrentPatientError(null);
       setRows((currentRows) =>
         currentRows.filter((row) => row.queueId !== calledPatient.queueId),
       );
@@ -201,7 +241,10 @@ export function DoctorDashboard() {
       }
 
       if (error instanceof ApiError && error.status === 409) {
+        assignmentVersion.current += 1;
         setCallNextBlocked(true);
+        setCurrentPatientLoadState('loading');
+        setCurrentRefreshKey((key) => key + 1);
       }
 
       setCallNextError(callNextErrorMessage(error));
@@ -245,6 +288,19 @@ export function DoctorDashboard() {
         </div>
 
         <div aria-live="polite" className="mt-6">
+          {currentPatientLoadState === 'loading' && !currentPatient && (
+            <p className="mb-4 text-sm text-slate-500">Loading your current consultation…</p>
+          )}
+
+          {currentPatientError && (
+            <div className="mb-4 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
+              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
+                Current Consultation Unavailable
+              </p>
+              <p className="mt-1 text-sm text-red-900">{currentPatientError}</p>
+            </div>
+          )}
+
           {currentPatient && (
             <div className="mb-4 border-t-4 border-b border-brand-blue bg-blue-50 px-6 py-3">
               <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-brand-blue-dark">

@@ -217,6 +217,110 @@ public class QueueControllerTests
     }
 
     [Fact]
+    public async Task GetCurrentAsDoctorReturnsTheActiveAssignment()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var doctorId = Guid.NewGuid();
+        var expected = new CalledPatientResponse
+        {
+            QueueId = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            QueueNumber = "Q-007",
+            Status = "IN_CONSULTATION",
+            DoctorId = doctorId,
+            DoctorName = "Dr. Amara Chen",
+            RoomNumber = "R-204",
+            CalledAt = new DateTime(2026, 9, 2, 6, 15, 0, DateTimeKind.Utc)
+        };
+        factory.TodayQueueServiceMock
+            .Setup(service => service.GetCurrentForDoctorAsync(
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var client = CreateDoctorClient(factory, doctorId);
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<CalledPatientResponse>();
+        Assert.Equal(expected.QueueId, body!.QueueId);
+        Assert.Equal(expected.PatientId, body.PatientId);
+        Assert.Equal(expected.QueueNumber, body.QueueNumber);
+        Assert.Equal(expected.DoctorId, body.DoctorId);
+        Assert.Equal(expected.DoctorName, body.DoctorName);
+        Assert.Equal(expected.RoomNumber, body.RoomNumber);
+    }
+
+    [Fact]
+    public async Task GetCurrentWhenDoctorHasNoActivePatientReturns204()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var doctorId = Guid.NewGuid();
+        factory.TodayQueueServiceMock
+            .Setup(service => service.GetCurrentForDoctorAsync(
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CalledPatientResponse?)null);
+        var client = CreateDoctorClient(factory, doctorId);
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task GetCurrentAsNonDoctorReturns403(string role)
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var client = CreateClientWithRole(factory, role);
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.TodayQueueServiceMock.Verify(
+            service => service.GetCurrentForDoctorAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetCurrentWithoutDoctorIdReturns401()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var client = CreateClientWithRole(factory, "Doctor");
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.TodayQueueServiceMock.Verify(
+            service => service.GetCurrentForDoctorAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetCurrentWithoutGatewaySecretReturns401()
+    {
+        using var factory = new QueueServiceWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(UserRoleHeaderName, "Doctor");
+        client.DefaultRequestHeaders.Add(UserIdHeaderName, Guid.NewGuid().ToString());
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.TodayQueueServiceMock.Verify(
+            service => service.GetCurrentForDoctorAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task CallNextAsDoctorReturnsAssignedPatient()
     {
         using var factory = new QueueServiceWebApplicationFactory();
