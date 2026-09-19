@@ -6,8 +6,12 @@ using Scalar.AspNetCore;
 using PatientService.Middleware;
 using PatientService.Models.Configuration;
 using PatientService.Services;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 // Azure Container Apps Jobs run maintenance commands to completion without
 // starting Kestrel or exposing an application endpoint.
@@ -18,6 +22,15 @@ if (maintenanceCommand != MaintenanceCommand.None)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-patient"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
 
 // Add services to the container.
 
