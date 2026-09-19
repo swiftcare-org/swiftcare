@@ -1,7 +1,11 @@
 using MedicalRecordService.Data;
 using MedicalRecordService.Maintenance;
 using MedicalRecordService.Middleware;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using MedicalRecordService.Services;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Scalar.AspNetCore;
 
 // Azure Container Apps Jobs run maintenance commands to completion without
@@ -13,6 +17,15 @@ if (maintenanceCommand != MaintenanceCommand.None)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-medical-record"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
