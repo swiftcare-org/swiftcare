@@ -6,7 +6,11 @@ using AuthService.Maintenance;
 using AuthService.Middleware;
 using AuthService.Models.Configuration;
 using AuthService.Services;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 // Maintenance commands run to completion and exit; they never start the web host.
 var maintenanceCommand = MaintenanceCommandParser.Parse(args);
@@ -16,6 +20,15 @@ if (maintenanceCommand != MaintenanceCommand.None)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-auth"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
 
 // Add services to the container.
 
