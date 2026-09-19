@@ -223,6 +223,92 @@ public class TodayQueueServiceTests
     }
 
     [Fact]
+    public async Task GetCurrentForDoctorReturnsOnlyThatDoctorsActiveAssignment()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var today = new DateOnly(2026, 9, 2);
+        var doctorId = Guid.NewGuid();
+        var active = NewEntry(today, "Q-007", QueueStatus.InConsultation);
+        active.DoctorId = doctorId;
+        active.DoctorName = "Dr. Amara Chen";
+        active.RoomNumber = "R-204";
+        active.CalledAt = new DateTime(2026, 9, 2, 6, 15, 0, DateTimeKind.Utc);
+
+        var anotherDoctorsPatient = NewEntry(today, "Q-008", QueueStatus.InConsultation);
+        anotherDoctorsPatient.DoctorId = Guid.NewGuid();
+        anotherDoctorsPatient.DoctorName = "Dr. Priya Rao";
+        anotherDoctorsPatient.RoomNumber = "R-108";
+        anotherDoctorsPatient.CalledAt = active.CalledAt;
+
+        dbContext.QueueEntries.AddRange(active, anotherDoctorsPatient);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).GetCurrentForDoctorAsync(doctorId);
+
+        Assert.NotNull(result);
+        Assert.Equal(active.Id, result.QueueId);
+        Assert.Equal(active.PatientId, result.PatientId);
+        Assert.Equal("Q-007", result.QueueNumber);
+        Assert.Equal("IN_CONSULTATION", result.Status);
+        Assert.Equal(doctorId, result.DoctorId);
+        Assert.Equal("Dr. Amara Chen", result.DoctorName);
+        Assert.Equal("R-204", result.RoomNumber);
+        Assert.Equal(active.CalledAt, result.CalledAt);
+        Assert.Equal(DateTimeKind.Utc, result.CalledAt.Kind);
+    }
+
+    [Fact]
+    public async Task GetCurrentForDoctorReturnsNullAfterTheAssignmentCompletes()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var doctorId = Guid.NewGuid();
+        var active = NewEntry(new DateOnly(2026, 9, 2), "Q-007", QueueStatus.InConsultation);
+        active.DoctorId = doctorId;
+        active.DoctorName = "Dr. Amara Chen";
+        active.RoomNumber = "R-204";
+        active.CalledAt = new DateTime(2026, 9, 2, 6, 15, 0, DateTimeKind.Utc);
+        dbContext.QueueEntries.Add(active);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        Assert.NotNull(await service.GetCurrentForDoctorAsync(doctorId));
+
+        active.Status = QueueStatus.Completed;
+        await dbContext.SaveChangesAsync();
+
+        Assert.Null(await service.GetCurrentForDoctorAsync(doctorId));
+    }
+
+    [Fact]
+    public async Task GetCurrentForDoctorExcludesPreviousClinicDayAtLocalMidnight()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var doctorId = Guid.NewGuid();
+        var previousDay = NewEntry(new DateOnly(2026, 9, 1), "Q-007", QueueStatus.InConsultation);
+        previousDay.DoctorId = doctorId;
+        previousDay.DoctorName = "Dr. Amara Chen";
+        previousDay.RoomNumber = "R-204";
+        previousDay.CalledAt = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        dbContext.QueueEntries.Add(previousDay);
+        await dbContext.SaveChangesAsync();
+
+        var beforeMidnight = await CreateService(
+            dbContext,
+            new DateTimeOffset(2026, 9, 1, 18, 29, 0, TimeSpan.Zero))
+            .GetCurrentForDoctorAsync(doctorId);
+        var afterMidnight = await CreateService(
+            dbContext,
+            new DateTimeOffset(2026, 9, 1, 18, 30, 0, TimeSpan.Zero))
+            .GetCurrentForDoctorAsync(doctorId);
+
+        Assert.Equal(previousDay.Id, beforeMidnight?.QueueId);
+        Assert.Null(afterMidnight);
+    }
+
+    [Fact]
     public async Task GetDisplayReturnsCurrentRoomAssignmentsInRoomNumberOrder()
     {
         using var connection = OpenConnection();
