@@ -182,6 +182,8 @@ jobs:
       QUEUE_DB_PASSWORD: ${{ secrets.QUEUE_DB_PASSWORD }}
       JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
       GATEWAY_INTERNAL_SECRET: ${{ secrets.GATEWAY_INTERNAL_SECRET }}
+      # Optional: services skip telemetry until this secret is set in the environment.
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
     steps:
       - name: Validate deployment configuration
         shell: bash
@@ -821,6 +823,7 @@ jobs:
               --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5000" \
                 "ConnectionStrings__AuthDb=secretref:auth-db" \
                 "Jwt__SecretKey=secretref:jwt-key" \
@@ -845,6 +848,7 @@ jobs:
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
               --env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5000" \
                 "ConnectionStrings__AuthDb=secretref:auth-db" \
                 "Jwt__SecretKey=secretref:jwt-key" \
@@ -894,6 +898,7 @@ jobs:
               --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5002" \
                 "ConnectionStrings__PatientDb=secretref:patient-db" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
@@ -914,6 +919,7 @@ jobs:
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
               --env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5002" \
                 "ConnectionStrings__PatientDb=secretref:patient-db" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
@@ -960,6 +966,7 @@ jobs:
               --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5003" \
                 "ConnectionStrings__QueueDb=secretref:queue-db" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
@@ -982,6 +989,7 @@ jobs:
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
               --env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5003" \
                 "ConnectionStrings__QueueDb=secretref:queue-db" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
@@ -1067,6 +1075,7 @@ jobs:
               --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5004" \
                 "ConnectionStrings__MedicalRecordDb=secretref:medical-record-db" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
@@ -1086,6 +1095,7 @@ jobs:
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
               --env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:5004" \
                 "ConnectionStrings__MedicalRecordDb=secretref:medical-record-db" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
@@ -1241,6 +1251,7 @@ jobs:
               --min-replicas 1 --max-replicas 1 \
               --set-env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:8000" \
                 "Jwt__SecretKey=secretref:jwt-key" \
                 "Jwt__Issuer=$JWT_ISSUER" \
@@ -1268,6 +1279,7 @@ jobs:
                 "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
               --env-vars \
                 "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
                 "ASPNETCORE_URLS=http://+:8000" \
                 "Jwt__SecretKey=secretref:jwt-key" \
                 "Jwt__Issuer=$JWT_ISSUER" \
