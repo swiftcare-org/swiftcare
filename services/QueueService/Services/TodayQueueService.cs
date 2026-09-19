@@ -35,6 +35,52 @@ public sealed class TodayQueueService : ITodayQueueService
         return await GetTodayEntriesAsync(QueueStatus.Waiting, cancellationToken);
     }
 
+    public async Task<CalledPatientResponse?> GetCurrentForDoctorAsync(
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
+
+        var clinicNow = TimeZoneInfo.ConvertTime(
+            _timeProvider.GetUtcNow(),
+            _clinicTimeZone);
+        var queueDate = DateOnly.FromDateTime(clinicNow.DateTime);
+
+        var entry = await _dbContext.QueueEntries
+            .AsNoTracking()
+            .Where(candidate =>
+                candidate.QueueDate == queueDate
+                && candidate.Status == QueueStatus.InConsultation
+                && candidate.DoctorId == doctorId)
+            .OrderByDescending(candidate => candidate.CalledAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (entry is null)
+        {
+            return null;
+        }
+
+        return new CalledPatientResponse
+        {
+            QueueId = entry.Id,
+            PatientId = entry.PatientId,
+            QueueNumber = entry.QueueNumber,
+            Status = "IN_CONSULTATION",
+            DoctorId = doctorId,
+            DoctorName = entry.DoctorName ?? throw new InvalidOperationException(
+                "The active queue entry has no doctor name."),
+            RoomNumber = entry.RoomNumber ?? throw new InvalidOperationException(
+                "The active queue entry has no room number."),
+            CalledAt = DateTime.SpecifyKind(
+                entry.CalledAt ?? throw new InvalidOperationException(
+                    "The active queue entry has no call time."),
+                DateTimeKind.Utc)
+        };
+    }
+
     public async Task<WaitingRoomDisplayResponse> GetDisplayAsync(
         CancellationToken cancellationToken = default)
     {
