@@ -12,6 +12,7 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 - `GET /api/queue/today/patient/{patientId}` — returns whether a patient is in today's queue and their assigned queue number. Receptionist only.
 - `GET /api/queue/today` — returns all entries for the current clinic-local day in queue-number order, including check-in time, operational status, and nullable room/doctor assignment. Receptionist only.
 - `GET /api/queue/today/waiting` — returns only `WAITING` entries in queue-number order for the shared doctor pool. Doctor only.
+- `GET /api/queue/today/current` — returns the authenticated doctor's current clinic-day `IN_CONSULTATION` assignment, or `204 No Content` when there is none. Doctor only.
 - `PUT /api/queue/call-next` — assigns the first waiting patient to the authenticated doctor and room, changes the entry to `IN_CONSULTATION`, records `CalledAt`, and publishes `patient-called`. Doctor only.
 - `GET /api/queue/display` — returns active room-to-queue assignments and the next three waiting queue numbers for the public waiting-room screen. No user authentication required and no personal information returned.
 - `GET /health` — liveness/readiness check.
@@ -58,7 +59,7 @@ docker compose up --detach --no-deps --wait queueservice
 curl http://localhost:5003/health
 ```
 
-Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes check-in messages in the background and serves the receptionist queue reads, doctor shared waiting-pool read, doctor call-next action, and public waiting-room display through ApiGateway.
+Running `docker compose up --detach` starts QueueService with the rest of the application after the database has been prepared. QueueService consumes check-in messages in the background and serves the receptionist queue reads, doctor shared waiting-pool and current-assignment reads, doctor call-next action, and public waiting-room display through ApiGateway.
 
 For controlled deployments, the published service image can apply migrations and
 exit without starting the web host:
@@ -98,12 +99,15 @@ SWC-78 covers call-next selection and assignment, `IN_CONSULTATION` status, doct
 
 SWC-79 covers anonymous public-display access, current room mappings, numeric next-three ordering, empty results, exclusion of completed and previous-day entries, and the serialized response shape to ensure patient and doctor information cannot be exposed.
 
+SWC-112 covers recovery of the doctor's active assignment: lookup is restricted to the trusted doctor ID, `IN_CONSULTATION` status, and the current clinic-local date. Tests verify that a completed entry no longer appears, a previous-day entry is excluded at local midnight, `204` is returned when there is no assignment, and both QueueService and API Gateway require doctor authorization.
+
 ## Endpoints
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/api/queue/today` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns all current clinic-day queue entries ordered by queue number |
 | `GET` | `/api/queue/today/waiting` | `X-Gateway-Secret`, `X-User-Role: Doctor` | Returns the shared pool of current clinic-day `WAITING` entries ordered by queue number |
+| `GET` | `/api/queue/today/current` | `X-Gateway-Secret`, trusted doctor identity headers | Returns the doctor's active assignment as `200`, or `204` when none exists |
 | `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber }` for today's clinic-local queue |
 | `PUT` | `/api/queue/call-next` | `X-Gateway-Secret`, trusted doctor identity headers | Calls the first waiting patient or returns the empty/occupied outcome |
 | `GET` | `/api/queue/display` | `X-Gateway-Secret`; no user identity required | Returns only current room assignments and the next three queue numbers |
