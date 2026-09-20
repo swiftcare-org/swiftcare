@@ -6,6 +6,7 @@ and user-management screens) is tracked under
 [SWC-60](https://swiftcare-app.atlassian.net/browse/SWC-60); Sprint 2 adds browser coverage
 for SWC-15, SWC-18, SWC-20, SWC-21, SWC-22, SWC-23 and SWC-24 plus one cross-story clinic-day
 journey, tracked under SPRINT2-QA-01.
+Sprint 3 adds SWC-25 vital-sign form coverage under SWC-110.
 
 Unlike `AuthService.UnitTests` / `ApiGateway.UnitTests`, this project has no
 `ProjectReference` to any service, and it only talks to whatever is already
@@ -90,8 +91,8 @@ Set `MYSQL_PASSWORD` from the repo root `.env` alongside `AUTH_SEED_PASSWORD`.
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
-| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
-| Isolated patient/profile | Allergy, chronic-condition, search, registration, current-patient-profile and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Isolated patient/profile | Allergy, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
 | Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
 
 Every generated value is tagged through `TestData.RunId`, which includes the test-process
@@ -99,6 +100,9 @@ id so two suite processes started in the same second remain distinct. `SeedClien
 each API-seeded patient's remaining queue row on disposal. UI registration tests resolve
 their uniquely generated patient name and remove that patient's row explicitly. Cleanup
 never truncates tables or depends on broad date-based deletion.
+Current-patient profile tests now create a real Call Next assignment and include a
+fresh-Chrome-session check. They fail before calling if an older waiting entry would
+be selected, rather than consuming a patient outside the test's own data.
 
 ## Test categories
 

@@ -11,6 +11,7 @@ Terraform owns stable infrastructure:
 - private DNS zones and VNet links
 - `swiftcare-mysql` and the AuthService, PatientService and QueueService databases
 - `swiftcare-logs`
+- `swiftcare-appinsights` (Application Insights, workspace-based on `swiftcare-logs`)
 - `swiftcare-aca-env`
 - the Kafka/ZooKeeper Container Instance, NAT Gateway, public IP and private DNS record
 - `swiftcare-web` and its frontend custom domains
@@ -160,6 +161,18 @@ terraform -chdir=deployment/terraform apply "azure-development.tfplan"
 ```
 
 Saved plan files are ignored by Git.
+
+## Application Insights
+
+Terraform creates `swiftcare-appinsights` and exposes a sensitive `application_insights_connection_string` output. The resource providers `Microsoft.Insights` and `Microsoft.AlertsManagement` must already be registered on the subscription, which needs the subscription Owner once.
+
+CD passes the connection string to every Container App as `APPLICATIONINSIGHTS_CONNECTION_STRING`. It is optional, so deployments keep working until it is configured. After the first apply, store it in the GitHub Environment:
+
+```powershell
+terraform -chdir=deployment/terraform output -raw application_insights_connection_string | gh secret set APPLICATIONINSIGHTS_CONNECTION_STRING --env azure-development
+```
+
+The connection string only allows sending telemetry, not reading it, but keep it out of the repository and chat. If a portal-created trial resource such as `swiftcare-appinsights-trial` exists, delete it after this resource is applied so two are not left running.
 
 ## Cost controls
 

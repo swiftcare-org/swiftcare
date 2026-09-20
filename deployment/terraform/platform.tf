@@ -13,6 +13,15 @@ resource "azurerm_log_analytics_workspace" "swiftcare" {
   }
 }
 
+resource "azurerm_application_insights" "swiftcare" {
+  name                = local.application_insights_name
+  location            = azurerm_resource_group.swiftcare.location
+  resource_group_name = azurerm_resource_group.swiftcare.name
+  workspace_id        = azurerm_log_analytics_workspace.swiftcare.id
+  application_type    = "web"
+  tags                = local.common_tags
+}
+
 resource "azurerm_container_app_environment" "swiftcare" {
   name                       = local.container_apps_environment_name
   location                   = azurerm_resource_group.swiftcare.location
