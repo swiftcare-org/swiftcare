@@ -76,10 +76,19 @@ public sealed class SeedClient : IDisposable
     public void WaitUntilWaiting(string patientId, TimeSpan? timeout = null) =>
         WaitUntilWaitingAsync(patientId, timeout ?? TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
 
+    // Call Next selects the clinic-wide first waiting entry. Fail before calling if an
+    // older entry would be taken instead of this test's patient; never consume another
+    // person's queue entry just to satisfy a browser-test precondition.
+    public void EnsureNextWaitingPatientIs(string patientId) =>
+        EnsureNextWaitingPatientIsAsync(patientId).GetAwaiter().GetResult();
+
     // Calls next as the given account (any active Doctor, seeded or created via
     // CreateUser) and returns the room/queue-number pair QueueService assigned.
     public CalledQueueEntry CallNext(string username, string password) =>
         CallNextAsync(username, password).GetAwaiter().GetResult();
+
+    public CurrentQueueAssignment GetCurrentForDoctor(string username, string password) =>
+        GetCurrentForDoctorAsync(username, password).GetAwaiter().GetResult();
 
     private async Task<SeededPatient> RegisterPatientAsync(string? fullName)
     {
@@ -179,7 +188,9 @@ public sealed class SeedClient : IDisposable
         var token = await TokenForAsync("admin.fernando");
         using var response = await SendAsync(HttpMethod.Post, "/api/users", request, token);
         response.EnsureSuccessStatusCode();
-        return new SeededUser(user, pw, role, request.roomNumber);
+        var createdUser = await response.Content.ReadFromJsonAsync<CreatedUserBody>(Json)
+            ?? throw new InvalidOperationException($"Empty response creating E2E user '{user}'.");
+        return new SeededUser(user, pw, role, request.roomNumber, createdUser.UserId, request.fullName);
     }
 
     private async Task WaitUntilWaitingAsync(string patientId, TimeSpan timeout)
@@ -207,6 +218,22 @@ public sealed class SeedClient : IDisposable
         }
     }
 
+    private async Task EnsureNextWaitingPatientIsAsync(string patientId)
+    {
+        var token = await TokenForAsync("dr.chen");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/queue/today/waiting");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var entries = await response.Content.ReadFromJsonAsync<List<WaitingEntryBody>>(Json) ?? [];
+        if (entries.FirstOrDefault()?.PatientId != patientId)
+        {
+            throw new InvalidOperationException(
+                $"E2E patient {patientId} is not first in the shared waiting queue. " +
+                "Run queue-dependent tests against an isolated queue; no other patient's entry was called.");
+        }
+    }
+
     private async Task<CalledQueueEntry> CallNextAsync(string username, string password)
     {
         var token = await TokenForAsync(username, password);
@@ -215,6 +242,22 @@ public sealed class SeedClient : IDisposable
         var body = await response.Content.ReadFromJsonAsync<CalledQueueEntryBody>(Json)
                    ?? throw new InvalidOperationException("Empty response calling next.");
         return new CalledQueueEntry(body.QueueNumber, body.RoomNumber);
+    }
+
+    private async Task<CurrentQueueAssignment> GetCurrentForDoctorAsync(string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/queue/today/current");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+        {
+            throw new InvalidOperationException($"Doctor '{username}' has no current queue assignment.");
+        }
+
+        return await response.Content.ReadFromJsonAsync<CurrentQueueAssignment>(Json)
+            ?? throw new InvalidOperationException($"Empty current-assignment response for doctor '{username}'.");
     }
 
     // password is null for the dev-seeded accounts (dr.chen, reception.silva,
@@ -259,6 +302,8 @@ public sealed class SeedClient : IDisposable
 
     private sealed record RegisteredPatientBody(string PatientId);
 
+    private sealed record CreatedUserBody(string UserId);
+
     private sealed record SearchPatientBody(
         string PatientId,
         string FullName,
@@ -277,6 +322,20 @@ public sealed class SeedClient : IDisposable
 
 public sealed record SeededPatient(string PatientId, string Nic, string FullName, string PhoneNumber, string BloodGroup);
 
-public sealed record SeededUser(string Username, string Password, string Role, string? RoomNumber = null);
+public sealed record SeededUser(
+    string Username,
+    string Password,
+    string Role,
+    string? RoomNumber,
+    string UserId,
+    string FullName);
 
 public sealed record CalledQueueEntry(string QueueNumber, string RoomNumber);
+
+public sealed record CurrentQueueAssignment(
+    string PatientId,
+    string QueueNumber,
+    string Status,
+    string DoctorId,
+    string DoctorName,
+    string RoomNumber);

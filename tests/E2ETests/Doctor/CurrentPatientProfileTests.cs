@@ -1,13 +1,15 @@
+using E2ETests.Drivers;
 using E2ETests.Pages;
 using E2ETests.Support;
+using OpenQA.Selenium;
 
 namespace E2ETests.Doctor;
 
-// Covers the browser-only behaviour introduced by SWC-92: the two identifiers in a
-// Doctor's current-consultation panel link to the assigned patient's existing profile,
-// the profile keeps the Doctor's established read-only demographic access, and no links
-// are rendered when that Doctor has no current-patient assignment.
+// Covers SWC-92's current-patient profile links and SWC-112's recovery of the real
+// backend assignment in a separate browser session. No test injects a consultation
+// into browser storage; queue-dependent cases run exclusively against the shared queue.
 [Trait("Category", "E2E")]
+[Collection(E2ETestCollections.SharedQueue)]
 public class CurrentPatientProfileTests : SeleniumTestBase
 {
     [Fact]
@@ -15,22 +17,35 @@ public class CurrentPatientProfileTests : SeleniumTestBase
     {
         using var seed = new SeedClient();
         var doctor = seed.CreateUser("Doctor");
-        var patient = seed.RegisterPatientOutsideQueue();
+        var patient = seed.RegisterPatient();
         seed.AddAllergy(patient.PatientId, "Penicillin", "Severe", "SWC-110 Selenium coverage");
         seed.AddChronicCondition(patient.PatientId, "Asthma", notes: "SWC-110 Selenium coverage");
+        seed.WaitUntilWaiting(patient.PatientId);
+        seed.EnsureNextWaitingPatientIs(patient.PatientId);
 
-        var dashboard = OpenDashboardAs(doctor);
-        Browser.StoreCurrentPatientAssignment(Driver, patient);
-        dashboard.WaitUntilLoaded();
-        dashboard.WaitForCurrentPatientPanel();
+        var called = seed.CallNext(doctor.Username, doctor.Password);
+        var assignment = seed.GetCurrentForDoctor(doctor.Username, doctor.Password);
+        Assert.Equal("IN_CONSULTATION", assignment.Status);
+        Assert.Equal(Guid.Parse(doctor.UserId), Guid.Parse(assignment.DoctorId));
+        Assert.Equal(doctor.FullName, assignment.DoctorName);
+        Assert.Equal(patient.PatientId, assignment.PatientId);
+        Assert.Equal(called.QueueNumber, assignment.QueueNumber);
+        Assert.Equal(doctor.RoomNumber, assignment.RoomNumber);
+
+        var dashboard = OpenDashboardAs(Driver, doctor);
+        var panel = dashboard.WaitForCurrentPatientPanel();
 
         var queueNumber = dashboard.CurrentPatientQueueNumberLinkText;
         var patientName = dashboard.CurrentPatientNameLinkText;
         var queueNumberTarget = dashboard.CurrentPatientQueueNumberProfilePath;
         var patientNameTarget = dashboard.CurrentPatientNameProfilePath;
 
-        Assert.Matches(@"^Q-\d+$", queueNumber);
-        Assert.False(string.IsNullOrWhiteSpace(patientName));
+        Assert.Equal(assignment.QueueNumber, queueNumber);
+        Assert.Equal(patient.FullName, patientName);
+        Assert.Contains(queueNumber, panel);
+        Assert.Contains(patientName, panel);
+        Assert.Equal($"Room {assignment.RoomNumber}", dashboard.CurrentRoomText);
+        Assert.Equal($"/patients/{patient.PatientId}", queueNumberTarget);
         Assert.Equal(queueNumberTarget, patientNameTarget);
 
         dashboard.ClickCurrentPatientQueueNumber();
@@ -53,10 +68,63 @@ public class CurrentPatientProfileTests : SeleniumTestBase
         using var seed = new SeedClient();
         var doctor = seed.CreateUser("Doctor");
 
-        var dashboard = OpenDashboardAs(doctor);
+        var dashboard = OpenDashboardAs(Driver, doctor);
 
+        dashboard.WaitUntilCurrentPatientStateLoaded();
+        Assert.False(dashboard.HasCurrentPatientLoadError);
         Assert.False(dashboard.HasCurrentPatientPanel);
         Assert.Equal(0, dashboard.CurrentPatientProfileLinkCount);
+    }
+
+    [Fact]
+    public void CurrentPatient_InFreshBrowserSession_IsRestoredFromBackend()
+    {
+        using var seed = new SeedClient();
+        var doctor = seed.CreateUser("Doctor");
+        var patient = seed.RegisterPatient();
+        seed.WaitUntilWaiting(patient.PatientId);
+
+        var originalDashboard = OpenDashboardAs(Driver, doctor);
+        originalDashboard.WaitForPatientRow(patient.FullName);
+        seed.EnsureNextWaitingPatientIs(patient.PatientId);
+        originalDashboard.ClickCallNextPatient();
+        var originalPanel = originalDashboard.WaitForCurrentPatientPanel();
+
+        var assignment = seed.GetCurrentForDoctor(doctor.Username, doctor.Password);
+        Assert.Equal("IN_CONSULTATION", assignment.Status);
+        Assert.Equal(Guid.Parse(doctor.UserId), Guid.Parse(assignment.DoctorId));
+        Assert.Equal(patient.PatientId, assignment.PatientId);
+        Assert.Equal(assignment.QueueNumber, DoctorDashboardPage.QueueNumberFrom(originalPanel));
+
+        // A second ChromeDriver has its own browser profile and no sessionStorage from
+        // the tab that called the patient. Log in normally; never inject an assignment.
+        var freshDriver = DriverFactory.CreateChromeDriver();
+        try
+        {
+            var login = new LoginPage(freshDriver);
+            login.NavigateTo();
+            Assert.Null(((IJavaScriptExecutor)freshDriver).ExecuteScript(
+                "return sessionStorage.getItem('swiftcare.auth.token');"));
+            login.SubmitCredentials(doctor.Username, doctor.Password);
+            login.WaitForRedirectAwayFromLogin();
+
+            var freshDashboard = new DoctorDashboardPage(freshDriver);
+            freshDashboard.WaitUntilLoaded();
+            var restoredPanel = freshDashboard.WaitForCurrentPatientPanel();
+
+            Assert.Equal(assignment.QueueNumber, freshDashboard.CurrentPatientQueueNumberLinkText);
+            Assert.Equal(patient.FullName, freshDashboard.CurrentPatientNameLinkText);
+            Assert.Equal($"Room {assignment.RoomNumber}", freshDashboard.CurrentRoomText);
+            Assert.Equal($"/patients/{assignment.PatientId}", freshDashboard.CurrentPatientNameProfilePath);
+            Assert.Equal(DoctorDashboardPage.QueueNumberFrom(originalPanel),
+                DoctorDashboardPage.QueueNumberFrom(restoredPanel));
+            Assert.False(freshDashboard.IsCallNextEnabled);
+        }
+        finally
+        {
+            freshDriver.Quit();
+            freshDriver.Dispose();
+        }
     }
 
     private PatientProfilePage AssertDoctorReadableProfile(string expectedPath)
@@ -84,14 +152,14 @@ public class CurrentPatientProfileTests : SeleniumTestBase
         return profile;
     }
 
-    private DoctorDashboardPage OpenDashboardAs(SeededUser doctor)
+    private static DoctorDashboardPage OpenDashboardAs(IWebDriver driver, SeededUser doctor)
     {
-        var login = new LoginPage(Driver);
+        var login = new LoginPage(driver);
         login.NavigateTo();
         login.SubmitCredentials(doctor.Username, doctor.Password);
         login.WaitForRedirectAwayFromLogin();
 
-        var dashboard = new DoctorDashboardPage(Driver);
+        var dashboard = new DoctorDashboardPage(driver);
         dashboard.WaitUntilLoaded();
         return dashboard;
     }

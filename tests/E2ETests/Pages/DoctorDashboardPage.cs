@@ -130,6 +130,13 @@ public class DoctorDashboardPage
     public bool HasCurrentPatientPanel =>
         _driver.FindElements(By.XPath("//p[contains(text(), 'Currently with you:')]")).Count > 0;
 
+    public void WaitUntilCurrentPatientStateLoaded() =>
+        _wait.Until(d => d.FindElements(By.XPath(
+            "//p[contains(normalize-space(), 'Loading your current consultation')]")).Count == 0);
+
+    public bool HasCurrentPatientLoadError =>
+        _driver.FindElements(By.XPath("//*[normalize-space()='Current Consultation Unavailable']")).Count > 0;
+
     // SWC-92 turns both identifiers in the current-patient line into links to the same
     // patient profile. Keep these selectors scoped to that line so they cannot match a
     // patient link rendered in the shared waiting pool below it.
