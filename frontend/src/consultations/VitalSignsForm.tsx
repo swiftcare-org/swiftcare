@@ -24,6 +24,8 @@ type FieldErrors = Partial<Record<VitalSignsField, string>>;
 
 interface VitalSignsFormProps {
   consultationId: string;
+  alreadySaved?: boolean;
+  onSaved: () => void;
 }
 
 const EMPTY_FORM: VitalSignsFormState = {
@@ -195,11 +197,11 @@ function MeasurementField({
   );
 }
 
-export function VitalSignsForm({ consultationId }: VitalSignsFormProps) {
+export function VitalSignsForm({ consultationId, alreadySaved = false, onSaved }: VitalSignsFormProps) {
   const [form, setForm] = useState<VitalSignsFormState>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [saveState, setSaveState] = useState<SaveState>(alreadySaved ? 'saved' : 'idle');
   const [message, setMessage] = useState<string | null>(null);
   const [savedVitalSigns, setSavedVitalSigns] = useState<VitalSigns | null>(null);
 
@@ -245,6 +247,7 @@ export function VitalSignsForm({ consultationId }: VitalSignsFormProps) {
       const vitalSigns = await recordVitalSigns(consultationId, toRequest(form));
       setSavedVitalSigns(vitalSigns);
       setSaveState('saved');
+      onSaved();
     } catch (error) {
       setSavedVitalSigns(null);
       setSaveState('failed');
@@ -285,6 +288,11 @@ export function VitalSignsForm({ consultationId }: VitalSignsFormProps) {
               Measurements were linked to this consultation
               {savedVitalSigns.bmi === null ? '.' : ` with a BMI of ${savedVitalSigns.bmi.toFixed(2)}.`}
             </p>
+          </div>
+        )}
+        {isSaved && !savedVitalSigns && (
+          <div className="mt-5 border-t-4 border-b border-emerald-700 bg-emerald-50 px-5 py-3">
+            <p className="text-sm text-emerald-900">Vital signs were saved for this consultation.</p>
           </div>
         )}
 

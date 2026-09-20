@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
+  completeConsultation,
   createConsultation,
+  getConsultationForQueue,
   getConsultationTemplates,
-  type Consultation,
+  type ConsultationProgress,
   type ConsultationTemplate,
   type CreateConsultationRequestBody,
 } from '../api/consultations';
@@ -78,6 +80,7 @@ function consultationErrorMessage(error: unknown): string {
 
 export function ConsultationPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [currentPatient, setCurrentPatient] = useState<CurrentPatient | null>(null);
   const [currentPatientLoadState, setCurrentPatientLoadState] = useState<CurrentPatientLoadState>('loading');
   const [templates, setTemplates] = useState<ConsultationTemplate[]>([]);
@@ -86,7 +89,9 @@ export function ConsultationPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(EMPTY_FIELD_ERRORS);
   const [submissionState, setSubmissionState] = useState<SubmissionState>('idle');
   const [message, setMessage] = useState<string | null>(null);
-  const [createdConsultation, setCreatedConsultation] = useState<Consultation | null>(null);
+  const [createdConsultation, setCreatedConsultation] = useState<ConsultationProgress | null>(null);
+  const [completionState, setCompletionState] = useState<'idle' | 'completing' | 'failed'>('idle');
+  const [completionError, setCompletionError] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -96,6 +101,17 @@ export function ConsultationPage() {
         const assignment = await loadCurrentPatient();
         if (!disposed) {
           setCurrentPatient(assignment);
+          if (assignment) {
+            const savedConsultation = await getConsultationForQueue(assignment.queueId);
+            if (disposed) {
+              return;
+            }
+
+            setCreatedConsultation(savedConsultation);
+            if (savedConsultation) {
+              setSubmissionState('created');
+            }
+          }
           setCurrentPatientLoadState('loaded');
         }
       } catch {
@@ -207,7 +223,12 @@ export function ConsultationPage() {
 
     try {
       const consultation = await createConsultation(request);
-      setCreatedConsultation(consultation);
+      setCreatedConsultation({
+        id: consultation.id,
+        queueId: consultation.queueId,
+        status: 'IN_PROGRESS',
+        hasVitalSigns: false,
+      });
       setSubmissionState('created');
     } catch (error) {
       setCreatedConsultation(null);
@@ -217,6 +238,35 @@ export function ConsultationPage() {
       if (error instanceof ApiError && Object.keys(error.fieldErrors).length > 0) {
         setFieldErrors((previous) => applyServerFieldErrors(previous, error.fieldErrors));
       }
+    }
+  }
+
+  async function handleComplete() {
+    if (!createdConsultation?.hasVitalSigns || completionState === 'completing') {
+      return;
+    }
+
+    setCompletionState('completing');
+    setCompletionError(null);
+
+    try {
+      await completeConsultation(createdConsultation.id);
+      navigate('/doctor/prescription', {
+        state: {
+          completed: true,
+          patientName: currentPatient?.patientName,
+          queueNumber: currentPatient?.queueNumber,
+        },
+      });
+    } catch (error) {
+      setCompletionState('failed');
+      setCompletionError(
+        error instanceof ApiError && (error.status === 401 || error.status === 403)
+          ? 'You are not authorized to complete this consultation.'
+          : error instanceof ApiError && error.status === 409
+            ? error.message
+          : 'Consultation could not be completed. Please try again.',
+      );
     }
   }
 
@@ -436,7 +486,37 @@ export function ConsultationPage() {
           </form>
 
           {submissionState === 'created' && createdConsultation && (
-            <VitalSignsForm consultationId={createdConsultation.id} />
+            <>
+              <VitalSignsForm
+                consultationId={createdConsultation.id}
+                alreadySaved={createdConsultation.hasVitalSigns}
+                onSaved={() => setCreatedConsultation((previous) => previous
+                  ? { ...previous, hasVitalSigns: true }
+                  : previous)}
+              />
+
+              <section className="mt-6 border border-slate-300 bg-white px-6 py-6" aria-labelledby="complete-consultation-heading">
+                <h2 id="complete-consultation-heading" className="text-xl font-semibold text-slate-900">
+                  Complete Consultation
+                </h2>
+                {!createdConsultation.hasVitalSigns && (
+                  <p className="mt-2 text-sm text-amber-800">Please save vital signs first</p>
+                )}
+                {completionError && (
+                  <p className="mt-3 border-l-2 border-red-700 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
+                    {completionError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={!createdConsultation.hasVitalSigns || completionState === 'completing'}
+                  onClick={() => void handleComplete()}
+                  className="mt-4 bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {completionState === 'completing' ? 'Completing...' : 'Complete Consultation'}
+                </button>
+              </section>
+            </>
           )}
         </>
       )}
