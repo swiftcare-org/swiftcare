@@ -14,14 +14,22 @@ MedicalRecordService owns consultation records, consultation templates, and the 
 | `GET` | `/api/templates` | Doctor | Returns active consultation templates ordered by name |
 | `POST` | `/api/consultations` | Doctor | Creates a consultation for the doctor's current queue assignment |
 | `POST` | `/api/consultations/{consultationId}/vitals` | Doctor | Records vital signs for the doctor's consultation and calculates BMI |
+| `GET` | `/api/consultations/by-queue/{queueId}` | Doctor | Returns this doctor's saved consultation status and whether vital signs exist, or `204` when none exists |
+| `POST` | `/api/consultations/{consultationId}/complete` | Doctor | Completes the consultation and publishes `consultation-completed` |
 
 The Gateway supplies the authenticated doctor's ID, name, and room number. These values are not accepted from the request body. Symptoms and diagnosis are required; examination findings, notes, and template selection are optional.
 
 Vital signs may include blood pressure, temperature, pulse rate, respiratory rate, oxygen saturation, height, and weight. Blood-pressure values must be supplied together, and every supplied measurement must be positive. BMI is calculated by the service when both height and weight are present and is rounded to two decimal places. A doctor can record one set of vital signs for a consultation assigned to that doctor.
 
+## Completing a consultation
+
+The doctor must save vital signs before completing a consultation. MedicalRecordService checks the trusted doctor identity and returns `409` with `Please save vital signs first` if they are missing. On the first completion request, it commits `Status = COMPLETE` and a new `EventId` in the `Consultations` table, then publishes `consultation-completed` to Kafka with that stored ID. The event contains identifiers only, not clinical notes or patient details.
+
+If publishing fails, the endpoint returns `503` with `Consultation could not be completed. Please try again.` The database still contains `COMPLETE` and the stored `EventId`, while QueueService leaves the queue entry `IN_CONSULTATION` until it receives the event. The doctor can retry Complete; the service skips the database write and republishes with the same `EventId`. The doctor-scoped `by-queue` endpoint lets the consultation page recover the saved consultation and vital-sign state after a refresh so this retry remains available. A successful publish does not by itself prove that QueueService has processed the event yet.
+
 ## EF Core migrations
 
-`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates`, `Consultations`, and `VitalSigns` tables. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
+`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates`, `Consultations`, and `VitalSigns` tables, including the consultation completion status and `EventId`. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
 
 To apply migrations with the normal service image:
 
@@ -63,6 +71,7 @@ Each queue entry can have at most one consultation record, and each consultation
 | --- | --- |
 | `ConnectionStrings__MedicalRecordDb` | MySQL connection string for `swiftcare_medical_record` |
 | `Gateway__InternalSecret` | Shared secret that must match the API Gateway |
+| `Kafka__BootstrapServers` | Kafka broker address used to publish `consultation-completed` |
 | `ASPNETCORE_ENVIRONMENT` | Use `Development` locally to expose OpenAPI and Scalar |
 
 Example local configuration:
@@ -70,6 +79,7 @@ Example local configuration:
 ```powershell
 $env:ConnectionStrings__MedicalRecordDb = "Server=localhost;Port=3306;Database=$env:MEDICAL_RECORD_DB_NAME;User Id=$env:MYSQL_USER;Password=$env:MYSQL_PASSWORD;"
 $env:Gateway__InternalSecret = $env:GATEWAY_INTERNAL_SECRET
+$env:Kafka__BootstrapServers = "localhost:9092"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 ```
 
@@ -87,4 +97,4 @@ OpenAPI is available at `/openapi/v1.json` in Development. Scalar is available a
 dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj
 ```
 
-The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
+The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, completion ordering and retry, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.

@@ -70,6 +70,7 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
             ConfigureGuid(entity.Property(consultation => consultation.QueueId));
             ConfigureGuid(entity.Property(consultation => consultation.DoctorId));
             ConfigureOptionalGuid(entity.Property(consultation => consultation.TemplateId));
+            ConfigureOptionalGuid(entity.Property(consultation => consultation.EventId));
 
             entity.Property(consultation => consultation.Id).ValueGeneratedNever();
             entity.Property(consultation => consultation.DoctorName)
@@ -99,6 +100,11 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
             entity.Property(consultation => consultation.CreatedAt)
                 .HasColumnType("datetime(6)")
                 .IsRequired();
+            entity.Property(consultation => consultation.Status)
+                .HasColumnType("varchar(16)")
+                .HasMaxLength(16)
+                .HasDefaultValue(Consultation.InProgressStatus)
+                .IsRequired();
 
             entity.HasIndex(consultation => consultation.QueueId)
                 .IsUnique()
@@ -109,6 +115,9 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
                 .HasDatabaseName("IX_Consultations_DoctorId");
             entity.HasIndex(consultation => consultation.ConsultationDate)
                 .HasDatabaseName("IX_Consultations_ConsultationDate");
+            entity.HasIndex(consultation => consultation.EventId)
+                .IsUnique()
+                .HasDatabaseName("UX_Consultations_EventId");
 
             entity.HasOne<ConsultationTemplate>()
                 .WithMany()

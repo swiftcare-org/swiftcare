@@ -1,3 +1,4 @@
+using Confluent.Kafka;
 using MedicalRecordService.Data;
 using MedicalRecordService.Maintenance;
 using MedicalRecordService.Middleware;
@@ -32,10 +33,23 @@ builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<IMedicalRecordConnectionFactory, MySqlMedicalRecordConnectionFactory>();
 builder.Services.AddScoped<IConsultationRepository, AdoNetConsultationRepository>();
+builder.Services.AddScoped<IConsultationCompletionRepository, AdoNetConsultationCompletionRepository>();
 builder.Services.AddScoped<IVitalSignsRepository, AdoNetVitalSignsRepository>();
 builder.Services.AddScoped<IConsultationTemplateService, ConsultationTemplateService>();
 builder.Services.AddScoped<IConsultationService, ConsultationService>();
+builder.Services.AddScoped<IConsultationCompletionService, ConsultationCompletionService>();
 builder.Services.AddScoped<IVitalSignsService, VitalSignsService>();
+builder.Services.Configure<KafkaCompletionOptions>(builder.Configuration.GetSection("Kafka"));
+builder.Services.AddSingleton<IProducer<string, string>>(services =>
+{
+    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<KafkaCompletionOptions>>().Value;
+    return new ProducerBuilder<string, string>(new ProducerConfig
+    {
+        BootstrapServers = options.BootstrapServers,
+        MessageTimeoutMs = options.MessageTimeoutMs
+    }).Build();
+});
+builder.Services.AddSingleton<IConsultationCompletedPublisher, KafkaConsultationCompletedPublisher>();
 builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();

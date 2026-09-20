@@ -2,6 +2,9 @@ namespace MedicalRecordService.Models.Entities;
 
 public sealed class Consultation
 {
+    public const string InProgressStatus = "IN_PROGRESS";
+    public const string CompleteStatus = "COMPLETE";
+
     public Guid Id { get; set; }
     public Guid PatientId { get; set; }
     public Guid QueueId { get; set; }
@@ -16,5 +19,7 @@ public sealed class Consultation
     public string? TemplateName { get; set; }
     public DateTime ConsultationDate { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string Status { get; set; } = InProgressStatus;
+    public Guid? EventId { get; set; }
     public VitalSigns? VitalSigns { get; set; }
 }

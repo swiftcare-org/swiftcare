@@ -60,6 +60,17 @@ export interface VitalSigns {
   recordedAt: string;
 }
 
+export interface ConsultationProgress {
+  id: string;
+  queueId: string;
+  status: 'IN_PROGRESS' | 'COMPLETE';
+  hasVitalSigns: boolean;
+}
+
+export interface CompleteConsultationResponse {
+  eventId: string;
+}
+
 export function getConsultationTemplates(): Promise<ConsultationTemplate[]> {
   return apiRequest<ConsultationTemplate[]>('/api/templates');
 }
@@ -81,4 +92,21 @@ export function recordVitalSigns(
     method: 'POST',
     body: request,
   });
+}
+
+export async function getConsultationForQueue(
+  queueId: string,
+): Promise<ConsultationProgress | null> {
+  return (await apiRequest<ConsultationProgress | undefined>(
+    `/api/consultations/by-queue/${queueId}`,
+  )) ?? null;
+}
+
+export function completeConsultation(
+  consultationId: string,
+): Promise<CompleteConsultationResponse> {
+  return apiRequest<CompleteConsultationResponse>(
+    `/api/consultations/${consultationId}/complete`,
+    { method: 'POST' },
+  );
 }
