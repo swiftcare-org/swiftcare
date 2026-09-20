@@ -32,6 +32,7 @@ builder.Services.AddDbContext<QueueDbContext>(options =>
 
 builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection("Queue"));
 builder.Services.AddScoped<IQueueEntryCreationService, QueueEntryCreationService>();
+builder.Services.AddScoped<IQueueCompletionService, QueueCompletionService>();
 builder.Services.AddScoped<IPatientQueueStatusService, PatientQueueStatusService>();
 builder.Services.AddScoped<ITodayQueueService, TodayQueueService>();
 builder.Services.AddScoped<ICallNextPatientService, CallNextPatientService>();
@@ -67,6 +68,24 @@ builder.Services.AddSingleton<IConsumer<string, string>>(sp =>
     }).Build();
 });
 builder.Services.AddHostedService<PatientCheckedInConsumer>();
+// Each background loop needs its own Kafka consumer: Confluent consumers are not thread-safe.
+builder.Services.AddHostedService<ConsultationCompletedConsumer>(services =>
+{
+    var options = services.GetRequiredService<IOptions<KafkaOptions>>();
+    var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
+    {
+        BootstrapServers = options.Value.BootstrapServers,
+        GroupId = options.Value.ConsultationCompletedConsumerGroup,
+        EnableAutoCommit = false,
+        AutoOffsetReset = AutoOffsetReset.Earliest
+    }).Build();
+
+    return new ConsultationCompletedConsumer(
+        consumer,
+        services.GetRequiredService<IServiceScopeFactory>(),
+        options,
+        services.GetRequiredService<ILogger<ConsultationCompletedConsumer>>());
+});
 
 var app = builder.Build();
 

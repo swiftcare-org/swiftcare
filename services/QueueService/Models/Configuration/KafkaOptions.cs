@@ -6,6 +6,8 @@ public sealed class KafkaOptions
     public required string PatientCheckedInTopic { get; set; }
     public required string PatientCalledTopic { get; set; }
     public required string ConsumerGroupId { get; set; }
+    public string ConsultationCompletedTopic { get; set; } = "consultation-completed";
+    public string ConsultationCompletedConsumerGroup { get; set; } = "queue-service-consultations";
 
     public int MessageTimeoutMs { get; set; } = 5000;
 
