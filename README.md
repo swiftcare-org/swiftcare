@@ -136,7 +136,7 @@ docker compose down -v
 
 **Warning:** `docker compose down -v` permanently deletes local database data stored in Compose volumes.
 
-The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 7.6.1, Kafka UI, AuthService, PatientService, QueueService, and the API Gateway. The frontend still runs through Vite on the host. Kafka uses `kafka:29092` inside the Compose network and `localhost:9092` for host tools.
+The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 7.6.1, Kafka UI, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway. The frontend still runs through Vite on the host. Kafka uses `kafka:29092` inside the Compose network and `localhost:9092` for host tools.
 
 ## Running the application locally
 
@@ -172,6 +172,10 @@ ConnectionStrings__MedicalRecordDb="Server=localhost;Port=3306;Database=swiftcar
 MedicalRecordService uses its `--migrate` maintenance command through the same normal application image, following the pattern documented in the [MedicalRecordService migration guide](services/MedicalRecordService/README.md#ef-core-migrations).
 
 Re-run these commands after pulling any change that adds a migration.
+
+### Complete a consultation
+
+After a doctor saves a consultation and its vital signs, Complete Consultation writes `COMPLETE` and a stable event ID to the MedicalRecord database before publishing `consultation-completed` to Kafka. QueueService consumes that event and changes the matching queue entry from `IN_CONSULTATION` to `COMPLETED`. If publishing fails, the doctor sees a retry message; the consultation remains complete in the database and retry republishes the same event ID. QueueService ignores duplicate deliveries with its `ProcessedEvents` ledger. On success, the frontend opens a prescription placeholder because prescription entry is a later feature. See the [MedicalRecordService flow](services/MedicalRecordService/README.md#completing-a-consultation) for endpoint behavior.
 
 ### Load configuration
 

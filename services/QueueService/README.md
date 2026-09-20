@@ -6,6 +6,7 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 
 - Consumes the `patient-checked-in` Kafka topic produced by PatientService for successful new-patient registration and returning-patient check-in.
 - For each event, allocates the next sequential queue number for that clinic-local day (`Q-001`, `Q-002`, ...) inside a database transaction, and creates a `QueueEntry` with `Status = Waiting` and `RoomNumber = NULL`.
+- Consumes `consultation-completed` events from MedicalRecordService, moves the matching `IN_CONSULTATION` queue entry to `COMPLETED`, and records the `EventId` in the existing `ProcessedEvents` ledger. Redelivery with the same ID is a no-op.
 - The daily sequence resets at midnight in the clinic's local timezone (`Asia/Colombo` by default), not at UTC midnight — a UTC-date reset would roll the counter over at 05:30 local time instead.
 - Idempotent against Kafka's at-least-once delivery: a redelivered event (same `EventId`) is recognized via a `ProcessedEvents` ledger and skipped without creating a duplicate entry.
 - `UNIQUE (PatientId, QueueDate)` and `UNIQUE (QueueDate, QueueNumber)` constraints are the database-level backstop — a second event for the same patient on the same day (even with a different `EventId`) is rejected and logged, not silently duplicated.
@@ -42,7 +43,7 @@ QueueService fails fast at startup if any of these are missing — it will not s
 | `Gateway__InternalSecret` | Shared secret validated on every non-health request | Required, must match the API Gateway's `Gateway__InternalSecret` |
 | `Kafka__BootstrapServers` | Address of the Kafka broker | Required to be *configured*; the broker itself does not need to be *reachable* for the service to start |
 
-`Kafka:PatientCheckedInTopic` (`patient-checked-in`), `Kafka:PatientCalledTopic` (`patient-called`), `Kafka:MessageTimeoutMs` (5000), `Kafka:ConsumerGroupId` (`queue-service`), `Kafka:RetryDelay` (5 seconds), `Queue:ClinicTimeZone` (`Asia/Colombo`), and `Queue:MaxAllocationAttempts` (3) are non-secret and already set in `appsettings.json`.
+`Kafka:PatientCheckedInTopic` (`patient-checked-in`), `Kafka:PatientCalledTopic` (`patient-called`), `Kafka:ConsultationCompletedTopic` (`consultation-completed`), `Kafka:ConsumerGroupId` (`queue-service`), `Kafka:ConsultationCompletedConsumerGroup` (`queue-service-consultations`), `Kafka:MessageTimeoutMs` (5000), `Kafka:RetryDelay` (5 seconds), `Queue:ClinicTimeZone` (`Asia/Colombo`), and `Queue:MaxAllocationAttempts` (3) are non-secret settings.
 
 Never hardcode these values in source or commit them to `.env`. Set them via your shell, a local `.env` (never committed), or the orchestrator's secret store.
 
@@ -81,6 +82,8 @@ QueueService validates only that `Kafka:BootstrapServers` is *configured* at sta
 
 The call-next producer publishes `patient-called` with queue, patient, doctor, room, call-time, and correlation identifiers, but no patient demographic or contact data. Publishing is bounded by `Kafka:MessageTimeoutMs`; a failed publication rolls back the queue assignment and returns a service-unavailable response.
 
+The consultation-completion consumer verifies the event's queue, patient, and doctor IDs against the assigned entry. It commits the queue status change and `ProcessedEvents` row in one transaction, then commits the Kafka offset. A duplicate `EventId` makes no further change. If database processing fails, the consumer retries rather than acknowledging the event. The public display and doctor's current-assignment read reflect `COMPLETED` after this consumer processes the event.
+
 ## Testing
 
 ```bash
@@ -100,6 +103,8 @@ SWC-78 covers call-next selection and assignment, `IN_CONSULTATION` status, doct
 SWC-79 covers anonymous public-display access, current room mappings, numeric next-three ordering, empty results, exclusion of completed and previous-day entries, and the serialized response shape to ensure patient and doctor information cannot be exposed.
 
 SWC-112 covers recovery of the doctor's active assignment: lookup is restricted to the trusted doctor ID, `IN_CONSULTATION` status, and the current clinic-local date. Tests verify that a completed entry no longer appears, a previous-day entry is excluded at local midnight, `204` is returned when there is no assignment, and both QueueService and API Gateway require doctor authorization.
+
+SWC-26 covers consultation completion event handling, including a matching queue status update, duplicate `EventId` no-op, and rejection of mismatched patient assignments.
 
 ## Endpoints
 
@@ -130,7 +135,6 @@ Azure deployment uses a dedicated `swiftcare_queue` database account and require
 
 ## Known scope bounds
 
-- **No consultation-completion API.** The public display reflects current queue state, but completing a consultation and moving its queue entry to `COMPLETED` remain separate stories.
 - **No patient names in QueueService.** The frontend resolves names through PatientService and caches them locally; the queue database and Kafka event retain only `PatientId`.
 - **No prescription integration yet.** The queue page displays a neutral placeholder until SWC-30 implements PrescriptionService's status endpoint. QueueService must never query PrescriptionService directly.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.
