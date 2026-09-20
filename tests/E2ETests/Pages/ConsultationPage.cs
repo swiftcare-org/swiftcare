@@ -1,3 +1,4 @@
+using E2ETests.Support;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 
@@ -25,6 +26,9 @@ public class ConsultationPage
     {
         _wait.Until(d => d.FindElements(By.Id("symptoms")).Count > 0);
     }
+
+    public string CurrentConsultationContext => _driver.FindElement(By.XPath(
+        "//section[.//p[normalize-space()='Current Consultation']]")).Text;
 
     // The templates dropdown is populated from GET /api/templates after mount, so a
     // caller must wait for the real options (not just the "Loading templates..."
@@ -99,6 +103,47 @@ public class ConsultationPage
     }
 
     public bool HasSavedConfirmation() => _driver.FindElements(SavedConfirmationLocator).Count > 0;
+
+    // SWC-25 vital signs are a second form on this page, shown only after the
+    // consultation is saved. Scope its submit button so it cannot select the
+    // consultation form's Save Consultation button above it.
+    private IWebElement VitalSignsSection => _driver.FindElement(By.XPath(
+        "//section[.//h2[normalize-space()='Record Vital Signs']]"));
+
+    private IWebElement VitalInput(string fieldId) => VitalSignsSection.FindElement(By.Id(fieldId));
+
+    public void WaitForVitalSignsForm() =>
+        _wait.Until(d => d.FindElements(By.Id("heightCentimeters")).Count > 0);
+
+    public void EnterVital(string fieldId, string value) => VitalInput(fieldId).SendKeys(value);
+
+    // React-controlled number inputs do not reliably update their component state
+    // after Selenium Clear(). Use the native setter and dispatch input/change.
+    public void ClearVital(string fieldId) => Browser.SetInputValue(_driver, VitalInput(fieldId), "");
+
+    public string VitalValue(string fieldId) => VitalInput(fieldId).GetDomProperty("value") ?? string.Empty;
+
+    public bool IsVitalInputEnabled(string fieldId) => VitalInput(fieldId).Enabled;
+
+    public string BmiText => VitalSignsSection.FindElement(By.Id("bmi")).Text.Trim();
+
+    public bool BmiIsOutputOnly =>
+        VitalSignsSection.FindElement(By.Id("bmi")).TagName == "output" &&
+        VitalSignsSection.FindElements(By.CssSelector("input#bmi, textarea#bmi")).Count == 0;
+
+    public string? VitalWarning(string fieldId) => TryGetText(By.Id($"{fieldId}-warning"));
+
+    private IWebElement SaveVitalsButton => VitalSignsSection.FindElement(By.CssSelector("button[type='submit']"));
+
+    public bool IsSaveVitalsEnabled => SaveVitalsButton.Enabled;
+
+    public void ClickSaveVitals() => SaveVitalsButton.Click();
+
+    public string WaitForVitalsSavedMessage() => _wait.Until(_ =>
+        VitalSignsSection.FindElements(By.XPath(
+            ".//p[contains(normalize-space(), 'Measurements were linked to this consultation')]"))
+            .FirstOrDefault()?.Text)
+        ?? throw new InvalidOperationException("The vital signs save confirmation was not shown.");
 
     public string? SymptomsFieldError => TryGetText(By.Id("symptoms-error"));
 
