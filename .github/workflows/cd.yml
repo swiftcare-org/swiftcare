@@ -1043,6 +1043,7 @@ jobs:
                 "ASPNETCORE_ENVIRONMENT=Production" \
                 "ASPNETCORE_URLS=http://+:5004" \
                 "ConnectionStrings__MedicalRecordDb=secretref:medical-record-db" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
               --only-show-errors >/dev/null
           else
@@ -1062,6 +1063,7 @@ jobs:
                 "ASPNETCORE_ENVIRONMENT=Production" \
                 "ASPNETCORE_URLS=http://+:5004" \
                 "ConnectionStrings__MedicalRecordDb=secretref:medical-record-db" \
+                "Kafka__BootstrapServers=$KAFKA_BOOTSTRAP_SERVERS" \
                 "Gateway__InternalSecret=secretref:gateway-secret" \
               --only-show-errors >/dev/null
           fi

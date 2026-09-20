@@ -179,10 +179,13 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__MedicalRecordDb: "Server=mysql;Port=3306;Database=${MEDICAL_RECORD_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
       Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+      Kafka__BootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
     ports:
       - "${MEDICAL_RECORD_SERVICE_PORT:-5004}:5004"
     networks:
