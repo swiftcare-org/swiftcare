@@ -49,6 +49,8 @@ public sealed class ConsultationService : IConsultationService
             ExaminationFindings = NormalizeOptional(request.ExaminationFindings),
             Diagnosis = request.Diagnosis.Trim(),
             Notes = NormalizeOptional(request.Notes),
+            FollowUpDate = request.FollowUpDate,
+            FollowUpInstructions = NormalizeOptional(request.FollowUpInstructions),
             TemplateId = request.TemplateId,
             ConsultationDate = consultationDate
         };
@@ -96,6 +98,8 @@ public sealed class ConsultationService : IConsultationService
             ExaminationFindings = consultation.ExaminationFindings,
             Diagnosis = consultation.Diagnosis,
             Notes = consultation.Notes,
+            FollowUpDate = consultation.FollowUpDate,
+            FollowUpInstructions = consultation.FollowUpInstructions,
             TemplateId = consultation.TemplateId,
             TemplateName = templateName,
             ConsultationDate = consultation.ConsultationDate

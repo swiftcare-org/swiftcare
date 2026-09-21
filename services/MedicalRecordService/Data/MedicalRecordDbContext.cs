@@ -91,6 +91,11 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
                 .IsRequired();
             entity.Property(consultation => consultation.Notes)
                 .HasColumnType("text");
+            entity.Property(consultation => consultation.FollowUpDate)
+                .HasColumnType("date");
+            entity.Property(consultation => consultation.FollowUpInstructions)
+                .HasColumnType("varchar(500)")
+                .HasMaxLength(500);
             entity.Property(consultation => consultation.TemplateName)
                 .HasColumnType("varchar(150)")
                 .HasMaxLength(150);

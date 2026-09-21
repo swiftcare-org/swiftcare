@@ -110,6 +110,8 @@ public sealed class AdoNetConsultationRepository : IConsultationRepository
                 ExaminationFindings,
                 Diagnosis,
                 Notes,
+                FollowUpDate,
+                FollowUpInstructions,
                 TemplateId,
                 TemplateName,
                 ConsultationDate,
@@ -126,6 +128,8 @@ public sealed class AdoNetConsultationRepository : IConsultationRepository
                 @ExaminationFindings,
                 @Diagnosis,
                 @Notes,
+                @FollowUpDate,
+                @FollowUpInstructions,
                 @TemplateId,
                 @TemplateName,
                 @ConsultationDate,
@@ -148,6 +152,12 @@ public sealed class AdoNetConsultationRepository : IConsultationRepository
         command.Parameters.Add("@Diagnosis", MySqlDbType.Text).Value = consultation.Diagnosis;
         command.Parameters.Add("@Notes", MySqlDbType.Text).Value =
             (object?)consultation.Notes ?? DBNull.Value;
+        command.Parameters.Add("@FollowUpDate", MySqlDbType.Date).Value =
+            consultation.FollowUpDate.HasValue
+                ? consultation.FollowUpDate.Value.ToDateTime(TimeOnly.MinValue)
+                : DBNull.Value;
+        command.Parameters.Add("@FollowUpInstructions", MySqlDbType.VarChar, 500).Value =
+            (object?)consultation.FollowUpInstructions ?? DBNull.Value;
         command.Parameters.Add("@TemplateId", MySqlDbType.VarChar, 36).Value =
             consultation.TemplateId.HasValue
                 ? consultation.TemplateId.Value.ToString()

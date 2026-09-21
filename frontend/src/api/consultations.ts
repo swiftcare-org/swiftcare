@@ -15,6 +15,8 @@ export interface CreateConsultationRequestBody {
   examinationFindings: string | null;
   diagnosis: string;
   notes: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
   templateId: string | null;
 }
 
@@ -29,6 +31,8 @@ export interface Consultation {
   examinationFindings: string | null;
   diagnosis: string;
   notes: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
   templateId: string | null;
   templateName: string | null;
   consultationDate: string;
