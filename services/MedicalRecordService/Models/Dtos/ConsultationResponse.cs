@@ -12,6 +12,8 @@ public sealed class ConsultationResponse
     public string? ExaminationFindings { get; init; }
     public required string Diagnosis { get; init; }
     public string? Notes { get; init; }
+    public DateOnly? FollowUpDate { get; init; }
+    public string? FollowUpInstructions { get; init; }
     public Guid? TemplateId { get; init; }
     public string? TemplateName { get; init; }
     public required DateTime ConsultationDate { get; init; }

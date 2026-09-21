@@ -177,6 +177,10 @@ Re-run these commands after pulling any change that adds a migration.
 
 After a doctor saves a consultation and its vital signs, Complete Consultation writes `COMPLETE` and a stable event ID to the MedicalRecord database before publishing `consultation-completed` to Kafka. QueueService consumes that event and changes the matching queue entry from `IN_CONSULTATION` to `COMPLETED`. If publishing fails, the doctor sees a retry message; the consultation remains complete in the database and retry republishes the same event ID. QueueService ignores duplicate deliveries with its `ProcessedEvents` ledger. On success, the frontend opens a prescription placeholder because prescription entry is a later feature. See the [MedicalRecordService flow](services/MedicalRecordService/README.md#completing-a-consultation) for endpoint behavior.
 
+### Medical alerts and follow-ups
+
+A doctor can save an optional follow-up date and instructions with a consultation. Both values must be supplied together. When a doctor opens a patient profile, SwiftCare displays one red alert per allergy, followed by one amber alert per chronic condition. If the patient's latest completed consultation has a follow-up date earlier than the current `Asia/Colombo` clinic date, a blue overdue follow-up alert appears last. The doctor-only `GET /api/consultations/patient/{patientId}/latest-follow-up` endpoint returns `204 No Content` when no overdue follow-up exists.
+
 ### Load configuration
 
 Both .NET processes fail fast when configuration is missing, and several values must be **identical** across them — `Jwt__SecretKey`, `Jwt__Issuer`, `Jwt__Audience`, and `Gateway__InternalSecret`. A mismatch produces a `401` that the login page reports as invalid credentials, so derive them all from `.env` rather than typing them.

@@ -2,6 +2,7 @@ using Confluent.Kafka;
 using MedicalRecordService.Data;
 using MedicalRecordService.Maintenance;
 using MedicalRecordService.Middleware;
+using MedicalRecordService.Models.Configuration;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
 using MedicalRecordService.Services;
 using OpenTelemetry;
@@ -33,13 +34,44 @@ builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<IMedicalRecordConnectionFactory, MySqlMedicalRecordConnectionFactory>();
 builder.Services.AddScoped<IConsultationRepository, AdoNetConsultationRepository>();
+builder.Services.AddScoped<IConsultationFollowUpRepository, AdoNetConsultationFollowUpRepository>();
 builder.Services.AddScoped<IConsultationCompletionRepository, AdoNetConsultationCompletionRepository>();
 builder.Services.AddScoped<IVitalSignsRepository, AdoNetVitalSignsRepository>();
 builder.Services.AddScoped<IConsultationTemplateService, ConsultationTemplateService>();
 builder.Services.AddScoped<IConsultationService, ConsultationService>();
+builder.Services.AddScoped<IConsultationFollowUpService, ConsultationFollowUpService>();
 builder.Services.AddScoped<IConsultationCompletionService, ConsultationCompletionService>();
 builder.Services.AddScoped<IVitalSignsService, VitalSignsService>();
 builder.Services.Configure<KafkaCompletionOptions>(builder.Configuration.GetSection("Kafka"));
+builder.Services.AddOptions<MedicalRecordOptions>()
+    .Bind(builder.Configuration.GetSection(MedicalRecordOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.TimeZone),
+        "Clinic:TimeZone is required.")
+    .Validate(
+        options =>
+        {
+            if (string.IsNullOrWhiteSpace(options.TimeZone))
+            {
+                return false;
+            }
+
+            try
+            {
+                _ = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZone);
+                return true;
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return false;
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return false;
+            }
+        },
+        "Clinic:TimeZone must identify a valid time zone.")
+    .ValidateOnStart();
 builder.Services.AddSingleton<IProducer<string, string>>(services =>
 {
     var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<KafkaCompletionOptions>>().Value;

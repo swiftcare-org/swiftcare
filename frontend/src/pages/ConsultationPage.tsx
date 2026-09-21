@@ -25,12 +25,16 @@ interface ConsultationFormState {
   examinationFindings: string;
   diagnosis: string;
   notes: string;
+  followUpDate: string;
+  followUpInstructions: string;
 }
 
 interface FieldErrors {
   symptoms: string | null;
   diagnosis: string | null;
   templateId: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
 }
 
 const EMPTY_FORM: ConsultationFormState = {
@@ -39,13 +43,30 @@ const EMPTY_FORM: ConsultationFormState = {
   examinationFindings: '',
   diagnosis: '',
   notes: '',
+  followUpDate: '',
+  followUpInstructions: '',
 };
 
 const EMPTY_FIELD_ERRORS: FieldErrors = {
   symptoms: null,
   diagnosis: null,
   templateId: null,
+  followUpDate: null,
+  followUpInstructions: null,
 };
+
+const CLINIC_TIME_ZONE = 'Asia/Colombo';
+
+function clinicTodayIsoDate(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLINIC_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 
 function inputClassName(hasError: boolean): string {
   return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
@@ -61,6 +82,9 @@ function applyServerFieldErrors(
     symptoms: serverErrors.symptoms ?? previous.symptoms,
     diagnosis: serverErrors.diagnosis ?? previous.diagnosis,
     templateId: serverErrors.templateid ?? previous.templateId,
+    followUpDate: serverErrors.followupdate ?? previous.followUpDate,
+    followUpInstructions:
+      serverErrors.followupinstructions ?? previous.followUpInstructions,
   };
 }
 
@@ -197,14 +221,27 @@ export function ConsultationPage() {
 
     const symptoms = form.symptoms.trim();
     const diagnosis = form.diagnosis.trim();
+    const followUpInstructions = form.followUpInstructions.trim();
     const nextFieldErrors: FieldErrors = {
       symptoms: symptoms ? null : 'Symptoms are required',
       diagnosis: diagnosis ? null : 'Diagnosis is required',
       templateId: null,
+      followUpDate:
+        followUpInstructions && !form.followUpDate
+          ? 'Follow-up date is required when instructions are provided'
+          : form.followUpDate && form.followUpDate < clinicTodayIsoDate()
+            ? 'Follow-up date cannot be in the past'
+          : null,
+      followUpInstructions:
+        form.followUpDate && !followUpInstructions
+          ? 'Follow-up instructions are required when a date is provided'
+          : followUpInstructions.length > 500
+            ? 'Follow-up instructions must be 500 characters or fewer'
+            : null,
     };
     setFieldErrors(nextFieldErrors);
 
-    if (nextFieldErrors.symptoms || nextFieldErrors.diagnosis) {
+    if (Object.values(nextFieldErrors).some((error) => error !== null)) {
       return;
     }
 
@@ -215,6 +252,8 @@ export function ConsultationPage() {
       examinationFindings: form.examinationFindings.trim() || null,
       diagnosis,
       notes: form.notes.trim() || null,
+      followUpDate: form.followUpDate || null,
+      followUpInstructions: followUpInstructions || null,
       templateId: form.templateId || null,
     };
 
@@ -470,6 +509,70 @@ export function ConsultationPage() {
                 className={inputClassName(false)}
               />
             </div>
+
+            <fieldset className="border border-slate-300 bg-slate-50 px-4 py-4">
+              <legend className="px-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                Follow-up (Optional)
+              </legend>
+              <p className="mb-4 text-xs text-slate-500">
+                Provide both fields when this patient needs a follow-up.
+              </p>
+
+              <div>
+                <label htmlFor="followUpDate" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                  Follow-up Date
+                </label>
+                <input
+                  id="followUpDate"
+                  name="followUpDate"
+                  type="date"
+                  min={clinicTodayIsoDate()}
+                  value={form.followUpDate}
+                  onChange={(event) => {
+                    setForm((previous) => ({ ...previous, followUpDate: event.target.value }));
+                    clearFieldError('followUpDate');
+                  }}
+                  disabled={isBusy || submissionState === 'created'}
+                  aria-invalid={fieldErrors.followUpDate ? true : undefined}
+                  aria-describedby={fieldErrors.followUpDate ? 'followUpDate-error' : undefined}
+                  className={inputClassName(!!fieldErrors.followUpDate)}
+                />
+                {fieldErrors.followUpDate && (
+                  <p id="followUpDate-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                    {fieldErrors.followUpDate}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-4">
+                <label htmlFor="followUpInstructions" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                  Follow-up Instructions
+                </label>
+                <textarea
+                  id="followUpInstructions"
+                  name="followUpInstructions"
+                  rows={2}
+                  maxLength={500}
+                  value={form.followUpInstructions}
+                  onChange={(event) => {
+                    setForm((previous) => ({
+                      ...previous,
+                      followUpInstructions: event.target.value,
+                    }));
+                    clearFieldError('followUpInstructions');
+                  }}
+                  disabled={isBusy || submissionState === 'created'}
+                  aria-invalid={fieldErrors.followUpInstructions ? true : undefined}
+                  aria-describedby={fieldErrors.followUpInstructions ? 'followUpInstructions-error' : undefined}
+                  className={inputClassName(!!fieldErrors.followUpInstructions)}
+                />
+                {fieldErrors.followUpInstructions && (
+                  <p id="followUpInstructions-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+                    {fieldErrors.followUpInstructions}
+                  </p>
+                )}
+              </div>
+            </fieldset>
 
             <button
               type="submit"

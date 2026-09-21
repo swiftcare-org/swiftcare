@@ -15,6 +15,8 @@ export interface CreateConsultationRequestBody {
   examinationFindings: string | null;
   diagnosis: string;
   notes: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
   templateId: string | null;
 }
 
@@ -29,6 +31,8 @@ export interface Consultation {
   examinationFindings: string | null;
   diagnosis: string;
   notes: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
   templateId: string | null;
   templateName: string | null;
   consultationDate: string;
@@ -69,6 +73,20 @@ export interface ConsultationProgress {
 
 export interface CompleteConsultationResponse {
   eventId: string;
+}
+
+export interface OverdueFollowUp {
+  consultationId: string;
+  followUpDate: string;
+  instructions: string;
+}
+
+export function getLatestOverdueFollowUp(
+  patientId: string,
+): Promise<OverdueFollowUp | undefined> {
+  return apiRequest<OverdueFollowUp | undefined>(
+    `/api/consultations/patient/${encodeURIComponent(patientId)}/latest-follow-up`,
+  );
 }
 
 export function getConsultationTemplates(): Promise<ConsultationTemplate[]> {

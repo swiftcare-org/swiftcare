@@ -2,6 +2,8 @@ using MedicalRecordService.Data;
 using MedicalRecordService.Models.Dtos;
 using MedicalRecordService.Models.Entities;
 using MedicalRecordService.Models.Enums;
+using MedicalRecordService.Models.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace MedicalRecordService.Services;
 
@@ -9,13 +11,16 @@ public sealed class ConsultationService : IConsultationService
 {
     private readonly IConsultationRepository _consultationRepository;
     private readonly TimeProvider _timeProvider;
+    private readonly TimeZoneInfo _clinicTimeZone;
 
     public ConsultationService(
         IConsultationRepository consultationRepository,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOptions<MedicalRecordOptions> options)
     {
         _consultationRepository = consultationRepository;
         _timeProvider = timeProvider;
+        _clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone);
     }
 
     public async Task<CreateConsultationResult> CreateAsync(
@@ -34,6 +39,16 @@ public sealed class ConsultationService : IConsultationService
         ArgumentException.ThrowIfNullOrWhiteSpace(doctorName);
         ArgumentException.ThrowIfNullOrWhiteSpace(roomNumber);
 
+        var clinicNow = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), _clinicTimeZone);
+        var clinicDate = DateOnly.FromDateTime(clinicNow.DateTime);
+        if (request.FollowUpDate is DateOnly followUpDate && followUpDate < clinicDate)
+        {
+            return new CreateConsultationResult
+            {
+                Outcome = CreateConsultationOutcome.FollowUpDateInPast
+            };
+        }
+
         var consultationDate = DateTime.SpecifyKind(
             _timeProvider.GetUtcNow().UtcDateTime,
             DateTimeKind.Utc);
@@ -49,6 +64,8 @@ public sealed class ConsultationService : IConsultationService
             ExaminationFindings = NormalizeOptional(request.ExaminationFindings),
             Diagnosis = request.Diagnosis.Trim(),
             Notes = NormalizeOptional(request.Notes),
+            FollowUpDate = request.FollowUpDate,
+            FollowUpInstructions = NormalizeOptional(request.FollowUpInstructions),
             TemplateId = request.TemplateId,
             ConsultationDate = consultationDate
         };
@@ -96,6 +113,8 @@ public sealed class ConsultationService : IConsultationService
             ExaminationFindings = consultation.ExaminationFindings,
             Diagnosis = consultation.Diagnosis,
             Notes = consultation.Notes,
+            FollowUpDate = consultation.FollowUpDate,
+            FollowUpInstructions = consultation.FollowUpInstructions,
             TemplateId = consultation.TemplateId,
             TemplateName = templateName,
             ConsultationDate = consultation.ConsultationDate

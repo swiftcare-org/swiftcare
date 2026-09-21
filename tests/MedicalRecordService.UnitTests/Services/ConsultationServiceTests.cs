@@ -2,7 +2,9 @@ using MedicalRecordService.Data;
 using MedicalRecordService.Models.Dtos;
 using MedicalRecordService.Models.Entities;
 using MedicalRecordService.Models.Enums;
+using MedicalRecordService.Models.Configuration;
 using MedicalRecordService.Services;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace MedicalRecordService.UnitTests.Services;
@@ -33,7 +35,7 @@ public class ConsultationServiceTests
                 Outcome = ConsultationPersistenceOutcome.Success,
                 TemplateName = "General Consultation"
             });
-        var service = new ConsultationService(repository.Object, new FixedTimeProvider());
+        var service = CreateService(repository);
         var patientId = Guid.NewGuid();
         var queueId = Guid.NewGuid();
         var doctorId = Guid.NewGuid();
@@ -92,7 +94,7 @@ public class ConsultationServiceTests
             {
                 Outcome = ConsultationPersistenceOutcome.TemplateNotFound
             });
-        var service = new ConsultationService(repository.Object, new FixedTimeProvider());
+        var service = CreateService(repository);
 
         var result = await service.CreateAsync(
             ValidRequest(templateId: Guid.NewGuid()),
@@ -104,12 +106,75 @@ public class ConsultationServiceTests
         Assert.Null(result.Consultation);
     }
 
-    private static CreateConsultationRequest ValidRequest(Guid? templateId = null) => new()
+    [Fact]
+    public async Task CreateWithPastFollowUpDateReturnsValidationOutcomeWithoutPersisting()
     {
-        PatientId = Guid.NewGuid(),
-        QueueId = Guid.NewGuid(),
-        Symptoms = "Persistent cough",
-        Diagnosis = "Upper respiratory infection",
-        TemplateId = templateId
-    };
+        var repository = new Mock<IConsultationRepository>(MockBehavior.Strict);
+        var request = ValidRequest(
+            followUpDate: new DateOnly(2026, 9, 12),
+            followUpInstructions: "Review blood pressure");
+
+        var result = await CreateService(repository).CreateAsync(
+            request,
+            Guid.NewGuid(),
+            "Dr. Amara Chen",
+            "R-204");
+
+        Assert.Equal(CreateConsultationOutcome.FollowUpDateInPast, result.Outcome);
+        Assert.Null(result.Consultation);
+        repository.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(13)]
+    [InlineData(14)]
+    public async Task CreateAcceptsTodayOrFutureFollowUpDate(int day)
+    {
+        var repository = new Mock<IConsultationRepository>();
+        ConsultationDraft? persisted = null;
+        repository
+            .Setup(repo => repo.CreateAsync(
+                It.IsAny<ConsultationDraft>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ConsultationDraft, CancellationToken>((consultation, _) =>
+                persisted = consultation)
+            .ReturnsAsync(new ConsultationPersistenceResult
+            {
+                Outcome = ConsultationPersistenceOutcome.Success
+            });
+        var followUpDate = new DateOnly(2026, 9, day);
+        var request = ValidRequest(
+            followUpDate: followUpDate,
+            followUpInstructions: "Review blood pressure");
+
+        var result = await CreateService(repository).CreateAsync(
+            request,
+            Guid.NewGuid(),
+            "Dr. Amara Chen",
+            "R-204");
+
+        Assert.Equal(CreateConsultationOutcome.Success, result.Outcome);
+        Assert.Equal(followUpDate, persisted?.FollowUpDate);
+        Assert.Equal("Review blood pressure", persisted?.FollowUpInstructions);
+    }
+
+    private static CreateConsultationRequest ValidRequest(
+        Guid? templateId = null,
+        DateOnly? followUpDate = null,
+        string? followUpInstructions = null) => new()
+        {
+            PatientId = Guid.NewGuid(),
+            QueueId = Guid.NewGuid(),
+            Symptoms = "Persistent cough",
+            Diagnosis = "Upper respiratory infection",
+            FollowUpDate = followUpDate,
+            FollowUpInstructions = followUpInstructions,
+            TemplateId = templateId
+        };
+
+    private static ConsultationService CreateService(Mock<IConsultationRepository> repository) =>
+        new(
+            repository.Object,
+            new FixedTimeProvider(),
+            Options.Create(new MedicalRecordOptions { TimeZone = "Asia/Colombo" }));
 }

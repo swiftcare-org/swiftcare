@@ -94,6 +94,32 @@ public class ConsultationsControllerTests
     }
 
     [Fact]
+    public async Task CreateWithPastFollowUpDateReturns400WithFieldError()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        factory.ConsultationServiceMock
+            .Setup(service => service.CreateAsync(
+                It.IsAny<CreateConsultationRequest>(),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreateConsultationResult
+            {
+                Outcome = CreateConsultationOutcome.FollowUpDateInPast
+            });
+        var client = CreateDoctorClient(factory, Guid.NewGuid());
+
+        var response = await client.PostAsJsonAsync("/api/consultations", ValidRequest());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var errors = await ReadValidationErrorsAsync(response);
+        Assert.Equal(
+            "Follow-up date cannot be in the past",
+            Assert.Single(errors[nameof(CreateConsultationRequest.FollowUpDate)]));
+    }
+
+    [Fact]
     public async Task CreateWithoutCompleteDoctorIdentityReturns401()
     {
         using var factory = new MedicalRecordServiceWebApplicationFactory();
