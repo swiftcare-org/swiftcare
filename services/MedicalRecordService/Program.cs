@@ -43,7 +43,35 @@ builder.Services.AddScoped<IConsultationFollowUpService, ConsultationFollowUpSer
 builder.Services.AddScoped<IConsultationCompletionService, ConsultationCompletionService>();
 builder.Services.AddScoped<IVitalSignsService, VitalSignsService>();
 builder.Services.Configure<KafkaCompletionOptions>(builder.Configuration.GetSection("Kafka"));
-builder.Services.Configure<MedicalRecordOptions>(builder.Configuration.GetSection("Clinic"));
+builder.Services.AddOptions<MedicalRecordOptions>()
+    .Bind(builder.Configuration.GetSection(MedicalRecordOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.TimeZone),
+        "Clinic:TimeZone is required.")
+    .Validate(
+        options =>
+        {
+            if (string.IsNullOrWhiteSpace(options.TimeZone))
+            {
+                return false;
+            }
+
+            try
+            {
+                _ = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZone);
+                return true;
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return false;
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return false;
+            }
+        },
+        "Clinic:TimeZone must identify a valid time zone.")
+    .ValidateOnStart();
 builder.Services.AddSingleton<IProducer<string, string>>(services =>
 {
     var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<KafkaCompletionOptions>>().Value;

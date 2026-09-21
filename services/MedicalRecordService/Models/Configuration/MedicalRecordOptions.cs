@@ -2,5 +2,7 @@ namespace MedicalRecordService.Models.Configuration;
 
 public sealed class MedicalRecordOptions
 {
-    public required string ClinicTimeZone { get; set; }
+    public const string SectionName = "Clinic";
+
+    public string TimeZone { get; set; } = string.Empty;
 }

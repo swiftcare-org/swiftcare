@@ -18,7 +18,7 @@ public sealed class ConsultationFollowUpService : IConsultationFollowUpService
     {
         _repository = repository;
         _timeProvider = timeProvider;
-        _clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.ClinicTimeZone);
+        _clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.TimeZone);
     }
 
     public async Task<OverdueFollowUpResponse?> FindOverdueAsync(

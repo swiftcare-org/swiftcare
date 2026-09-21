@@ -121,6 +121,6 @@ public class ConsultationFollowUpServiceTests
         Mock<IConsultationFollowUpRepository> repository) =>
         new(
             repository.Object,
-            Options.Create(new MedicalRecordOptions { ClinicTimeZone = "Asia/Colombo" }),
+            Options.Create(new MedicalRecordOptions { TimeZone = "Asia/Colombo" }),
             new FixedTimeProvider());
 }
