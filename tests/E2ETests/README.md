@@ -6,7 +6,7 @@ and user-management screens) is tracked under
 [SWC-60](https://swiftcare-app.atlassian.net/browse/SWC-60); Sprint 2 adds browser coverage
 for SWC-15, SWC-18, SWC-20, SWC-21, SWC-22, SWC-23 and SWC-24 plus one cross-story clinic-day
 journey, tracked under SPRINT2-QA-01.
-Sprint 3 adds SWC-25 vital-sign form coverage under SWC-110.
+Sprint 3 adds SWC-25 vital-sign form and SWC-28 medical-alert coverage under SWC-110.
 
 Unlike `AuthService.UnitTests` / `ApiGateway.UnitTests`, this project has no
 `ProjectReference` to any service, and it only talks to whatever is already
@@ -76,6 +76,9 @@ Environment variables:
 | `QUEUE_DB_NAME` | `swiftcare_queue` | QueueService database name |
 | `E2E_QUEUE_DB_HOST` | `localhost` | Host MySQL is published on |
 | `E2E_QUEUE_DB_CONNECTION` | *(unset)* | Full connection string, overrides the four above |
+| `MEDICAL_RECORD_DB_NAME` | `swiftcare_medical_record` | MedicalRecordService database name |
+| `E2E_MEDICAL_RECORD_DB_HOST` | `localhost` | Host used by the SWC-28 historical follow-up fixture |
+| `E2E_MEDICAL_RECORD_DB_CONNECTION` | *(unset)* | Full MedicalRecordService connection string override |
 
 ### Why the suite touches MySQL directly
 
@@ -87,11 +90,18 @@ consume it. `Support/QueueDatabase.cs` therefore deletes one row at a time, iden
 patient id created by that test. It never clears the queue or deletes another test's data.
 Set `MYSQL_PASSWORD` from the repo root `.env` alongside `AUTH_SEED_PASSWORD`.
 
+SWC-28 must display an already overdue follow-up, while SWC-122 correctly rejects a doctor
+entering a past date and the application has no test clock. The alert test creates and
+completes a consultation through the real APIs with a valid date, then
+`Support/MedicalRecordDatabase.cs` backdates only that test-owned row by consultation and
+patient id. It never changes another consultation or bypasses the browser behavior under
+test.
+
 ## Parallel-safety classification
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
-| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
 | Isolated patient/profile | Allergy, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
 | Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
 
