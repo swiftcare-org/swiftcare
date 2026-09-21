@@ -961,19 +961,23 @@ export function PatientProfilePage() {
             (user?.role === 'Doctor' && (conditions.length > 0 || overdueFollowUp))) && (
             <div className="mt-6 space-y-3" aria-label="Medical alerts">
               {allergies.map((allergy) => (
-                <AlertBanner key={allergy.allergyId} tone="allergy">
+                <AlertBanner key={allergy.allergyId} tone="allergy" label="Allergy Alert">
                   ⚠️ ALLERGY: {allergy.allergyName} — {allergy.severity}
                 </AlertBanner>
               ))}
 
               {user?.role === 'Doctor' && conditions.map((condition) => (
-                <AlertBanner key={condition.conditionId} tone="condition">
+                <AlertBanner
+                  key={condition.conditionId}
+                  tone="condition"
+                  label="Chronic Condition Alert"
+                >
                   ⚠️ CONDITION: {condition.conditionName} (since {formatMonthYear(condition.dateDiagnosed)})
                 </AlertBanner>
               ))}
 
               {user?.role === 'Doctor' && overdueFollowUp && (
-                <AlertBanner tone="followUp">
+                <AlertBanner tone="followUp" label="Follow-up Alert">
                   📌 FOLLOW-UP: {overdueFollowUp.instructions} — overdue
                 </AlertBanner>
               )}
