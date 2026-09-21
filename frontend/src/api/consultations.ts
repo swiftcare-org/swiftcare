@@ -75,6 +75,20 @@ export interface CompleteConsultationResponse {
   eventId: string;
 }
 
+export interface OverdueFollowUp {
+  consultationId: string;
+  followUpDate: string;
+  instructions: string;
+}
+
+export function getLatestOverdueFollowUp(
+  patientId: string,
+): Promise<OverdueFollowUp | undefined> {
+  return apiRequest<OverdueFollowUp | undefined>(
+    `/api/consultations/patient/${encodeURIComponent(patientId)}/latest-follow-up`,
+  );
+}
+
 export function getConsultationTemplates(): Promise<ConsultationTemplate[]> {
   return apiRequest<ConsultationTemplate[]>('/api/templates');
 }

@@ -10,8 +10,11 @@ import type { Allergy, AllergyRequestBody, AllergySeverity } from '../api/allerg
 import { addCondition, getConditions, removeCondition } from '../api/conditions';
 import type { ChronicCondition, ChronicConditionRequestBody } from '../api/conditions';
 import { ApiError } from '../api/client';
+import { getLatestOverdueFollowUp } from '../api/consultations';
+import type { OverdueFollowUp } from '../api/consultations';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
+import { AlertBanner } from '../components/AlertBanner';
 
 type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
@@ -94,6 +97,14 @@ function severityBadgeClassName(severity: AllergySeverity): string {
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString();
+}
+
+function formatMonthYear(value: string): string {
+  const [year, month] = value.slice(0, 10).split('-').map(Number);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(year, month - 1, 1));
 }
 
 function calculateAge(dateOfBirth: string): number {
@@ -211,6 +222,8 @@ export function PatientProfilePage() {
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [conditions, setConditions] = useState<ChronicCondition[]>([]);
   const [conditionsLoadState, setConditionsLoadState] = useState<ConditionsLoadState>('loading');
+  const [overdueFollowUp, setOverdueFollowUp] = useState<OverdueFollowUp | null>(null);
+  const [followUpLoadFailed, setFollowUpLoadFailed] = useState(false);
   const [queueStatus, setQueueStatus] = useState<PatientQueueStatus | null>(null);
   const [queueStatusLoadState, setQueueStatusLoadState] = useState<QueueStatusLoadState>('idle');
   const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>('idle');
@@ -257,6 +270,8 @@ export function PatientProfilePage() {
     setLoadStatus('loading');
     setConditions([]);
     setConditionsLoadState('loading');
+    setOverdueFollowUp(null);
+    setFollowUpLoadFailed(false);
     setQueueStatus(null);
     setQueueStatusLoadState(isReceptionist ? 'loading' : 'idle');
     setCheckInStatus('idle');
@@ -272,8 +287,26 @@ export function PatientProfilePage() {
       .then((items) => ({ items, failed: false as const }))
       .catch(() => ({ items: [], failed: true as const }));
 
-    Promise.all([getPatient(patientId), getAllergies(patientId), conditionsRequest, queueStatusRequest])
-      .then(([loadedPatient, loadedAllergies, loadedConditions, loadedQueueStatus]) => {
+    const followUpRequest = user?.role === 'Doctor'
+      ? getLatestOverdueFollowUp(patientId)
+          .then((followUp) => ({ followUp: followUp ?? null, failed: false as const }))
+          .catch(() => ({ followUp: null, failed: true as const }))
+      : Promise.resolve({ followUp: null, failed: false as const });
+
+    Promise.all([
+      getPatient(patientId),
+      getAllergies(patientId),
+      conditionsRequest,
+      queueStatusRequest,
+      followUpRequest,
+    ])
+      .then(([
+        loadedPatient,
+        loadedAllergies,
+        loadedConditions,
+        loadedQueueStatus,
+        loadedFollowUp,
+      ]) => {
         if (latestRequestId.current !== requestId) {
           return;
         }
@@ -281,6 +314,8 @@ export function PatientProfilePage() {
         setAllergies(loadedAllergies);
         setConditions(loadedConditions.items);
         setConditionsLoadState(loadedConditions.failed ? 'error' : 'loaded');
+        setOverdueFollowUp(loadedFollowUp.followUp);
+        setFollowUpLoadFailed(loadedFollowUp.failed);
         setProfileForm({
           address: loadedPatient.address,
           phoneNumber: loadedPatient.phoneNumber,
@@ -302,7 +337,7 @@ export function PatientProfilePage() {
           setLoadStatus('error');
         }
       });
-  }, [isReceptionist, patientId]);
+  }, [isReceptionist, patientId, user?.role]);
 
   async function handleCheckIn() {
     if (!patientId || !patient || !isReceptionist) {
@@ -922,27 +957,33 @@ export function PatientProfilePage() {
             )}
           </div>
 
-          {/* Red alert banner: derives from the same allergies list the table renders, so
-              it can never disagree with the table, and disappears by construction once
-              the list is empty. */}
-          {allergies.length > 0 && (
-            <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Allergy Alert</p>
-              <p className="mt-1 text-sm text-red-900">
-                {allergies.map((allergy) => allergy.allergyName).join(', ')}
-              </p>
+          {(allergies.length > 0 ||
+            (user?.role === 'Doctor' && (conditions.length > 0 || overdueFollowUp))) && (
+            <div className="mt-6 space-y-3" aria-label="Medical alerts">
+              {allergies.map((allergy) => (
+                <AlertBanner key={allergy.allergyId} tone="allergy">
+                  ⚠️ ALLERGY: {allergy.allergyName} — {allergy.severity}
+                </AlertBanner>
+              ))}
+
+              {user?.role === 'Doctor' && conditions.map((condition) => (
+                <AlertBanner key={condition.conditionId} tone="condition">
+                  ⚠️ CONDITION: {condition.conditionName} (since {formatMonthYear(condition.dateDiagnosed)})
+                </AlertBanner>
+              ))}
+
+              {user?.role === 'Doctor' && overdueFollowUp && (
+                <AlertBanner tone="followUp">
+                  📌 FOLLOW-UP: {overdueFollowUp.instructions} — overdue
+                </AlertBanner>
+              )}
             </div>
           )}
 
-          {user?.role === 'Doctor' && conditions.length > 0 && (
-            <div className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3" role="alert">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
-                Chronic Condition Alert
-              </p>
-              <p className="mt-1 text-sm text-amber-900">
-                {conditions.map((condition) => condition.conditionName).join(', ')}
-              </p>
-            </div>
+          {user?.role === 'Doctor' && followUpLoadFailed && (
+            <p className="mt-3 border-l-4 border-slate-500 bg-slate-100 px-4 py-2 text-sm text-slate-700" role="status">
+              Unable to load follow-up alerts.
+            </p>
           )}
 
           <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
