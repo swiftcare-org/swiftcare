@@ -66,6 +66,7 @@ public sealed class ConsultationsController : ControllerBase
                 StatusCode(StatusCodes.Status201Created, result.Consultation),
             CreateConsultationOutcome.Success => throw new InvalidOperationException(
                 "A successful consultation result must include the created consultation."),
+            CreateConsultationOutcome.FollowUpDateInPast => PastFollowUpDateResponse(),
             CreateConsultationOutcome.TemplateNotFound => InvalidTemplateResponse(),
             CreateConsultationOutcome.QueueAlreadyHasConsultation => Conflict(
                 new MessageResponse("A consultation already exists for this queue entry")),
@@ -74,6 +75,14 @@ public sealed class ConsultationsController : ControllerBase
                 result.Outcome,
                 "Unsupported create-consultation outcome.")
         };
+    }
+
+    private IActionResult PastFollowUpDateResponse()
+    {
+        ModelState.AddModelError(
+            nameof(CreateConsultationRequest.FollowUpDate),
+            "Follow-up date cannot be in the past");
+        return ValidationProblem(ModelState);
     }
 
     private IActionResult InvalidTemplateResponse()

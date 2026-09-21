@@ -55,6 +55,19 @@ const EMPTY_FIELD_ERRORS: FieldErrors = {
   followUpInstructions: null,
 };
 
+const CLINIC_TIME_ZONE = 'Asia/Colombo';
+
+function clinicTodayIsoDate(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLINIC_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function inputClassName(hasError: boolean): string {
   return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
     hasError ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
@@ -216,6 +229,8 @@ export function ConsultationPage() {
       followUpDate:
         followUpInstructions && !form.followUpDate
           ? 'Follow-up date is required when instructions are provided'
+          : form.followUpDate && form.followUpDate < clinicTodayIsoDate()
+            ? 'Follow-up date cannot be in the past'
           : null,
       followUpInstructions:
         form.followUpDate && !followUpInstructions
@@ -511,6 +526,7 @@ export function ConsultationPage() {
                   id="followUpDate"
                   name="followUpDate"
                   type="date"
+                  min={clinicTodayIsoDate()}
                   value={form.followUpDate}
                   onChange={(event) => {
                     setForm((previous) => ({ ...previous, followUpDate: event.target.value }));
