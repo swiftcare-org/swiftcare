@@ -1,6 +1,6 @@
 # MedicalRecordService
 
-MedicalRecordService owns consultation records, consultation templates, and the vital signs recorded for each visit. It uses parameterized ADO.NET commands through `MySqlConnector` and accepts requests only after the API Gateway establishes its internal trust boundary.
+MedicalRecordService owns consultation records, consultation templates, vital signs, and consultation follow-up details. It uses parameterized ADO.NET commands through `MySqlConnector` and accepts requests only after the API Gateway establishes its internal trust boundary.
 
 ## Port
 
@@ -15,11 +15,18 @@ MedicalRecordService owns consultation records, consultation templates, and the 
 | `POST` | `/api/consultations` | Doctor | Creates a consultation for the doctor's current queue assignment |
 | `POST` | `/api/consultations/{consultationId}/vitals` | Doctor | Records vital signs for the doctor's consultation and calculates BMI |
 | `GET` | `/api/consultations/by-queue/{queueId}` | Doctor | Returns this doctor's saved consultation status and whether vital signs exist, or `204` when none exists |
+| `GET` | `/api/consultations/patient/{patientId}/latest-follow-up` | Doctor | Returns the overdue follow-up from the patient's latest completed consultation, or `204` when none is overdue |
 | `POST` | `/api/consultations/{consultationId}/complete` | Doctor | Completes the consultation and publishes `consultation-completed` |
 
-The Gateway supplies the authenticated doctor's ID, name, and room number. These values are not accepted from the request body. Symptoms and diagnosis are required; examination findings, notes, and template selection are optional.
+The Gateway supplies the authenticated doctor's ID, name, and room number. These values are not accepted from the request body. Symptoms and diagnosis are required; examination findings, notes, template selection, and follow-up details are optional. A follow-up date and instructions must be provided together, and instructions are limited to 500 characters.
 
 Vital signs may include blood pressure, temperature, pulse rate, respiratory rate, oxygen saturation, height, and weight. Blood-pressure values must be supplied together, and every supplied measurement must be positive. BMI is calculated by the service when both height and weight are present and is rounded to two decimal places. A doctor can record one set of vital signs for a consultation assigned to that doctor.
+
+## Follow-up alerts
+
+The doctor-only follow-up endpoint reads the patient's latest completed consultation. It returns the stored follow-up only when its date is earlier than the current clinic date. The `Clinic:TimeZone` setting defaults to `Asia/Colombo` in `appsettings.json`. A follow-up due today or later is not overdue. Missing follow-up details and patients without a completed consultation return `204 No Content`.
+
+The frontend combines this result with allergies and chronic conditions on the patient profile. It displays individual red allergy banners first, amber condition banners second, and the blue overdue follow-up banner last.
 
 ## Completing a consultation
 
@@ -29,7 +36,7 @@ If publishing fails, the endpoint returns `503` with `Consultation could not be 
 
 ## EF Core migrations
 
-`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates`, `Consultations`, and `VitalSigns` tables, including the consultation completion status and `EventId`. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
+`MedicalRecordDbContext` and the committed files under `Migrations/` manage the `ConsultationTemplates`, `Consultations`, and `VitalSigns` tables, including consultation follow-up details, completion status, and `EventId`. The initial migration seeds the general, respiratory, gastrointestinal, and musculoskeletal templates with stable GUIDs. The normal MedicalRecordService application image supports both API and migration execution; no separate migration image is required.
 
 To apply migrations with the normal service image:
 
@@ -97,4 +104,4 @@ OpenAPI is available at `/openapi/v1.json` in Development. Scalar is available a
 dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj
 ```
 
-The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, completion ordering and retry, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
+The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, completion ordering and retry, overdue follow-up date logic, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
