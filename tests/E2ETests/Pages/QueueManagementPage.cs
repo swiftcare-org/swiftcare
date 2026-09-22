@@ -50,6 +50,12 @@ public class QueueManagementPage
     public void WaitForQueueRow(string queueNumber) =>
         _wait.Until(d => d.FindElements(RowFor(queueNumber)).Count > 0);
 
+    // SWC-38 - QueueService's completion consumer runs asynchronously off the Kafka
+    // event, so a caller waits on the page's own five-second poll to show the new status
+    // rather than asserting on it immediately after the API call that triggers it.
+    public void WaitForStatus(string queueNumber, string statusText, TimeSpan timeout) =>
+        new WebDriverWait(_driver, timeout).Until(_ => StatusFor(queueNumber).Contains(statusText));
+
     // The queue number allocated to a patient, or null while the row is not on screen.
     // Resolved from one DOM query over the whole body rather than a number-then-name pair
     // of lookups, because the table re-renders every five seconds and a two-step read can
