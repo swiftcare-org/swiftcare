@@ -95,7 +95,7 @@ public class ConsultationCompletionTests : SeleniumTestBase
         var queue = new QueueManagementPage(Driver);
         queue.WaitUntilLoaded();
         queue.WaitForQueueRow(assignment.QueueNumber);
-        Assert.Contains("IN_CONSULTATION", queue.StatusFor(assignment.QueueNumber));
+        Assert.Contains("IN CONSULTATION", queue.StatusFor(assignment.QueueNumber));
         Assert.False(queue.HasViewPrescriptionButton(assignment.QueueNumber));
 
         seed.CompleteConsultation(consultation.Id, doctor.Username, doctor.Password);
