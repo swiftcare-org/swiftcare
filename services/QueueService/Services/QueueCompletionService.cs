@@ -9,10 +9,14 @@ namespace QueueService.Services;
 public sealed class QueueCompletionService : IQueueCompletionService
 {
     private readonly QueueDbContext _dbContext;
+    private readonly TimeProvider _timeProvider;
 
-    public QueueCompletionService(QueueDbContext dbContext)
+    public QueueCompletionService(
+        QueueDbContext dbContext,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext;
+        _timeProvider = timeProvider;
     }
 
     public async Task<QueueCompletionOutcome> CompleteAsync(
@@ -55,6 +59,9 @@ public sealed class QueueCompletionService : IQueueCompletionService
         if (outcome == QueueCompletionOutcome.Completed)
         {
             entry.Status = QueueStatus.Completed;
+            entry.CompletedAt = DateTime.SpecifyKind(
+                _timeProvider.GetUtcNow().UtcDateTime,
+                DateTimeKind.Utc);
         }
 
         _dbContext.ProcessedEvents.Add(new ProcessedEvent

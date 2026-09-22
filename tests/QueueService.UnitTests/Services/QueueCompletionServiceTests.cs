@@ -19,7 +19,7 @@ public class QueueCompletionServiceTests
         db.QueueEntries.Add(entry);
         await db.SaveChangesAsync();
         var completedEvent = NewEvent(entry);
-        var service = new QueueCompletionService(db);
+        var service = new QueueCompletionService(db, TimeProvider.System);
 
         var first = await service.CompleteAsync(completedEvent);
         var duplicate = await service.CompleteAsync(completedEvent);
@@ -38,7 +38,7 @@ public class QueueCompletionServiceTests
         var entry = NewActiveEntry();
         db.QueueEntries.Add(entry);
         await db.SaveChangesAsync();
-        var service = new QueueCompletionService(db);
+        var service = new QueueCompletionService(db, TimeProvider.System);
 
         await service.CompleteAsync(NewEvent(entry));
         var outcome = await service.CompleteAsync(NewEvent(entry));
@@ -59,7 +59,7 @@ public class QueueCompletionServiceTests
         var completedEvent = NewEvent(entry) with { PatientId = Guid.NewGuid() };
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new QueueCompletionService(db).CompleteAsync(completedEvent));
+            new QueueCompletionService(db, TimeProvider.System).CompleteAsync(completedEvent));
 
         Assert.Equal(QueueStatus.InConsultation, entry.Status);
         Assert.Empty(await db.ProcessedEvents.ToListAsync());

@@ -167,7 +167,10 @@ public sealed class TodayQueueService : ITodayQueueService
                 CheckedInAt = DateTime.SpecifyKind(entry.CheckedInAt, DateTimeKind.Utc),
                 Status = ToApiStatus(entry.Status),
                 RoomNumber = entry.RoomNumber,
-                DoctorName = entry.DoctorName
+                DoctorName = entry.DoctorName,
+                CompletedAt = entry.CompletedAt.HasValue
+                    ? DateTime.SpecifyKind(entry.CompletedAt.Value, DateTimeKind.Utc)
+                    : null
             })
             .ToList();
     }

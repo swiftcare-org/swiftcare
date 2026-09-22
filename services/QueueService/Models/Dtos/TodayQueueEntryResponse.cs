@@ -9,4 +9,5 @@ public sealed class TodayQueueEntryResponse
     public required string Status { get; init; }
     public string? RoomNumber { get; init; }
     public string? DoctorName { get; init; }
+    public DateTime? CompletedAt { get; init; }
 }
