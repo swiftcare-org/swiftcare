@@ -90,6 +90,13 @@ public sealed class SeedClient : IDisposable
     public CurrentQueueAssignment GetCurrentForDoctor(string username, string password) =>
         GetCurrentForDoctorAsync(username, password).GetAwaiter().GetResult();
 
+    // Plain consultation with no follow-up, for tests that only care about the
+    // completion/queue behaviour - CreateConsultationWithFollowUp below always attaches
+    // follow-up fields, which are SWC-28's concern rather than SWC-26/SWC-38's.
+    public SeededConsultation CreateConsultation(
+        CurrentQueueAssignment assignment, string username, string password) =>
+        CreateConsultationAsync(assignment, username, password).GetAwaiter().GetResult();
+
     public SeededConsultation CreateConsultationWithFollowUp(
         CurrentQueueAssignment assignment,
         string username,
@@ -277,6 +284,26 @@ public sealed class SeedClient : IDisposable
 
         return await response.Content.ReadFromJsonAsync<CurrentQueueAssignment>(Json)
             ?? throw new InvalidOperationException($"Empty current-assignment response for doctor '{username}'.");
+    }
+
+    private async Task<SeededConsultation> CreateConsultationAsync(
+        CurrentQueueAssignment assignment, string username, string password)
+    {
+        var request = new
+        {
+            queueId = assignment.QueueId,
+            patientId = assignment.PatientId,
+            symptoms = "SWC-38 E2E completion fixture",
+            examinationFindings = "Stable during E2E assessment",
+            diagnosis = "SWC-38 E2E assessment",
+            notes = "Created by isolated Selenium test data",
+        };
+
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Post, "/api/consultations", request, token);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SeededConsultation>(Json)
+            ?? throw new InvalidOperationException("Empty response creating a seed consultation.");
     }
 
     private async Task<SeededConsultation> CreateConsultationWithFollowUpAsync(
