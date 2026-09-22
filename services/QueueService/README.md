@@ -6,12 +6,12 @@ Automatically creates a daily queue entry when a patient checks in, so reception
 
 - Consumes the `patient-checked-in` Kafka topic produced by PatientService for successful new-patient registration and returning-patient check-in.
 - For each event, allocates the next sequential queue number for that clinic-local day (`Q-001`, `Q-002`, ...) inside a database transaction, and creates a `QueueEntry` with `Status = Waiting` and `RoomNumber = NULL`.
-- Consumes `consultation-completed` events from MedicalRecordService, moves the matching `IN_CONSULTATION` queue entry to `COMPLETED`, and records the `EventId` in the existing `ProcessedEvents` ledger. Redelivery with the same ID is a no-op.
+- Consumes `consultation-completed` events from MedicalRecordService, moves the matching `IN_CONSULTATION` queue entry to `COMPLETED`, records the UTC `CompletedAt` timestamp, and records the `EventId` in the existing `ProcessedEvents` ledger. Redelivery with the same ID is a no-op and preserves the original completion timestamp.
 - The daily sequence resets at midnight in the clinic's local timezone (`Asia/Colombo` by default), not at UTC midnight — a UTC-date reset would roll the counter over at 05:30 local time instead.
 - Idempotent against Kafka's at-least-once delivery: a redelivered event (same `EventId`) is recognized via a `ProcessedEvents` ledger and skipped without creating a duplicate entry.
 - `UNIQUE (PatientId, QueueDate)` and `UNIQUE (QueueDate, QueueNumber)` constraints are the database-level backstop — a second event for the same patient on the same day (even with a different `EventId`) is rejected and logged, not silently duplicated.
 - `GET /api/queue/today/patient/{patientId}` — returns whether a patient is in today's queue and their assigned queue number. Receptionist only.
-- `GET /api/queue/today` — returns all entries for the current clinic-local day in queue-number order, including check-in time, operational status, and nullable room/doctor assignment. Receptionist only.
+- `GET /api/queue/today` — returns all entries for the current clinic-local day in queue-number order, including check-in time, operational status, nullable completion time, and nullable room/doctor assignment. Receptionist only.
 - `GET /api/queue/today/waiting` — returns only `WAITING` entries in queue-number order for the shared doctor pool. Doctor only.
 - `GET /api/queue/today/current` — returns the authenticated doctor's current clinic-day `IN_CONSULTATION` assignment, or `204 No Content` when there is none. Doctor only.
 - `PUT /api/queue/call-next` — assigns the first waiting patient to the authenticated doctor and room, changes the entry to `IN_CONSULTATION`, records `CalledAt`, and publishes `patient-called`. Doctor only.
@@ -82,7 +82,7 @@ QueueService validates only that `Kafka:BootstrapServers` is *configured* at sta
 
 The call-next producer publishes `patient-called` with queue, patient, doctor, room, call-time, and correlation identifiers, but no patient demographic or contact data. Publishing is bounded by `Kafka:MessageTimeoutMs`; a failed publication rolls back the queue assignment and returns a service-unavailable response.
 
-The consultation-completion consumer verifies the event's queue, patient, and doctor IDs against the assigned entry. It commits the queue status change and `ProcessedEvents` row in one transaction, then commits the Kafka offset. A duplicate `EventId` makes no further change. If database processing fails, the consumer retries rather than acknowledging the event. The public display and doctor's current-assignment read reflect `COMPLETED` after this consumer processes the event.
+The consultation-completion consumer verifies the event's queue, patient, and doctor IDs against the assigned entry. It commits the `COMPLETED` status, UTC `CompletedAt` timestamp, and `ProcessedEvents` row in one transaction, then commits the Kafka offset. A duplicate `EventId` makes no further change, including to the original completion timestamp. If database processing fails, the consumer retries rather than acknowledging the event. The public display and doctor's current-assignment read reflect `COMPLETED` after this consumer processes the event, which clears the doctor's current-patient card on its next poll.
 
 ## Testing
 
@@ -105,6 +105,8 @@ SWC-79 covers anonymous public-display access, current room mappings, numeric ne
 SWC-112 covers recovery of the doctor's active assignment: lookup is restricted to the trusted doctor ID, `IN_CONSULTATION` status, and the current clinic-local date. Tests verify that a completed entry no longer appears, a previous-day entry is excluded at local midnight, `204` is returned when there is no assignment, and both QueueService and API Gateway require doctor authorization.
 
 SWC-26 covers consultation completion event handling, including a matching queue status update, duplicate `EventId` no-op, and rejection of mismatched patient assignments.
+
+SWC-38 covers automatic queue completion, including the UTC completion timestamp, preservation of that timestamp across duplicate or repeated completion events, exposure through today's queue response, and removal of the completed entry from the doctor's current assignment.
 
 ## Endpoints
 
@@ -136,7 +138,7 @@ Azure deployment uses a dedicated `swiftcare_queue` database account and require
 ## Known scope bounds
 
 - **No patient names in QueueService.** The frontend resolves names through PatientService and caches them locally; the queue database and Kafka event retain only `PatientId`.
-- **No prescription integration yet.** The queue page displays a neutral placeholder until SWC-30 implements PrescriptionService's status endpoint. QueueService must never query PrescriptionService directly.
+- **No prescription integration yet.** A completed row displays a disabled `View Prescription` action so reception can see the intended next step. SWC-30 will connect that action to PrescriptionService. QueueService must never query PrescriptionService directly.
 - **`ProcessedEvents` has no retention policy.** It grows unbounded — years of headroom at clinic check-in volume, but a deliberate gap if it ever needs cleanup.
 - **Queue numbers are not gap-free.** A transaction that rolls back after incrementing the counter leaves a gap in that day's sequence. The story requires "the next daily queue number", not gapless numbering.
 - **Unknown `PatientId` is trusted, not verified.** The consumer never calls back into PatientService to confirm a patient exists — it trusts the event, since it originates from the owning service and a synchronous callback would couple this service's availability to PatientService's.
