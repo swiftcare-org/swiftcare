@@ -130,6 +130,13 @@ public class DoctorDashboardPage
     public bool HasCurrentPatientPanel =>
         _driver.FindElements(By.XPath("//p[contains(text(), 'Currently with you:')]")).Count > 0;
 
+    // SWC-38 - the current-patient panel clears once the doctor's own five-second poll
+    // (loadCurrentPatient) sees the queue entry leave IN_CONSULTATION, the same reasoning
+    // WaitForWaitingRowGone documents for the waiting pool below it.
+    public void WaitUntilCurrentPatientPanelGone(TimeSpan timeout) =>
+        new WebDriverWait(_driver, timeout).Until(d => d.FindElements(
+            By.XPath("//p[contains(text(), 'Currently with you:')]")).Count == 0);
+
     public void WaitUntilCurrentPatientStateLoaded() =>
         _wait.Until(d => d.FindElements(By.XPath(
             "//p[contains(normalize-space(), 'Loading your current consultation')]")).Count == 0);

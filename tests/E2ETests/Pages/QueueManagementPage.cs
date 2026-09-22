@@ -96,6 +96,18 @@ public class QueueManagementPage
 
     public string PrescriptionFor(string queueNumber) => CellText(queueNumber, 7);
 
+    // SWC-38's disabled View Prescription action, shown only once a row is COMPLETED.
+    // Read as the control itself rather than through PrescriptionFor's cell text, so a
+    // caller can prove the button is there and disabled, not only that some text renders.
+    public bool HasViewPrescriptionButton(string queueNumber) =>
+        _driver.FindElements(ViewPrescriptionButtonLocator(queueNumber)).Count > 0;
+
+    public bool IsViewPrescriptionEnabled(string queueNumber) =>
+        _driver.FindElement(ViewPrescriptionButtonLocator(queueNumber)).Enabled;
+
+    private static By ViewPrescriptionButtonLocator(string queueNumber) => By.XPath(
+        $"//table//tr[td[1][normalize-space()='{queueNumber}']]/td[7]//button[normalize-space()='View Prescription']");
+
     private string CellText(string queueNumber, int columnIndex) =>
         _driver.FindElement(By.XPath(
             $"//table//tr[td[1][normalize-space()='{queueNumber}']]/td[{columnIndex}]")).Text.Trim();

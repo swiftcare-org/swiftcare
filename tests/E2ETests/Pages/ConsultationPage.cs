@@ -149,9 +149,29 @@ public class ConsultationPage
 
     public string? DiagnosisFieldError => TryGetText(By.Id("diagnosis-error"));
 
-    private string? TryGetText(By locator)
+    // SWC-26/SWC-38's Complete Consultation section, rendered under vital signs once the
+    // consultation is created. Scoped by its own heading so the button and messages here
+    // cannot collide with the Save Consultation or Save Vitals submit buttons above it.
+    private IWebElement CompleteConsultationSection => _driver.FindElement(By.XPath(
+        "//section[.//h2[normalize-space()='Complete Consultation']]"));
+
+    private IWebElement CompleteConsultationButton => CompleteConsultationSection.FindElement(
+        By.XPath(".//button[normalize-space()='Complete Consultation' or normalize-space()='Completing...']"));
+
+    public bool IsCompleteConsultationEnabled => CompleteConsultationButton.Enabled;
+
+    public void WaitUntilCompleteConsultationIsEnabled() => _wait.Until(_ => CompleteConsultationButton.Enabled);
+
+    public void ClickCompleteConsultation() => CompleteConsultationButton.Click();
+
+    public string? CompleteConsultationBlockedMessage => TryGetText(
+        CompleteConsultationSection, By.XPath(".//p[normalize-space()='Please save vital signs first']"));
+
+    private string? TryGetText(By locator) => TryGetText(_driver, locator);
+
+    private static string? TryGetText(ISearchContext context, By locator)
     {
-        var elements = _driver.FindElements(locator);
+        var elements = context.FindElements(locator);
         return elements.Count > 0 ? elements[0].Text : null;
     }
 }
