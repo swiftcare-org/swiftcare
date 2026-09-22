@@ -9,11 +9,11 @@ namespace E2ETests.Support;
 // accounts and land on a fully rendered dashboard, then navigate to a route.
 public static class AppSession
 {
-    public static void LogIn(IWebDriver driver, string username)
+    public static void LogIn(IWebDriver driver, string username, string? password = null)
     {
         var login = new LoginPage(driver);
         login.NavigateTo();
-        login.SubmitCredentials(username, TestConfig.SeedPassword);
+        login.SubmitCredentials(username, password ?? TestConfig.SeedPassword);
         login.WaitForRedirectAwayFromLogin();
 
         // Wait for the dashboard shell so callers can act on links/content immediately.

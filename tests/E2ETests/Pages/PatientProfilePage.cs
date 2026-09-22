@@ -63,16 +63,16 @@ public class PatientProfilePage
 
     // --- Red allergy-alert banner (rendered only when at least one allergy exists) ---
 
-    public bool HasAllergyAlert => _driver.FindElements(AlertBanner).Count > 0;
+    public bool HasAllergyAlert => _driver.FindElements(AllergyAlertBanner).Count > 0;
 
     public void WaitForAllergyAlertContaining(string text) =>
         _wait.Until(d =>
         {
-            var banner = d.FindElements(AlertBanner);
+            var banner = d.FindElements(AllergyAlertBanner);
             return banner.Count > 0 && banner[0].Text.Contains(text);
         });
 
-    public void WaitForNoAllergyAlert() => _wait.Until(d => d.FindElements(AlertBanner).Count == 0);
+    public void WaitForNoAllergyAlert() => _wait.Until(d => d.FindElements(AllergyAlertBanner).Count == 0);
 
     // --- Allergies table ---
 
@@ -154,6 +154,31 @@ public class PatientProfilePage
         });
 
     public void WaitForNoChronicConditionAlert() => _wait.Until(d => d.FindElements(ChronicConditionAlertBanner).Count == 0);
+
+    // --- Combined clinical alert stack (SWC-28) ---
+
+    public int MedicalAlertCount => _driver.FindElements(MedicalAlertBanners).Count;
+
+    public IReadOnlyList<string> MedicalAlertLabelsInOrder =>
+        _driver.FindElements(MedicalAlertBanners)
+            .Select(banner => banner.FindElement(By.CssSelector("p.sr-only"))
+                .GetDomProperty("textContent")?.Trim() ?? string.Empty)
+            .ToList();
+
+    public IReadOnlyList<string> MedicalAlertMessagesInOrder =>
+        _driver.FindElements(MedicalAlertBanners)
+            .Select(banner => banner.FindElements(By.CssSelector("p")).Last().Text.Trim())
+            .ToList();
+
+    public IReadOnlyList<string> MedicalAlertClassNamesInOrder =>
+        _driver.FindElements(MedicalAlertBanners)
+            .Select(banner => banner.GetDomAttribute("class") ?? string.Empty)
+            .ToList();
+
+    public void WaitForMedicalAlertCount(int expectedCount) =>
+        _wait.Until(d => d.FindElements(MedicalAlertBanners).Count == expectedCount);
+
+    public void WaitForNoMedicalAlerts() => WaitForMedicalAlertCount(0);
 
     // --- Chronic Conditions table ---
 
@@ -318,6 +343,13 @@ public class PatientProfilePage
     private static By ChronicConditionAlertBanner => By.XPath(
         "//div[@role='alert'][.//p[normalize-space()='Chronic Condition Alert']]");
 
+    private static By AllergyAlertBanner => By.XPath(
+        "//div[@role='alert'][.//p[normalize-space()='Allergy Alert']]");
+
+    private static By MedicalAlertBanners => By.XPath(
+        "//div[@role='alert'][.//p[normalize-space()='Allergy Alert' or " +
+        "normalize-space()='Chronic Condition Alert' or normalize-space()='Follow-up Alert']]");
+
     // Matches the clinic-local calendar date PatientService and the frontend now validate
     // against (Asia/Colombo, fixed since dad9e3b / commit series SWC-81), not the machine's
     // own local time or UTC. Kept as a member here because the condition tests read it
@@ -338,8 +370,6 @@ public class PatientProfilePage
     private string DemographicValue(string label) =>
         _driver.FindElement(By.XPath(
             $"//dt[normalize-space()='{label}']/following-sibling::dd[1]")).Text.Trim();
-
-    private static By AlertBanner => By.CssSelector("div[role='alert']");
 
     private static By RowCell(string name) => By.XPath($"//table//td[normalize-space()='{name}']");
 }

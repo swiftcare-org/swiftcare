@@ -90,6 +90,25 @@ public sealed class SeedClient : IDisposable
     public CurrentQueueAssignment GetCurrentForDoctor(string username, string password) =>
         GetCurrentForDoctorAsync(username, password).GetAwaiter().GetResult();
 
+    public SeededConsultation CreateConsultationWithFollowUp(
+        CurrentQueueAssignment assignment,
+        string username,
+        string password,
+        DateOnly followUpDate,
+        string followUpInstructions) =>
+        CreateConsultationWithFollowUpAsync(
+            assignment,
+            username,
+            password,
+            followUpDate,
+            followUpInstructions).GetAwaiter().GetResult();
+
+    public void RecordVitalSigns(string consultationId, string username, string password) =>
+        RecordVitalSignsAsync(consultationId, username, password).GetAwaiter().GetResult();
+
+    public void CompleteConsultation(string consultationId, string username, string password) =>
+        CompleteConsultationAsync(consultationId, username, password).GetAwaiter().GetResult();
+
     private async Task<SeededPatient> RegisterPatientAsync(string? fullName)
     {
         var name = fullName ?? TestData.FullName("Patient");
@@ -260,6 +279,54 @@ public sealed class SeedClient : IDisposable
             ?? throw new InvalidOperationException($"Empty current-assignment response for doctor '{username}'.");
     }
 
+    private async Task<SeededConsultation> CreateConsultationWithFollowUpAsync(
+        CurrentQueueAssignment assignment,
+        string username,
+        string password,
+        DateOnly followUpDate,
+        string followUpInstructions)
+    {
+        var request = new
+        {
+            queueId = assignment.QueueId,
+            patientId = assignment.PatientId,
+            symptoms = "SWC-28 E2E follow-up fixture",
+            examinationFindings = "Stable during E2E assessment",
+            diagnosis = "SWC-28 E2E assessment",
+            notes = "Created by isolated Selenium test data",
+            followUpDate = followUpDate.ToString("yyyy-MM-dd"),
+            followUpInstructions,
+        };
+
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Post, "/api/consultations", request, token);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SeededConsultation>(Json)
+            ?? throw new InvalidOperationException("Empty response creating a seed consultation.");
+    }
+
+    private async Task RecordVitalSignsAsync(string consultationId, string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Post,
+            $"/api/consultations/{consultationId}/vitals",
+            new { temperatureCelsius = 37.0m },
+            token);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task CompleteConsultationAsync(string consultationId, string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Post,
+            $"/api/consultations/{consultationId}/complete",
+            new { },
+            token);
+        response.EnsureSuccessStatusCode();
+    }
+
     // password is null for the dev-seeded accounts (dr.chen, reception.silva,
     // admin.fernando), which all share TestConfig.SeedPassword; a throwaway account
     // created via CreateUser carries its own generated password instead.
@@ -333,9 +400,22 @@ public sealed record SeededUser(
 public sealed record CalledQueueEntry(string QueueNumber, string RoomNumber);
 
 public sealed record CurrentQueueAssignment(
+    string QueueId,
     string PatientId,
     string QueueNumber,
     string Status,
     string DoctorId,
     string DoctorName,
     string RoomNumber);
+
+public sealed record SeededConsultation(
+    string Id,
+    string QueueId,
+    string PatientId,
+    string DoctorId,
+    string DoctorName,
+    string RoomNumber,
+    string Symptoms,
+    string Diagnosis,
+    string? FollowUpDate,
+    string? FollowUpInstructions);
