@@ -10,6 +10,16 @@ namespace QueueService.UnitTests.Services;
 
 public class QueueCompletionServiceTests
 {
+    private static readonly DateTimeOffset CompletionTime =
+        new(2026, 9, 22, 7, 30, 0, TimeSpan.Zero);
+
+    private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => UtcNow;
+    }
+
     [Fact]
     public async Task CompletionUpdatesQueueAndRecordsEventExactlyOnce()
     {
@@ -19,14 +29,19 @@ public class QueueCompletionServiceTests
         db.QueueEntries.Add(entry);
         await db.SaveChangesAsync();
         var completedEvent = NewEvent(entry);
-        var service = new QueueCompletionService(db, TimeProvider.System);
+        var timeProvider = new MutableTimeProvider(CompletionTime);
+        var service = new QueueCompletionService(db, timeProvider);
 
         var first = await service.CompleteAsync(completedEvent);
+        timeProvider.UtcNow = CompletionTime.AddMinutes(5);
         var duplicate = await service.CompleteAsync(completedEvent);
 
         Assert.Equal(QueueCompletionOutcome.Completed, first);
         Assert.Equal(QueueCompletionOutcome.DuplicateEvent, duplicate);
-        Assert.Equal(QueueStatus.Completed, (await db.QueueEntries.SingleAsync()).Status);
+        var completedEntry = await db.QueueEntries.SingleAsync();
+        Assert.Equal(QueueStatus.Completed, completedEntry.Status);
+        Assert.Equal(CompletionTime.UtcDateTime, completedEntry.CompletedAt);
+        Assert.Equal(DateTimeKind.Utc, completedEntry.CompletedAt?.Kind);
         Assert.Equal(completedEvent.EventId, (await db.ProcessedEvents.SingleAsync()).EventId);
     }
 
@@ -38,13 +53,16 @@ public class QueueCompletionServiceTests
         var entry = NewActiveEntry();
         db.QueueEntries.Add(entry);
         await db.SaveChangesAsync();
-        var service = new QueueCompletionService(db, TimeProvider.System);
+        var timeProvider = new MutableTimeProvider(CompletionTime);
+        var service = new QueueCompletionService(db, timeProvider);
 
         await service.CompleteAsync(NewEvent(entry));
+        timeProvider.UtcNow = CompletionTime.AddMinutes(5);
         var outcome = await service.CompleteAsync(NewEvent(entry));
 
         Assert.Equal(QueueCompletionOutcome.AlreadyCompleted, outcome);
         Assert.Equal(QueueStatus.Completed, entry.Status);
+        Assert.Equal(CompletionTime.UtcDateTime, entry.CompletedAt);
         Assert.Equal(2, await db.ProcessedEvents.CountAsync());
     }
 
