@@ -230,8 +230,24 @@ export function QueueManagementPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                         {row.doctorName ?? '—'}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-500">
-                        <span title="Prescription status is not available yet">—</span>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {row.status === 'COMPLETED' ? (
+                          <button
+                            type="button"
+                            disabled
+                            title="Prescription viewing will be available with SWC-30"
+                            className="border-2 border-slate-300 bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-slate-500 disabled:cursor-not-allowed"
+                          >
+                            View Prescription
+                          </button>
+                        ) : (
+                          <span
+                            className="text-slate-500"
+                            title="Available after the consultation is completed"
+                          >
+                            —
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

@@ -21,6 +21,7 @@ export interface TodayQueueEntry {
   status: TodayQueueStatus;
   roomNumber: string | null;
   doctorName: string | null;
+  completedAt: string | null;
 }
 
 export function getTodayQueue(): Promise<TodayQueueEntry[]> {
