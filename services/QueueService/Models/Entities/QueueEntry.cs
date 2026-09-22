@@ -26,6 +26,7 @@ public sealed class QueueEntry : IHasTimestamps
     public Guid? DoctorId { get; set; }
     public string? DoctorName { get; set; }
     public DateTime? CalledAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

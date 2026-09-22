@@ -5,6 +5,7 @@ using QueueService.Data;
 using QueueService.Models.Configuration;
 using QueueService.Models.Entities;
 using QueueService.Models.Enums;
+using QueueService.Models.Events;
 using QueueService.Services;
 
 namespace QueueService.UnitTests.Services;
@@ -74,6 +75,7 @@ public class TodayQueueServiceTests
         var completed = NewEntry(today, "Q-003", QueueStatus.Completed);
         completed.RoomNumber = "1";
         completed.DoctorName = "Dr Ayesha Perera";
+        completed.CompletedAt = new DateTime(2026, 9, 2, 6, 45, 0, DateTimeKind.Utc);
         dbContext.QueueEntries.AddRange(waiting, inConsultation, completed);
         await dbContext.SaveChangesAsync();
 
@@ -89,18 +91,22 @@ public class TodayQueueServiceTests
                 Assert.Equal("WAITING", entry.Status);
                 Assert.Null(entry.RoomNumber);
                 Assert.Null(entry.DoctorName);
+                Assert.Null(entry.CompletedAt);
             },
             entry =>
             {
                 Assert.Equal("IN_CONSULTATION", entry.Status);
                 Assert.Equal("2", entry.RoomNumber);
                 Assert.Equal("Dr Nimal Silva", entry.DoctorName);
+                Assert.Null(entry.CompletedAt);
             },
             entry =>
             {
                 Assert.Equal("COMPLETED", entry.Status);
                 Assert.Equal("1", entry.RoomNumber);
                 Assert.Equal("Dr Ayesha Perera", entry.DoctorName);
+                Assert.Equal(completed.CompletedAt, entry.CompletedAt);
+                Assert.Equal(DateTimeKind.Utc, entry.CompletedAt?.Kind);
             });
     }
 
@@ -275,9 +281,17 @@ public class TodayQueueServiceTests
 
         Assert.NotNull(await service.GetCurrentForDoctorAsync(doctorId));
 
-        active.Status = QueueStatus.Completed;
-        await dbContext.SaveChangesAsync();
+        var completedEvent = new ConsultationCompletedEvent(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            active.Id,
+            active.PatientId,
+            doctorId);
+        var outcome = await new QueueCompletionService(
+            dbContext,
+            new FixedTimeProvider(FixedUtcNow)).CompleteAsync(completedEvent);
 
+        Assert.Equal(QueueCompletionOutcome.Completed, outcome);
         Assert.Null(await service.GetCurrentForDoctorAsync(doctorId));
     }
 
