@@ -55,10 +55,17 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
         {
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.CreatedAt = now;
-            }
+                if (entry.Entity.CreatedAt == default)
+                {
+                    entry.Entity.CreatedAt = now;
+                }
 
-            if (entry.State is EntityState.Added or EntityState.Modified)
+                if (entry.Entity.UpdatedAt == default)
+                {
+                    entry.Entity.UpdatedAt = entry.Entity.CreatedAt;
+                }
+            }
+            else if (entry.State == EntityState.Modified)
             {
                 entry.Entity.UpdatedAt = now;
             }
