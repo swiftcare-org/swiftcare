@@ -169,6 +169,10 @@ export function PrescriptionPage() {
       });
 
       setSavedPrescription(prescription);
+      setHistory((current) => [
+        prescription,
+        ...current.filter((item) => item.id !== prescription.id),
+      ]);
       setSubmissionState('saved');
       setMessage('Prescription saved successfully.');
     } catch (error) {
@@ -251,7 +255,7 @@ export function PrescriptionPage() {
               )}
             </div>
 
-            <form className="mt-5 space-y-5" onSubmit={handleSubmit}>
+            <form className="mt-5 space-y-5" noValidate onSubmit={handleSubmit}>
               {medicines.length === 0 && submissionState !== 'saved' && (
                 <p className="border border-dashed border-slate-400 px-4 py-5 text-sm text-slate-600">
                   No medicines added.
