@@ -293,6 +293,9 @@ export function ConsultationPage() {
       navigate('/doctor/prescription', {
         state: {
           completed: true,
+          consultationId: createdConsultation.id,
+          queueId: createdConsultation.queueId,
+          patientId: currentPatient?.patientId,
           patientName: currentPatient?.patientName,
           queueNumber: currentPatient?.queueNumber,
         },
