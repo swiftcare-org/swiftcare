@@ -73,7 +73,7 @@ swiftcare/
 `-- README.md
 ```
 
-`ApiGateway/`, `services/AuthService/`, `services/PatientService/`, `services/QueueService/`, and `frontend/` contain the current Sprint 1 application slice. The remaining three services under `services/` are placeholder directories reserving the agreed layout.
+`ApiGateway/`, `frontend/`, and the AuthService, PatientService, QueueService, MedicalRecordService, and PrescriptionService projects contain implemented application slices. NotificationService remains a placeholder directory reserving the agreed layout.
 
 ## Prerequisites
 
@@ -165,6 +165,7 @@ dotnet ef database update --project services/AuthService --connection "Server=lo
 dotnet ef database update --project services/PatientService --connection "Server=localhost;Port=3306;Database=swiftcare_patient;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
 dotnet ef database update --project services/QueueService --connection "Server=localhost;Port=3306;Database=swiftcare_queue;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
 ConnectionStrings__MedicalRecordDb="Server=localhost;Port=3306;Database=swiftcare_medical_record;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;" dotnet run --project services/MedicalRecordService -- --migrate
+dotnet ef database update --project services/PrescriptionService --connection "Server=localhost;Port=3306;Database=swiftcare_prescription;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
 ```
 
 `--connection` is required for the direct `dotnet ef` commands. Each service's design-time DbContext factory supplies placeholder credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
@@ -175,7 +176,11 @@ Re-run these commands after pulling any change that adds a migration.
 
 ### Complete a consultation
 
-After a doctor saves a consultation and its vital signs, Complete Consultation writes `COMPLETE` and a stable event ID to the MedicalRecord database before publishing `consultation-completed` to Kafka. QueueService consumes that event, changes the matching queue entry from `IN_CONSULTATION` to `COMPLETED`, and stores its UTC completion time. The completed entry disappears from the doctor's current-patient card and the receptionist queue shows a disabled `View Prescription` action until SWC-30 connects it to PrescriptionService. If publishing fails, the doctor sees a retry message; the consultation remains complete in the database and retry republishes the same event ID. QueueService ignores duplicate deliveries with its `ProcessedEvents` ledger and preserves the original completion time. On success, the consultation flow opens a prescription placeholder because prescription entry is a later feature. See the [MedicalRecordService flow](services/MedicalRecordService/README.md#completing-a-consultation) for endpoint behavior.
+After a doctor saves a consultation and its vital signs, Complete Consultation writes `COMPLETE` and a stable event ID to the MedicalRecord database before publishing `consultation-completed` to Kafka. QueueService consumes that event, changes the matching queue entry from `IN_CONSULTATION` to `COMPLETED`, and stores its UTC completion time. The completed entry disappears from the doctor's current-patient card and the receptionist queue shows a disabled `View Prescription` action until SWC-30 connects the receptionist workflow. If publishing fails, the doctor sees a retry message; the consultation remains complete in the database and retry republishes the same event ID. QueueService ignores duplicate deliveries with its `ProcessedEvents` ledger and preserves the original completion time. On success, the doctor proceeds to the prescription form with the consultation, queue, and patient identifiers. See the [MedicalRecordService flow](services/MedicalRecordService/README.md#completing-a-consultation) for completion behavior.
+
+### Create a prescription
+
+After a successful consultation, a doctor can add multiple medicines with a name, dosage, frequency, duration, and optional instructions. The form shows PatientService allergy information as an advisory warning and loads the patient's previous prescriptions for reference. `POST /api/prescriptions` stores the consultation, queue, patient, and trusted doctor identifiers with a default `PENDING` status. A unique consultation index prevents a second prescription for the same consultation. See the [PrescriptionService guide](services/PrescriptionService/README.md) for endpoints, configuration, and local startup.
 
 ### Medical alerts and follow-ups
 
@@ -361,7 +366,7 @@ A successful CI run for `main` automatically deploys the shared Azure developmen
 
 CD sets both minimum and maximum replicas to `1` for Gateway, AuthService, PatientService, QueueService, and MedicalRecordService on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
 
-The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. The three placeholder services are not fabricated or deployed until their projects exist.
+The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. PrescriptionService deployment is separate from SWC-29, and the placeholder NotificationService is not fabricated or deployed until its project exists.
 
 Application Insights is not configured by CD yet because the current .NET projects have no Application Insights or OpenTelemetry instrumentation package. Adding telemetry is an application change and should be completed with the observability work below rather than represented by unused environment variables.
 
