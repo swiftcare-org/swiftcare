@@ -6,7 +6,7 @@ using PrescriptionService.Models.Entities;
 
 namespace PrescriptionService.Services;
 
-public sealed class PrescriptionCreationService(
+public sealed class PrescriptionManagementService(
     PrescriptionDbContext dbContext,
     TimeProvider timeProvider) : IPrescriptionService
 {
@@ -97,6 +97,26 @@ public sealed class PrescriptionCreationService(
         return new CreatePrescriptionResult(
             CreatePrescriptionOutcome.Success,
             ToResponse(prescription));
+    }
+
+    public async Task<IReadOnlyList<PrescriptionResponse>> GetForPatientAsync(
+        Guid patientId,
+        CancellationToken cancellationToken = default)
+    {
+        if (patientId == Guid.Empty)
+        {
+            throw new ArgumentException("Patient ID must be provided.", nameof(patientId));
+        }
+
+        var prescriptions = await dbContext.Prescriptions
+            .AsNoTracking()
+            .Include(prescription => prescription.Items)
+            .Where(prescription => prescription.PatientId == patientId)
+            .OrderByDescending(prescription => prescription.CreatedAt)
+            .ThenByDescending(prescription => prescription.Id)
+            .ToListAsync(cancellationToken);
+
+        return prescriptions.Select(ToResponse).ToArray();
     }
 
     private static string? NormalizeOptional(string? value) =>

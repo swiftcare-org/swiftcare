@@ -10,4 +10,8 @@ public interface IPrescriptionService
         Guid doctorId,
         string doctorName,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PrescriptionResponse>> GetForPatientAsync(
+        Guid patientId,
+        CancellationToken cancellationToken = default);
 }

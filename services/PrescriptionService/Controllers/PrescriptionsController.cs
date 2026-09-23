@@ -14,6 +14,27 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
     private const string UserIdHeaderName = "X-User-Id";
     private const string UserNameHeaderName = "X-User-Name";
 
+    [HttpGet("patient/{patientId:guid}")]
+    [ProducesResponseType(typeof(IReadOnlyList<PrescriptionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetPatientHistory(
+        Guid patientId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsDoctorRequest())
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new MessageResponse("Forbidden"));
+        }
+
+        var prescriptions = await prescriptionService.GetForPatientAsync(
+            patientId,
+            cancellationToken);
+
+        return Ok(prescriptions);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(PrescriptionResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -24,10 +45,7 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
         [FromBody] CreatePrescriptionRequest request,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(
-                Request.Headers[UserRoleHeaderName].FirstOrDefault(),
-                "Doctor",
-                StringComparison.Ordinal))
+        if (!IsDoctorRequest())
         {
             return StatusCode(
                 StatusCodes.Status403Forbidden,
@@ -63,4 +81,9 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
                 "Unsupported create-prescription outcome.")
         };
     }
+
+    private bool IsDoctorRequest() => string.Equals(
+        Request.Headers[UserRoleHeaderName].FirstOrDefault(),
+        "Doctor",
+        StringComparison.Ordinal);
 }

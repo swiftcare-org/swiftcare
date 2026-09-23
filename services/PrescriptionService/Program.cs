@@ -13,7 +13,7 @@ builder.Services.AddDbContext<PrescriptionDbContext>(options =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("PrescriptionDb"),
         new MySqlServerVersion(new Version(8, 4, 0))));
-builder.Services.AddScoped<IPrescriptionService, PrescriptionCreationService>();
+builder.Services.AddScoped<IPrescriptionService, PrescriptionManagementService>();
 builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();
