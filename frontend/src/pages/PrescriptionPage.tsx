@@ -10,15 +10,12 @@ import {
 } from '../api/prescriptions';
 import { AlertBanner } from '../components/AlertBanner';
 import { DashboardShell } from '../dashboards/DashboardShell';
-
-interface PrescriptionContext {
-  completed?: boolean;
-  consultationId?: string;
-  queueId?: string;
-  patientId?: string;
-  patientName?: string;
-  queueNumber?: string;
-}
+import { useAuth } from '../auth/useAuth';
+import {
+  findPendingPrescriptionContext,
+  isPrescriptionContext,
+  type PrescriptionContext,
+} from '../prescriptions/pendingPrescription';
 
 interface MedicineDraft extends Omit<PrescriptionMedicineInput, 'instructions'> {
   clientId: string;
@@ -26,6 +23,7 @@ interface MedicineDraft extends Omit<PrescriptionMedicineInput, 'instructions'> 
 }
 
 type LoadState = 'loading' | 'loaded' | 'error';
+type ContextLoadState = 'loading' | 'loaded' | 'error';
 type SubmissionState = 'idle' | 'submitting' | 'saved' | 'failed';
 
 const inputClassName =
@@ -50,8 +48,13 @@ function formatDateTime(value: string): string {
 }
 
 export function PrescriptionPage() {
+  const { user } = useAuth();
   const location = useLocation();
-  const context = location.state as PrescriptionContext | null;
+  const navigatedContext = isPrescriptionContext(location.state) ? location.state : null;
+  const [context, setContext] = useState<PrescriptionContext | null>(navigatedContext);
+  const [contextLoadState, setContextLoadState] = useState<ContextLoadState>(
+    navigatedContext ? 'loaded' : 'loading',
+  );
   const patientId = context?.patientId;
   const [medicines, setMedicines] = useState<MedicineDraft[]>([]);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
@@ -61,9 +64,35 @@ export function PrescriptionPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [savedPrescription, setSavedPrescription] = useState<Prescription | null>(null);
 
-  const hasPrescriptionContext = Boolean(
-    context?.consultationId && context.queueId && patientId,
-  );
+  const hasPrescriptionContext = isPrescriptionContext(context);
+
+  useEffect(() => {
+    if (navigatedContext) {
+      return;
+    }
+
+    let disposed = false;
+
+    async function recoverContext() {
+      try {
+        const recovered = await findPendingPrescriptionContext();
+        if (!disposed) {
+          setContext(recovered);
+          setContextLoadState('loaded');
+        }
+      } catch {
+        if (!disposed) {
+          setContextLoadState('error');
+        }
+      }
+    }
+
+    void recoverContext();
+
+    return () => {
+      disposed = true;
+    };
+  }, [navigatedContext, user?.userId]);
 
   useEffect(() => {
     if (!patientId) {
@@ -203,7 +232,15 @@ export function PrescriptionPage() {
         )}
       </section>
 
-      {!hasPrescriptionContext ? (
+      {contextLoadState === 'loading' ? (
+        <p className="mt-6 text-sm text-slate-600">Recovering your pending prescription...</p>
+      ) : contextLoadState === 'error' ? (
+        <section className="mt-6 border border-red-300 bg-red-50 px-6 py-6" role="alert">
+          <p className="text-sm text-red-900">
+            Unable to check for a pending prescription. Please try again.
+          </p>
+        </section>
+      ) : !hasPrescriptionContext ? (
         <section className="mt-6 border border-slate-300 bg-white px-6 py-6">
           <p className="text-sm text-slate-700">
             Prescription details are unavailable. Complete a consultation before creating

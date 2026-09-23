@@ -12,6 +12,8 @@ PrescriptionService owns digital prescriptions and their medicine items. It stor
 - Returns a patient's previous prescriptions newest first for clinical reference.
 - Rejects a second prescription for the same consultation.
 
+The doctor dashboard and prescription page can recover an unfinished prescription after navigation state is lost. They read the authenticated doctor's latest completed consultation from MedicalRecordService and compare its consultation ID with PrescriptionService history before offering the form again.
+
 Allergy details remain owned by PatientService. The frontend reads them from PatientService and displays advisory warnings on the prescription form; PrescriptionService neither copies allergies nor blocks a prescription because an allergy exists.
 
 ## Port

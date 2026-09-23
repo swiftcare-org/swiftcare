@@ -4,6 +4,10 @@ namespace MedicalRecordService.Data;
 
 public interface IConsultationCompletionRepository
 {
+    Task<CompletedConsultationContextResponse?> FindLatestCompletedAsync(
+        Guid doctorId,
+        CancellationToken cancellationToken = default);
+
     Task<ConsultationProgressResponse?> FindByQueueAsync(
         Guid queueId,
         Guid doctorId,

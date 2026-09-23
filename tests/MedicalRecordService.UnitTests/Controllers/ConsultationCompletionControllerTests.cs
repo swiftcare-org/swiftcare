@@ -116,6 +116,67 @@ public class ConsultationCompletionControllerTests
         service.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task LatestCompletedLookupReturnsDoctorConsultationContext()
+    {
+        var doctorId = Guid.NewGuid();
+        var context = new CompletedConsultationContextResponse(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid());
+        var service = new Mock<IConsultationCompletionService>(MockBehavior.Strict);
+        service.Setup(item => item.FindLatestCompletedAsync(
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+
+        var result = await CreateCompletedContextController(
+                service,
+                "Doctor",
+                doctorId.ToString())
+            .GetLatest(CancellationToken.None);
+
+        Assert.Same(context, Assert.IsType<OkObjectResult>(result).Value);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task LatestCompletedLookupReturnsNoContentWhenDoctorHasNoCompletedConsultation()
+    {
+        var doctorId = Guid.NewGuid();
+        var service = new Mock<IConsultationCompletionService>(MockBehavior.Strict);
+        service.Setup(item => item.FindLatestCompletedAsync(
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CompletedConsultationContextResponse?)null);
+
+        var result = await CreateCompletedContextController(
+                service,
+                "Doctor",
+                doctorId.ToString())
+            .GetLatest(CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Receptionist", "invalid", 403)]
+    [InlineData("Doctor", "invalid", 401)]
+    public async Task LatestCompletedLookupRejectsUntrustedIdentityBeforeCallingService(
+        string role,
+        string userId,
+        int expectedStatus)
+    {
+        var service = new Mock<IConsultationCompletionService>(MockBehavior.Strict);
+
+        var result = await CreateCompletedContextController(service, role, userId)
+            .GetLatest(CancellationToken.None);
+
+        Assert.Equal(expectedStatus, Assert.IsAssignableFrom<ObjectResult>(result).StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
     private static ConsultationCompletionController CreateCompletionController(
         Mock<IConsultationCompletionService> service, string role, string userId)
     {
@@ -128,6 +189,16 @@ public class ConsultationCompletionControllerTests
         Mock<IConsultationCompletionService> service, string role, string userId)
     {
         var controller = new ConsultationProgressController(service.Object);
+        SetIdentity(controller, role, userId);
+        return controller;
+    }
+
+    private static CompletedConsultationContextController CreateCompletedContextController(
+        Mock<IConsultationCompletionService> service,
+        string role,
+        string userId)
+    {
+        var controller = new CompletedConsultationContextController(service.Object);
         SetIdentity(controller, role, userId);
         return controller;
     }

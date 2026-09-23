@@ -11,6 +11,29 @@ namespace MedicalRecordService.UnitTests.Services;
 public class ConsultationCompletionServiceTests
 {
     [Fact]
+    public async Task LatestCompletedLookupUsesAuthenticatedDoctorId()
+    {
+        var doctorId = Guid.NewGuid();
+        var context = new CompletedConsultationContextResponse(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid());
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        repository.Setup(item => item.FindLatestCompletedAsync(
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+
+        var result = await CreateService(repository, publisher)
+            .FindLatestCompletedAsync(doctorId);
+
+        Assert.Same(context, result);
+        repository.VerifyAll();
+        publisher.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task CompletePreparesDatabaseBeforePublishingStoredEvent()
     {
         var consultationId = Guid.NewGuid();

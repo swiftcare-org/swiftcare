@@ -14,6 +14,35 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
         _connectionFactory = connectionFactory;
     }
 
+    public async Task<CompletedConsultationContextResponse?> FindLatestCompletedAsync(
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, QueueId, PatientId
+            FROM Consultations
+            WHERE DoctorId = @DoctorId AND Status = @CompleteStatus
+            ORDER BY ConsultationDate DESC, CreatedAt DESC, Id DESC
+            LIMIT 1;
+            """;
+        command.Parameters.Add("@DoctorId", MySqlDbType.VarChar, 36).Value = doctorId.ToString();
+        command.Parameters.Add("@CompleteStatus", MySqlDbType.VarChar, 16).Value =
+            Consultation.CompleteStatus;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new CompletedConsultationContextResponse(
+            Guid.Parse(reader.GetValue(0).ToString()!),
+            Guid.Parse(reader.GetValue(1).ToString()!),
+            Guid.Parse(reader.GetValue(2).ToString()!));
+    }
+
     public async Task<ConsultationProgressResponse?> FindByQueueAsync(
         Guid queueId,
         Guid doctorId,

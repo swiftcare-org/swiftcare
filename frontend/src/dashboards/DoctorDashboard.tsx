@@ -14,6 +14,10 @@ import {
   resolveCurrentPatient,
   type CurrentPatient,
 } from '../consultations/currentPatient';
+import {
+  findPendingPrescriptionContext,
+  type PrescriptionContext,
+} from '../prescriptions/pendingPrescription';
 import { DashboardShell } from './DashboardShell';
 
 type WaitingPoolLoadState = 'loading' | 'loaded' | 'error';
@@ -104,7 +108,32 @@ export function DoctorDashboard() {
   const [currentPatientError, setCurrentPatientError] = useState<string | null>(null);
   const [currentRefreshKey, setCurrentRefreshKey] = useState(0);
   const [callNextBlocked, setCallNextBlocked] = useState(false);
+  const [pendingPrescription, setPendingPrescription] =
+    useState<PrescriptionContext | null>(null);
   const assignmentVersion = useRef(0);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadPendingPrescription() {
+      try {
+        const context = await findPendingPrescriptionContext();
+        if (!disposed) {
+          setPendingPrescription(context);
+        }
+      } catch {
+        if (!disposed) {
+          setPendingPrescription(null);
+        }
+      }
+    }
+
+    void loadPendingPrescription();
+
+    return () => {
+      disposed = true;
+    };
+  }, [currentPatient?.queueId, user?.userId]);
 
   useEffect(() => {
     let disposed = false;
@@ -263,6 +292,25 @@ export function DoctorDashboard() {
           Search Patients
         </Link>
       </div>
+
+      {pendingPrescription && (
+        <section className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
+            Prescription Pending
+          </p>
+          <p className="mt-1 text-sm text-amber-950">
+            Finish the prescription for{' '}
+            {pendingPrescription.patientName ?? 'your latest completed consultation'}.
+          </p>
+          <Link
+            to="/doctor/prescription"
+            state={pendingPrescription}
+            className="mt-3 inline-block bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+          >
+            Continue Prescription
+          </Link>
+        </section>
+      )}
 
       <section className="mt-8" aria-labelledby="waiting-pool-heading">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-300 pb-3">
