@@ -4,6 +4,7 @@
     <Project Path="services/PatientService/PatientService.csproj" />
     <Project Path="services/QueueService/QueueService.csproj" />
     <Project Path="services/MedicalRecordService/MedicalRecordService.csproj" />
+    <Project Path="services/PrescriptionService/PrescriptionService.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AuthService.UnitTests/AuthService.UnitTests.csproj" />
