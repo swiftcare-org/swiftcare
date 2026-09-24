@@ -9,7 +9,7 @@ Terraform owns stable infrastructure:
 - `swiftcare-rg`
 - `swiftcare-vnet` and its delegated subnets
 - private DNS zones and VNet links
-- `swiftcare-mysql` and the AuthService, PatientService and QueueService databases
+- `swiftcare-mysql` and the AuthService, PatientService, QueueService, MedicalRecordService and PrescriptionService databases
 - `swiftcare-logs`
 - `swiftcare-appinsights` (Application Insights, workspace-based on `swiftcare-logs`)
 - `swiftcare-aca-env`
@@ -19,7 +19,7 @@ Terraform owns stable infrastructure:
 
 The CD workflow owns deployable application state:
 
-- Gateway, AuthService, PatientService and QueueService Container Apps
+- Gateway, AuthService, PatientService, QueueService, MedicalRecordService and PrescriptionService Container Apps
 - database migration and administrator-bootstrap jobs
 - application images, revisions, ingress and secrets
 - the `api.swiftcare.me` Gateway binding and its managed certificate
