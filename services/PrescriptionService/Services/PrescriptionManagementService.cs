@@ -119,6 +119,133 @@ public sealed class PrescriptionManagementService(
         return prescriptions.Select(ToResponse).ToArray();
     }
 
+    public async Task<PrescriptionItemChangeResult> AddMedicineAsync(
+        Guid prescriptionId,
+        PrescriptionItemRequest medicine,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateMedicineChangeArguments(prescriptionId, doctorId);
+        ArgumentNullException.ThrowIfNull(medicine);
+
+        var prescription = await FindDoctorPrescriptionAsync(
+            prescriptionId,
+            doctorId,
+            cancellationToken);
+        if (prescription is null)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionNotFound);
+        }
+
+        if (IsDispensed(prescription))
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionDispensed);
+        }
+
+        var nextOrder = prescription.Items.Count == 0
+            ? 0
+            : prescription.Items.Max(item => item.ItemOrder) + 1;
+        prescription.Items.Add(new PrescriptionItem
+        {
+            Id = Guid.NewGuid(),
+            ItemOrder = nextOrder,
+            MedicineName = medicine.MedicineName.Trim(),
+            Dosage = medicine.Dosage.Trim(),
+            Frequency = medicine.Frequency.Trim(),
+            Duration = medicine.Duration.Trim(),
+            Instructions = NormalizeOptional(medicine.Instructions)
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new PrescriptionItemChangeResult(
+            PrescriptionItemChangeOutcome.Success,
+            ToResponse(prescription));
+    }
+
+    public async Task<PrescriptionItemChangeResult> RemoveMedicineAsync(
+        Guid prescriptionId,
+        Guid medicineId,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateMedicineChangeArguments(prescriptionId, doctorId);
+        if (medicineId == Guid.Empty)
+        {
+            throw new ArgumentException("Medicine ID must be provided.", nameof(medicineId));
+        }
+
+        var prescription = await FindDoctorPrescriptionAsync(
+            prescriptionId,
+            doctorId,
+            cancellationToken);
+        if (prescription is null)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionNotFound);
+        }
+
+        if (IsDispensed(prescription))
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionDispensed);
+        }
+
+        var medicine = prescription.Items.SingleOrDefault(item => item.Id == medicineId);
+        if (medicine is null)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.MedicineNotFound);
+        }
+
+        if (prescription.Items.Count <= 1)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.MinimumOneMedicineRequired);
+        }
+
+        prescription.Items.Remove(medicine);
+        dbContext.PrescriptionItems.Remove(medicine);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new PrescriptionItemChangeResult(
+            PrescriptionItemChangeOutcome.Success,
+            ToResponse(prescription));
+    }
+
+    private Task<Prescription?> FindDoctorPrescriptionAsync(
+        Guid prescriptionId,
+        Guid doctorId,
+        CancellationToken cancellationToken) =>
+        dbContext.Prescriptions
+            .Include(prescription => prescription.Items)
+            .SingleOrDefaultAsync(
+                prescription => prescription.Id == prescriptionId
+                    && prescription.DoctorId == doctorId,
+                cancellationToken);
+
+    private static void ValidateMedicineChangeArguments(Guid prescriptionId, Guid doctorId)
+    {
+        if (prescriptionId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Prescription ID must be provided.",
+                nameof(prescriptionId));
+        }
+
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
+    }
+
+    private static bool IsDispensed(Prescription prescription) => string.Equals(
+        prescription.Status,
+        Prescription.DispensedStatus,
+        StringComparison.Ordinal);
+
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 

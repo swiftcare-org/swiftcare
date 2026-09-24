@@ -14,4 +14,16 @@ public interface IPrescriptionService
     Task<IReadOnlyList<PrescriptionResponse>> GetForPatientAsync(
         Guid patientId,
         CancellationToken cancellationToken = default);
+
+    Task<PrescriptionItemChangeResult> AddMedicineAsync(
+        Guid prescriptionId,
+        PrescriptionItemRequest medicine,
+        Guid doctorId,
+        CancellationToken cancellationToken = default);
+
+    Task<PrescriptionItemChangeResult> RemoveMedicineAsync(
+        Guid prescriptionId,
+        Guid medicineId,
+        Guid doctorId,
+        CancellationToken cancellationToken = default);
 }
