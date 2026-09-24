@@ -66,6 +66,98 @@ public class PrescriptionsControllerTests
         service.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task AddMedicineReturnsCreatedPrescriptionForDoctor()
+    {
+        var prescriptionId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+        var request = ValidRequest().Medicines[0];
+        var expected = ExpectedResponse(ValidRequest(), doctorId);
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.AddMedicineAsync(
+                prescriptionId,
+                request,
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.Success,
+                expected));
+        var controller = CreateController(service, "Doctor", doctorId);
+
+        var result = await controller.AddMedicine(
+            prescriptionId,
+            request,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status201Created, response.StatusCode);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task RemoveMedicineReturnsUpdatedPrescriptionForDoctor()
+    {
+        var prescriptionId = Guid.NewGuid();
+        var medicineId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+        var expected = ExpectedResponse(ValidRequest(), doctorId);
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.RemoveMedicineAsync(
+                prescriptionId,
+                medicineId,
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.Success,
+                expected));
+        var controller = CreateController(service, "Doctor", doctorId);
+
+        var result = await controller.RemoveMedicine(
+            prescriptionId,
+            medicineId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData(
+        PrescriptionItemChangeOutcome.MinimumOneMedicineRequired,
+        "Prescription must have at least one medicine")]
+    [InlineData(
+        PrescriptionItemChangeOutcome.PrescriptionDispensed,
+        "Cannot modify a dispensed prescription")]
+    public async Task RemoveMedicineMapsBusinessRuleConflict(
+        PrescriptionItemChangeOutcome outcome,
+        string expectedMessage)
+    {
+        var prescriptionId = Guid.NewGuid();
+        var medicineId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.RemoveMedicineAsync(
+                prescriptionId,
+                medicineId,
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrescriptionItemChangeResult(outcome));
+        var controller = CreateController(service, "Doctor", doctorId);
+
+        var result = await controller.RemoveMedicine(
+            prescriptionId,
+            medicineId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ConflictObjectResult>(result);
+        var message = Assert.IsType<MessageResponse>(response.Value);
+        Assert.Equal(expectedMessage, message.Message);
+        service.VerifyAll();
+    }
+
     private static PrescriptionsController CreateController(
         Mock<IPrescriptionService> service,
         string role,
