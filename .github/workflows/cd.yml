@@ -34,6 +34,7 @@ env:
   PATIENT_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-patient
   MEDICAL_RECORD_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-medical-record
   QUEUE_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-queue
+  PRESCRIPTION_IMAGE: ghcr.io/${{ github.repository_owner }}/swiftcare-prescription
 
 jobs:
   manual-quality-gate:
@@ -127,6 +128,17 @@ jobs:
           cache-from: type=gha,scope=swiftcare-medical-record
           cache-to: type=gha,mode=max,scope=swiftcare-medical-record
 
+      - name: Build and push PrescriptionService
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/PrescriptionService/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.PRESCRIPTION_IMAGE }}:${{ env.DEPLOY_SHA }}
+          cache-from: type=gha,scope=swiftcare-prescription
+          cache-to: type=gha,mode=max,scope=swiftcare-prescription
+
   deploy-backend:
     name: Migrate and deploy backend
     needs: images
@@ -153,6 +165,10 @@ jobs:
       MEDICAL_RECORD_MIGRATE_JOB: ${{ vars.AZURE_MEDICAL_RECORD_MIGRATE_JOB }}
       MEDICAL_RECORD_DB_USER: ${{ vars.MEDICAL_RECORD_DB_USER }}
       MEDICAL_RECORD_DB_PASSWORD: ${{ secrets.MEDICAL_RECORD_DB_PASSWORD }}
+      PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
+      PRESCRIPTION_MIGRATE_JOB: ${{ vars.AZURE_PRESCRIPTION_MIGRATE_JOB }}
+      PRESCRIPTION_DB_USER: ${{ vars.PRESCRIPTION_DB_USER }}
+      PRESCRIPTION_DB_PASSWORD: ${{ secrets.PRESCRIPTION_DB_PASSWORD }}
       QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
       AUTH_MIGRATE_JOB: ${{ vars.AZURE_AUTH_MIGRATE_JOB }}
       PATIENT_MIGRATE_JOB: ${{ vars.AZURE_PATIENT_MIGRATE_JOB }}
@@ -191,11 +207,12 @@ jobs:
           set -euo pipefail
           required=(
             AZURE_LOCATION AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID
-            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP QUEUE_APP MEDICAL_RECORD_APP
-            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB QUEUE_MIGRATE_JOB MEDICAL_RECORD_MIGRATE_JOB AUTH_BOOTSTRAP_JOB
+            RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GATEWAY_APP AUTH_APP PATIENT_APP QUEUE_APP MEDICAL_RECORD_APP PRESCRIPTION_APP
+            AUTH_MIGRATE_JOB PATIENT_MIGRATE_JOB QUEUE_MIGRATE_JOB MEDICAL_RECORD_MIGRATE_JOB PRESCRIPTION_MIGRATE_JOB AUTH_BOOTSTRAP_JOB
             MYSQL_SERVER_NAME MYSQL_FQDN
             AUTH_DB_USER AUTH_DB_PASSWORD PATIENT_DB_USER PATIENT_DB_PASSWORD
             MEDICAL_RECORD_DB_USER MEDICAL_RECORD_DB_PASSWORD
+            PRESCRIPTION_DB_USER PRESCRIPTION_DB_PASSWORD
             QUEUE_DB_USER QUEUE_DB_PASSWORD
             KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
             KAFKA_BOOTSTRAP_SERVERS KAFKA_PATIENT_CHECKED_IN_TOPIC
@@ -402,10 +419,13 @@ jobs:
           medical_record_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_medical_record;User Id=${MEDICAL_RECORD_DB_USER};Password=${MEDICAL_RECORD_DB_PASSWORD};SslMode=Required;"
           echo "::add-mask::$medical_record_connection"
           echo "::add-mask::$queue_connection"
+          prescription_connection="Server=${MYSQL_FQDN};Port=3306;Database=swiftcare_prescription;User Id=${PRESCRIPTION_DB_USER};Password=${PRESCRIPTION_DB_PASSWORD};SslMode=Required;"
+          echo "::add-mask::$prescription_connection"
           {
             echo "AUTH_DB_CONNECTION=$auth_connection"
             echo "PATIENT_DB_CONNECTION=$patient_connection"
             echo "MEDICAL_RECORD_DB_CONNECTION=$medical_record_connection"
+            echo "PRESCRIPTION_DB_CONNECTION=$prescription_connection"
             echo "QUEUE_DB_CONNECTION=$queue_connection"
           } >> "$GITHUB_ENV"
 
@@ -689,6 +709,76 @@ jobs:
           echo "::error::MedicalRecordService database migration timed out after 10 minutes"
           exit 1
 
+      - name: Configure the PrescriptionService migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$PRESCRIPTION_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" >/dev/null 2>&1; then
+            az containerapp job registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp job secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" \
+              --secrets "prescription-db=$PRESCRIPTION_DB_CONNECTION" \
+              --only-show-errors >/dev/null
+            az containerapp job update \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --set-env-vars "ConnectionStrings__PrescriptionDb=secretref:prescription-db" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp job create \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --trigger-type Manual \
+              --replica-timeout 600 --replica-retry-limit 1 \
+              --replica-completion-count 1 --parallelism 1 \
+              --image "$image" --args=--migrate \
+              --cpu 0.25 --memory 0.5Gi \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --secrets "prescription-db=$PRESCRIPTION_DB_CONNECTION" \
+              --env-vars "ConnectionStrings__PrescriptionDb=secretref:prescription-db" \
+              --only-show-errors >/dev/null
+          fi
+
+      - name: Apply PrescriptionService database migrations inside the VNet
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution=$(az containerapp job start \
+            --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" \
+            --query name --output tsv)
+          echo "Started PrescriptionService database migration $execution"
+
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_MIGRATE_JOB" \
+              --job-execution-name "$execution" \
+              --query properties.status --output tsv 2>/dev/null || true)
+            case "$status" in
+              Succeeded)
+                echo "PrescriptionService database migration succeeded."
+                exit 0
+                ;;
+              Failed|Degraded)
+                echo "::error::PrescriptionService database migration ended with $status"
+                exit 1
+                ;;
+              *)
+                echo "PrescriptionService migration status: ${status:-Pending} (attempt $attempt/60)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::PrescriptionService database migration timed out after 10 minutes"
+          exit 1
+
       - name: Bootstrap the initial administrator
         if: github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
         shell: bash
@@ -797,6 +887,7 @@ jobs:
           capture_image "$PATIENT_APP" patient_image
           capture_image "$QUEUE_APP" queue_image
           capture_image "$MEDICAL_RECORD_APP" medical_record_image
+          capture_image "$PRESCRIPTION_APP" prescription_image
           capture_image "$GATEWAY_APP" gateway_image
 
       - name: Deploy AuthService with internal ingress
@@ -1157,6 +1248,72 @@ jobs:
           echo "::error::MedicalRecordService did not become ready within 5 minutes"
           exit 1
 
+      - name: Deploy PrescriptionService with internal ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$PRESCRIPTION_IMAGE:$DEPLOY_SHA"
+
+          if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+              --server ghcr.io --username "$GHCR_USERNAME" --password "$GHCR_TOKEN" \
+              --only-show-errors >/dev/null
+            az containerapp secret set \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+              --secrets \
+                "prescription-db=$PRESCRIPTION_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --only-show-errors >/dev/null
+            az containerapp update \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+              --image "$image" --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 \
+              --set-env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
+                "ASPNETCORE_URLS=http://+:5001" \
+                "ConnectionStrings__PrescriptionDb=secretref:prescription-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+              --only-show-errors >/dev/null
+          else
+            az containerapp create \
+              --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+              --environment "$CONTAINERAPPS_ENVIRONMENT" \
+              --image "$image" \
+              --registry-server ghcr.io \
+              --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \
+              --ingress internal --target-port 5001 \
+              --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 \
+              --secrets \
+                "prescription-db=$PRESCRIPTION_DB_CONNECTION" \
+                "gateway-secret=$GATEWAY_INTERNAL_SECRET" \
+              --env-vars \
+                "ASPNETCORE_ENVIRONMENT=Production" \
+                "APPLICATIONINSIGHTS_CONNECTION_STRING=$APPLICATIONINSIGHTS_CONNECTION_STRING" \
+                "ASPNETCORE_URLS=http://+:5001" \
+                "ConnectionStrings__PrescriptionDb=secretref:prescription-db" \
+                "Gateway__InternalSecret=secretref:gateway-secret" \
+              --only-show-errors >/dev/null
+          fi
+
+          az containerapp ingress enable \
+            --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+            --type internal --target-port 5001 --transport auto \
+            --only-show-errors >/dev/null
+          az containerapp revision set-mode \
+            --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+            --mode single --only-show-errors >/dev/null
+
+          external=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" \
+            --query properties.configuration.ingress.external --output tsv)
+          if [ "$external" != "false" ]; then
+            echo "::error::PrescriptionService ingress is not internal"
+            exit 1
+          fi
+
       - name: Deploy the gateway last
         id: gateway
         shell: bash
@@ -1206,6 +1363,10 @@ jobs:
           medical_record_fqdn=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$MEDICAL_RECORD_APP" --query properties.configuration.ingress.fqdn --output tsv)
           if [ -z "$medical_record_fqdn" ]; then echo "::error::MedicalRecordService has no internal FQDN"; exit 1; fi
           medical_record_proxy_address="https://${medical_record_fqdn}"
+
+          prescription_fqdn=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$PRESCRIPTION_APP" --query properties.configuration.ingress.fqdn --output tsv)
+          if [ -z "$prescription_fqdn" ]; then echo "::error::PrescriptionService has no internal FQDN"; exit 1; fi
+          prescription_proxy_address="https://${prescription_fqdn}"
 
           auth_fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" --name "$AUTH_APP" \
@@ -1265,6 +1426,7 @@ jobs:
                 "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
                 "ReverseProxy__Clusters__medical-record-cluster__Destinations__medical-record-destination__Address=$medical_record_proxy_address" \
                 "ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address=$queue_proxy_address" \
+                "ReverseProxy__Clusters__prescription-cluster__Destinations__prescription-destination__Address=$prescription_proxy_address" \
               --only-show-errors >/dev/null
           else
             az containerapp create \
@@ -1293,6 +1455,7 @@ jobs:
                 "ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address=$patient_proxy_address" \
                 "ReverseProxy__Clusters__medical-record-cluster__Destinations__medical-record-destination__Address=$medical_record_proxy_address" \
                 "ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address=$queue_proxy_address" \
+                "ReverseProxy__Clusters__prescription-cluster__Destinations__prescription-destination__Address=$prescription_proxy_address" \
               --only-show-errors >/dev/null
           fi
 
@@ -1469,6 +1632,7 @@ jobs:
           PATIENT_PREVIOUS_IMAGE: ${{ steps.previous-images.outputs.patient_image }}
           QUEUE_PREVIOUS_IMAGE: ${{ steps.previous-images.outputs.queue_image }}
           MEDICAL_RECORD_PREVIOUS_IMAGE: ${{ steps.previous-images.outputs.medical_record_image }}
+          PRESCRIPTION_PREVIOUS_IMAGE: ${{ steps.previous-images.outputs.prescription_image }}
           GATEWAY_PREVIOUS_IMAGE: ${{ steps.previous-images.outputs.gateway_image }}
         run: |
           set -euo pipefail
@@ -1493,6 +1657,7 @@ jobs:
           rollback_app "$PATIENT_APP" "$PATIENT_PREVIOUS_IMAGE"
           rollback_app "$QUEUE_APP" "$QUEUE_PREVIOUS_IMAGE"
           rollback_app "$MEDICAL_RECORD_APP" "$MEDICAL_RECORD_PREVIOUS_IMAGE"
+          rollback_app "$PRESCRIPTION_APP" "$PRESCRIPTION_PREVIOUS_IMAGE"
           rollback_app "$GATEWAY_APP" "$GATEWAY_PREVIOUS_IMAGE"
 
           echo "::error::Deployment failed and was rolled back to the previous images. Investigate the failed deploy before retrying."
