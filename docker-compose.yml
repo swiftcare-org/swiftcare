@@ -191,6 +191,23 @@ services:
     networks:
       - swiftcare-network
 
+  prescriptionservice:
+    build:
+      context: .
+      dockerfile: services/PrescriptionService/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__PrescriptionDb: "Server=mysql;Port=3306;Database=${PRESCRIPTION_DB_NAME};User Id=${MYSQL_USER};Password=${MYSQL_PASSWORD};"
+      Gateway__InternalSecret: ${GATEWAY_INTERNAL_SECRET}
+    ports:
+      - "${PRESCRIPTION_SERVICE_PORT:-5001}:5001"
+    networks:
+      - swiftcare-network
+
   apigateway:
     build:
       context: .
@@ -205,6 +222,8 @@ services:
         condition: service_healthy
       queueservice:
         condition: service_healthy
+      prescriptionservice:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       Jwt__SecretKey: ${JWT_SIGNING_KEY}
@@ -215,6 +234,7 @@ services:
       ReverseProxy__Clusters__patient-cluster__Destinations__patient-destination__Address: http://patientservice:5002
       ReverseProxy__Clusters__medical-record-cluster__Destinations__medical-record-destination__Address: http://medicalrecordservice:5004
       ReverseProxy__Clusters__queue-cluster__Destinations__queue-destination__Address: http://queueservice:5003
+      ReverseProxy__Clusters__prescription-cluster__Destinations__prescription-destination__Address: http://prescriptionservice:5001
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     networks:
