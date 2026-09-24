@@ -245,7 +245,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Build backend images
-        run: docker compose build authservice patientservice queueservice medicalrecordservice apigateway
+        run: docker compose build authservice patientservice queueservice medicalrecordservice prescriptionservice apigateway
 
       - name: Start infrastructure and apply migrations
         shell: bash
@@ -281,12 +281,13 @@ jobs:
           apply_migrations patientservice PatientService
           apply_migrations queueservice QueueService
           apply_migrations medicalrecordservice MedicalRecordService
+          apply_migrations prescriptionservice PrescriptionService
 
           docker compose run --rm --no-deps kafka-init
 
       - name: Start application services
         run: |
-          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice
+          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice prescriptionservice
           docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 apigateway
 
       - name: Run Selenium E2E tests
@@ -329,7 +330,7 @@ jobs:
             docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
             docker compose logs --no-color \
               mysql zookeeper kafka kafka-init \
-              authservice patientservice queueservice medicalrecordservice apigateway \
+              authservice patientservice queueservice medicalrecordservice prescriptionservice apigateway \
               > TestResults/E2E/docker-compose.log 2>&1 || true
           fi
 
