@@ -419,6 +419,61 @@ jobs:
           cache-from: type=gha,scope=swiftcare-prescription
           cache-to: type=gha,mode=max,scope=swiftcare-prescription
 
+  container-scan:
+    name: Scan container image for CVEs (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - build-images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: gateway
+            dockerfile: ApiGateway/Dockerfile
+            scope: swiftcare-gateway
+          - service: auth
+            dockerfile: services/AuthService/Dockerfile
+            scope: swiftcare-auth
+          - service: patient
+            dockerfile: services/PatientService/Dockerfile
+            scope: swiftcare-patient
+          - service: queue
+            dockerfile: services/QueueService/Dockerfile
+            scope: swiftcare-queue
+          - service: medical-record
+            dockerfile: services/MedicalRecordService/Dockerfile
+            scope: swiftcare-medical-record
+          - service: prescription
+            dockerfile: services/PrescriptionService/Dockerfile
+            scope: swiftcare-prescription
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the ${{ matrix.service }} image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: swiftcare-${{ matrix.service }}:scan
+          cache-from: type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
+
+      - name: Scan the image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: swiftcare-${{ matrix.service }}:scan
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
   security-scan:
     name: Scan dependencies for vulnerabilities
     runs-on: ubuntu-latest
