@@ -157,24 +157,24 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
     private IActionResult ItemChangeResponse(
         PrescriptionItemChangeResult result,
         int successStatusCode) => result.Outcome switch
-    {
-        PrescriptionItemChangeOutcome.Success when result.Prescription is not null =>
-            StatusCode(successStatusCode, result.Prescription),
-        PrescriptionItemChangeOutcome.Success => throw new InvalidOperationException(
-            "A successful prescription item change must contain the prescription."),
-        PrescriptionItemChangeOutcome.PrescriptionNotFound => NotFound(
-            new MessageResponse("Prescription was not found")),
-        PrescriptionItemChangeOutcome.MedicineNotFound => NotFound(
-            new MessageResponse("Medicine was not found")),
-        PrescriptionItemChangeOutcome.MinimumOneMedicineRequired => Conflict(
-            new MessageResponse("Prescription must have at least one medicine")),
-        PrescriptionItemChangeOutcome.PrescriptionDispensed => Conflict(
-            new MessageResponse("Cannot modify a dispensed prescription")),
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(result),
-            result.Outcome,
-            "Unsupported prescription item change outcome.")
-    };
+        {
+            PrescriptionItemChangeOutcome.Success when result.Prescription is not null =>
+                StatusCode(successStatusCode, result.Prescription),
+            PrescriptionItemChangeOutcome.Success => throw new InvalidOperationException(
+                "A successful prescription item change must contain the prescription."),
+            PrescriptionItemChangeOutcome.PrescriptionNotFound => NotFound(
+                new MessageResponse("Prescription was not found")),
+            PrescriptionItemChangeOutcome.MedicineNotFound => NotFound(
+                new MessageResponse("Medicine was not found")),
+            PrescriptionItemChangeOutcome.MinimumOneMedicineRequired => Conflict(
+                new MessageResponse("Prescription must have at least one medicine")),
+            PrescriptionItemChangeOutcome.PrescriptionDispensed => Conflict(
+                new MessageResponse("Cannot modify a dispensed prescription")),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(result),
+                result.Outcome,
+                "Unsupported prescription item change outcome.")
+        };
 
     private bool IsDoctorRequest() => string.Equals(
         Request.Headers[UserRoleHeaderName].FirstOrDefault(),
