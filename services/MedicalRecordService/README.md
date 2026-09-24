@@ -15,6 +15,7 @@ MedicalRecordService owns consultation records, consultation templates, vital si
 | `POST` | `/api/consultations` | Doctor | Creates a consultation for the doctor's current queue assignment |
 | `POST` | `/api/consultations/{consultationId}/vitals` | Doctor | Records vital signs for the doctor's consultation and calculates BMI |
 | `GET` | `/api/consultations/by-queue/{queueId}` | Doctor | Returns this doctor's saved consultation status and whether vital signs exist, or `204` when none exists |
+| `GET` | `/api/consultations/latest-completed` | Doctor | Returns this doctor's latest completed consultation identifiers so unfinished prescription entry can be recovered, or `204` when none exists |
 | `GET` | `/api/consultations/patient/{patientId}/latest-follow-up` | Doctor | Returns the overdue follow-up from the patient's latest completed consultation, or `204` when none is overdue |
 | `POST` | `/api/consultations/{consultationId}/complete` | Doctor | Completes the consultation and publishes `consultation-completed` |
 

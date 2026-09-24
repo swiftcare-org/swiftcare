@@ -7,7 +7,7 @@ import { PatientProfilePage } from './pages/PatientProfilePage';
 import { QueueManagementPage } from './pages/QueueManagementPage';
 import { WaitingRoomDisplayPage } from './pages/WaitingRoomDisplayPage';
 import { ConsultationPage } from './pages/ConsultationPage';
-import { PrescriptionPlaceholderPage } from './pages/PrescriptionPlaceholderPage';
+import { PrescriptionPage } from './pages/PrescriptionPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -38,7 +38,7 @@ function App() {
         path="/doctor/prescription"
         element={
           <ProtectedRoute allowedRole="Doctor">
-            <PrescriptionPlaceholderPage />
+            <PrescriptionPage />
           </ProtectedRoute>
         }
       />

@@ -4,6 +4,7 @@
     <Project Path="services/PatientService/PatientService.csproj" />
     <Project Path="services/QueueService/QueueService.csproj" />
     <Project Path="services/MedicalRecordService/MedicalRecordService.csproj" />
+    <Project Path="services/PrescriptionService/PrescriptionService.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AuthService.UnitTests/AuthService.UnitTests.csproj" />
@@ -11,6 +12,7 @@
     <Project Path="tests/PatientService.UnitTests/PatientService.UnitTests.csproj" />
     <Project Path="tests/QueueService.UnitTests/QueueService.UnitTests.csproj" />
     <Project Path="tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj" />
+    <Project Path="tests/PrescriptionService.UnitTests/PrescriptionService.UnitTests.csproj" />
     <Project Path="tests/E2ETests/E2ETests.csproj" />
   </Folder>
   <Project Path="ApiGateway/ApiGateway.csproj" />

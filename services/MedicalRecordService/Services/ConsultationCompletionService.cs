@@ -20,6 +20,18 @@ public sealed class ConsultationCompletionService : IConsultationCompletionServi
         _logger = logger;
     }
 
+    public Task<CompletedConsultationContextResponse?> FindLatestCompletedAsync(
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
+
+        return _repository.FindLatestCompletedAsync(doctorId, cancellationToken);
+    }
+
     public Task<ConsultationProgressResponse?> FindByQueueAsync(
         Guid queueId,
         Guid doctorId,
