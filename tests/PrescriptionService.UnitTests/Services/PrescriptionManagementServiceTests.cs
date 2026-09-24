@@ -98,6 +98,13 @@ public class PrescriptionManagementServiceTests
             {
                 Assert.Equal(newerRequest.ConsultationId, prescription.ConsultationId);
                 Assert.Equal([0, 1], prescription.Medicines.Select(item => item.ItemOrder));
+
+                var firstMedicine = prescription.Medicines.Single(item => item.ItemOrder == 0);
+                Assert.Equal("Amoxicillin", firstMedicine.MedicineName);
+                Assert.Equal("500 mg", firstMedicine.Dosage);
+                Assert.Equal("Twice daily", firstMedicine.Frequency);
+                Assert.Equal("5 days", firstMedicine.Duration);
+                Assert.Equal("After meals", firstMedicine.Instructions);
             },
             prescription =>
                 Assert.Equal(olderRequest.ConsultationId, prescription.ConsultationId));
