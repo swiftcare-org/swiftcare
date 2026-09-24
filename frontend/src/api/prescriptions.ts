@@ -27,7 +27,7 @@ export interface Prescription {
   patientId: string;
   doctorId: string;
   doctorName: string;
-  status: 'PENDING';
+  status: 'PENDING' | 'DISPENSED';
   createdAt: string;
   medicines: PrescriptionMedicine[];
 }
@@ -44,5 +44,28 @@ export function createPrescription(
 export function getPatientPrescriptions(patientId: string): Promise<Prescription[]> {
   return apiRequest<Prescription[]>(
     `/api/prescriptions/patient/${encodeURIComponent(patientId)}`,
+  );
+}
+
+export function addPrescriptionMedicine(
+  prescriptionId: string,
+  medicine: PrescriptionMedicineInput,
+): Promise<Prescription> {
+  return apiRequest<Prescription>(
+    `/api/prescriptions/${encodeURIComponent(prescriptionId)}/items`,
+    {
+      method: 'POST',
+      body: medicine,
+    },
+  );
+}
+
+export function removePrescriptionMedicine(
+  prescriptionId: string,
+  medicineId: string,
+): Promise<Prescription> {
+  return apiRequest<Prescription>(
+    `/api/prescriptions/${encodeURIComponent(prescriptionId)}/items/${encodeURIComponent(medicineId)}`,
+    { method: 'DELETE' },
   );
 }
