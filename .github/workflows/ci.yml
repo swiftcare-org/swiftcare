@@ -43,6 +43,7 @@ jobs:
             services/PatientService/Dockerfile
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
+            services/PrescriptionService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -113,6 +114,7 @@ jobs:
           dotnet test tests/PatientService.UnitTests/PatientService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/QueueService.UnitTests/QueueService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/PrescriptionService.UnitTests/PrescriptionService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
@@ -407,6 +409,16 @@ jobs:
           cache-from: type=gha,scope=swiftcare-medical-record
           cache-to: type=gha,mode=max,scope=swiftcare-medical-record
 
+      - name: Build the PrescriptionService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/PrescriptionService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-prescription
+          cache-to: type=gha,mode=max,scope=swiftcare-prescription
+
   security-scan:
     name: Scan dependencies for vulnerabilities
     runs-on: ubuntu-latest
@@ -456,6 +468,7 @@ jobs:
       PATIENT_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_patient;User Id=root;Password=ci-only-root-password;"
       QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
       MEDICAL_RECORD_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_medical_record;User Id=root;Password=ci-only-root-password;"
+      PRESCRIPTION_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_prescription;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -532,6 +545,14 @@ jobs:
       - name: Check MedicalRecordService for model changes without a migration
         if: hashFiles('services/MedicalRecordService/MedicalRecordService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/MedicalRecordService
+
+      - name: Apply PrescriptionService migrations to a clean database
+        if: hashFiles('services/PrescriptionService/PrescriptionService.csproj') != ''
+        run: dotnet ef database update --project services/PrescriptionService --connection "$PRESCRIPTION_DB_CONNECTION"
+
+      - name: Check PrescriptionService for model changes without a migration
+        if: hashFiles('services/PrescriptionService/PrescriptionService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/PrescriptionService
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})
