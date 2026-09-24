@@ -473,6 +473,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
+          token-setup-trivy: ${{ secrets.GITHUB_TOKEN }}
 
   security-scan:
     name: Scan dependencies for vulnerabilities
