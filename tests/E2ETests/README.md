@@ -6,8 +6,8 @@ and user-management screens) is tracked under
 [SWC-60](https://swiftcare-app.atlassian.net/browse/SWC-60); Sprint 2 adds browser coverage
 for SWC-15, SWC-18, SWC-20, SWC-21, SWC-22, SWC-23 and SWC-24 plus one cross-story clinic-day
 journey, tracked under SPRINT2-QA-01.
-Sprint 3 adds SWC-25 vital-sign form, SWC-28 medical-alert and combined SWC-26/SWC-38
-consultation-completion coverage under SWC-110.
+Sprint 3 adds SWC-25 vital-sign form, SWC-28 medical-alert, combined SWC-26/SWC-38
+consultation-completion and combined SWC-29/SWC-40 prescription coverage under SWC-110.
 
 Unlike `AuthService.UnitTests` / `ApiGateway.UnitTests`, this project has no
 `ProjectReference` to any service, and it only talks to whatever is already
@@ -80,6 +80,9 @@ Environment variables:
 | `MEDICAL_RECORD_DB_NAME` | `swiftcare_medical_record` | MedicalRecordService database name |
 | `E2E_MEDICAL_RECORD_DB_HOST` | `localhost` | Host used by the SWC-28 historical follow-up fixture |
 | `E2E_MEDICAL_RECORD_DB_CONNECTION` | *(unset)* | Full MedicalRecordService connection string override |
+| `PRESCRIPTION_DB_NAME` | `swiftcare_prescription` | PrescriptionService database name |
+| `E2E_PRESCRIPTION_DB_HOST` | `localhost` | Host used by the SWC-40 dispensed-prescription fixture |
+| `E2E_PRESCRIPTION_DB_CONNECTION` | *(unset)* | Full PrescriptionService connection string override |
 
 ### Why the suite touches MySQL directly
 
@@ -98,11 +101,16 @@ completes a consultation through the real APIs with a valid date, then
 patient id. It never changes another consultation or bypasses the browser behavior under
 test.
 
+SWC-40 makes a DISPENSED prescription read-only, but no API can dispense a prescription
+until SWC-41. The prescription test saves a prescription through the real API, then
+`Support/PrescriptionDatabase.cs` marks only that test-owned PENDING row as DISPENSED by
+prescription and patient id before the browser checks the read-only view.
+
 ## Parallel-safety classification
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
-| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
 | Isolated patient/profile | Allergy, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
 | Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
 
@@ -130,14 +138,14 @@ locally installed Chrome automatically, so no manual driver setup is needed.
 ## CI setup
 
 The CI E2E job builds AuthService, PatientService, QueueService,
-MedicalRecordService and Gateway from the main Compose file. It starts MySQL and
-Kafka, applies the three EF migration sets and the medical-record SQL schema,
-then creates the Kafka topics. All four backend services must pass their Compose
-health checks before Gateway starts; Gateway must be healthy before Selenium
-runs. The job supplies a disposable MySQL user/password to both Compose and the
-test process so the queue precondition helper connects to the same database.
+MedicalRecordService, PrescriptionService and Gateway from the main Compose file.
+It starts MySQL and Kafka, applies each service's migrations with its `--migrate`
+command, then creates the Kafka topics. All five backend services must pass their
+Compose health checks before Gateway starts; Gateway must be healthy before
+Selenium runs. The job supplies a disposable MySQL user/password to both Compose
+and the test process so the database helpers connect to the same databases.
 
 On failure, the `e2e-test-results` artifact contains Compose status, logs from
-QueueService and MedicalRecordService alongside the other services, frontend
-output and test results. CI removes its temporary containers and database volume
+every backend service including PrescriptionService, frontend output and test
+results. CI removes its temporary containers and database volume
 afterward.
