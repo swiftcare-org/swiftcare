@@ -180,7 +180,7 @@ After a doctor saves a consultation and its vital signs, Complete Consultation w
 
 ### Create a prescription
 
-After a successful consultation, a doctor can add multiple medicines with a name, dosage, frequency, duration, and optional instructions. The form shows PatientService allergy information as an advisory warning and loads the patient's previous prescriptions for reference. `POST /api/prescriptions` stores the consultation, queue, patient, and trusted doctor identifiers with a default `PENDING` status. A unique consultation index prevents a second prescription for the same consultation. See the [PrescriptionService guide](services/PrescriptionService/README.md) for endpoints, configuration, and local startup.
+After a successful consultation, a doctor can add multiple medicines with a name, dosage, frequency, duration, and optional instructions. The form shows PatientService allergy information as an advisory warning and loads the patient's previous prescriptions for reference. `POST /api/prescriptions` stores the consultation, queue, patient, and trusted doctor identifiers with a default `PENDING` status. After saving, the prescribing doctor can add medicines or remove a confirmed item while keeping at least one medicine. A `DISPENSED` prescription is read-only. A unique consultation index prevents a second prescription for the same consultation. See the [PrescriptionService guide](services/PrescriptionService/README.md) for endpoints, configuration, and local startup.
 
 ### Medical alerts and follow-ups
 
