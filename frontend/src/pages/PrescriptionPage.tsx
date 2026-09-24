@@ -65,6 +65,7 @@ export function PrescriptionPage() {
     navigatedContext ? 'loaded' : 'loading',
   );
   const patientId = context?.patientId;
+  const consultationId = context?.consultationId;
   const [medicines, setMedicines] = useState<MedicineDraft[]>([]);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [history, setHistory] = useState<Prescription[]>([]);
@@ -131,6 +132,13 @@ export function PrescriptionPage() {
 
       if (historyResult.status === 'fulfilled') {
         setHistory(historyResult.value);
+        const currentPrescription = historyResult.value.find(
+          (prescription) => prescription.consultationId === consultationId,
+        );
+        if (currentPrescription) {
+          setSavedPrescription(currentPrescription);
+          setSubmissionState('saved');
+        }
       }
 
       setReferenceLoadState(
@@ -145,7 +153,7 @@ export function PrescriptionPage() {
     return () => {
       disposed = true;
     };
-  }, [patientId]);
+  }, [consultationId, patientId]);
 
   function updateMedicine(
     clientId: string,
