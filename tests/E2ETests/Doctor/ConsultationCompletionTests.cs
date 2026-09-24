@@ -17,8 +17,7 @@ public class ConsultationCompletionTests : SeleniumTestBase
 {
     // SWC-26 AC - Complete Consultation stays disabled with an explanatory message until
     // vital signs are saved, then completing navigates the doctor to the prescription
-    // screen. SWC-29's own entry form is out of scope here: ConsultationPage.tsx today
-    // routes to the SWC-29 placeholder until that story lands.
+    // screen. The prescription form itself is covered by PrescriptionTests.
     [Fact]
     public void CompleteConsultation_IsBlockedUntilVitalsSaved_ThenNavigatesToPrescription()
     {
@@ -56,7 +55,7 @@ public class ConsultationCompletionTests : SeleniumTestBase
 
         consultation.ClickCompleteConsultation();
 
-        var prescription = new PrescriptionPlaceholderPage(Driver);
+        var prescription = new PrescriptionPage(Driver);
         prescription.WaitUntilLoaded();
         Assert.True(prescription.ShowsCompletedConfirmation);
     }

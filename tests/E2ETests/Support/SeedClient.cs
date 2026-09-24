@@ -116,6 +116,15 @@ public sealed class SeedClient : IDisposable
     public void CompleteConsultation(string consultationId, string username, string password) =>
         CompleteConsultationAsync(consultationId, username, password).GetAwaiter().GetResult();
 
+    // Saves a PENDING prescription through the real API and returns its id, for tests that
+    // need an existing prescription rather than exercising the creation form itself.
+    public string CreatePrescription(
+        SeededConsultation consultation,
+        string username,
+        string password,
+        params SeededMedicine[] medicines) =>
+        CreatePrescriptionAsync(consultation, username, password, medicines).GetAwaiter().GetResult();
+
     private async Task<SeededPatient> RegisterPatientAsync(string? fullName)
     {
         var name = fullName ?? TestData.FullName("Patient");
@@ -354,6 +363,28 @@ public sealed class SeedClient : IDisposable
         response.EnsureSuccessStatusCode();
     }
 
+    private async Task<string> CreatePrescriptionAsync(
+        SeededConsultation consultation,
+        string username,
+        string password,
+        SeededMedicine[] medicines)
+    {
+        var request = new
+        {
+            consultationId = consultation.Id,
+            queueId = consultation.QueueId,
+            patientId = consultation.PatientId,
+            medicines,
+        };
+
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Post, "/api/prescriptions", request, token);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<CreatedPrescriptionBody>(Json)
+                   ?? throw new InvalidOperationException("Empty response creating a seed prescription.");
+        return body.Id;
+    }
+
     // password is null for the dev-seeded accounts (dr.chen, reception.silva,
     // admin.fernando), which all share TestConfig.SeedPassword; a throwaway account
     // created via CreateUser carries its own generated password instead.
@@ -412,7 +443,16 @@ public sealed class SeedClient : IDisposable
     private sealed record WaitingEntryBody(string PatientId);
 
     private sealed record CalledQueueEntryBody(string QueueNumber, string RoomNumber);
+
+    private sealed record CreatedPrescriptionBody(string Id);
 }
+
+public sealed record SeededMedicine(
+    string MedicineName,
+    string Dosage,
+    string Frequency,
+    string Duration,
+    string? Instructions = null);
 
 public sealed record SeededPatient(string PatientId, string Nic, string FullName, string PhoneNumber, string BloodGroup);
 
