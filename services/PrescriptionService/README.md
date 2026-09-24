@@ -9,6 +9,8 @@ PrescriptionService owns digital prescriptions and their medicine items. It stor
 - Reads the doctor ID and full name from identity headers supplied by the authenticated API Gateway request.
 - Sets every new prescription to `PENDING`.
 - Stores multiple medicines in the order entered by the doctor.
+- Allows the prescribing doctor to add or remove medicines from a saved prescription.
+- Keeps at least one medicine and rejects changes after the prescription is `DISPENSED`.
 - Returns a patient's previous prescriptions newest first for clinical reference.
 - Rejects a second prescription for the same consultation.
 
@@ -25,10 +27,12 @@ Allergy details remain owned by PatientService. The frontend reads them from Pat
 | Method | Path | Authorization | Description |
 | --- | --- | --- | --- |
 | `POST` | `/api/prescriptions` | Doctor | Creates a `PENDING` prescription with one or more medicines. |
+| `POST` | `/api/prescriptions/{prescriptionId}/items` | Doctor | Adds a medicine to the doctor's saved prescription. |
+| `DELETE` | `/api/prescriptions/{prescriptionId}/items/{medicineId}` | Doctor | Removes a medicine when at least one other medicine remains. |
 | `GET` | `/api/prescriptions/patient/{patientId}` | Doctor | Returns the patient's prescriptions newest first, including ordered medicine items. |
 | `GET` | `/health` | Anonymous | Service health check. |
 
-The API Gateway exposes both prescription API routes with its `DoctorOnly` policy. PrescriptionService also verifies the forwarded `X-User-Role`, `X-User-Id`, and `X-User-Name` headers after `GatewaySecretMiddleware` validates `X-Gateway-Secret`.
+The API Gateway exposes the prescription API routes with its `DoctorOnly` policy. PrescriptionService also verifies the forwarded `X-User-Role`, `X-User-Id`, and `X-User-Name` headers after `GatewaySecretMiddleware` validates `X-Gateway-Secret`.
 
 ## Create request
 
@@ -50,6 +54,14 @@ The API Gateway exposes both prescription API routes with its `DoctorOnly` polic
 ```
 
 Medicine name, dosage, frequency, and duration are required. Instructions are optional. An empty list returns a validation error containing `Add at least one medicine`. A repeated `ConsultationId` returns HTTP `409` with `A prescription already exists for this consultation`.
+
+## Change saved medicines
+
+The prescribing doctor can add another medicine to a saved prescription by sending one medicine object to `POST /api/prescriptions/{prescriptionId}/items`. New medicines are appended after the existing items. The response contains the updated prescription and its ordered medicine list.
+
+Removing a medicine uses `DELETE /api/prescriptions/{prescriptionId}/items/{medicineId}`. The frontend asks for confirmation before calling this endpoint. Removing the final medicine returns HTTP `409` with `Prescription must have at least one medicine`.
+
+Both operations are limited to the doctor who created the prescription. A prescription with `DISPENSED` status is read-only, and either operation returns HTTP `409` with `Cannot modify a dispensed prescription`.
 
 ## Data model
 
@@ -96,10 +108,10 @@ The local API Gateway cluster forwards prescription requests to `http://localhos
 dotnet test tests/PrescriptionService.UnitTests/PrescriptionService.UnitTests.csproj
 ```
 
-Backend coverage includes request validation, required linkage, trusted doctor identity, `PENDING` status, ordered medicine persistence, duplicate-consultation prevention, role handling, patient-history ordering, and empty history. Frontend behavior is validated with lint, a production build, and manual QA; the repository does not use frontend unit tests.
+Backend coverage includes request validation, required linkage, trusted doctor identity, `PENDING` status, ordered medicine persistence, duplicate-consultation prevention, role handling, patient-history ordering, medicine additions and removals, minimum-one enforcement, prescription ownership, dispensed read-only behavior, and empty history. Frontend behavior is validated with lint, a production build, and manual QA; the repository does not use frontend unit tests.
 
 ## Scope boundaries
 
 - SWC-29 does not add Docker Compose, CI/CD image publishing, Terraform, Azure database resources, or Container App deployment for PrescriptionService.
-- Prescription dispensing and the receptionist's enabled `View Prescription` workflow belong to SWC-30.
+- Prescription dispensing and the receptionist's enabled `View Prescription` workflow belong to SWC-30. SWC-40 only makes an already `DISPENSED` prescription read-only.
 - PrescriptionService does not query PatientService, MedicalRecordService, or QueueService databases.

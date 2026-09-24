@@ -3,6 +3,7 @@ namespace PrescriptionService.Models.Entities;
 public sealed class Prescription
 {
     public const string PendingStatus = "PENDING";
+    public const string DispensedStatus = "DISPENSED";
 
     public Guid Id { get; set; }
     public Guid ConsultationId { get; set; }
