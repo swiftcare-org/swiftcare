@@ -15,6 +15,7 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
         {
             entity.Property(prescription => prescription.Id).ValueGeneratedNever();
             entity.Property(prescription => prescription.DoctorName).HasMaxLength(200).IsRequired();
+            entity.Property(prescription => prescription.DispensedBy).HasMaxLength(200);
             entity.Property(prescription => prescription.Status)
                 .HasMaxLength(16)
                 .HasDefaultValue(Prescription.PendingStatus)

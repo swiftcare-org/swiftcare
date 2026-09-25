@@ -12,6 +12,8 @@ public sealed class Prescription
     public Guid DoctorId { get; set; }
     public required string DoctorName { get; set; }
     public string Status { get; set; } = PendingStatus;
+    public string? DispensedBy { get; set; }
+    public DateTime? DispensedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public ICollection<PrescriptionItem> Items { get; } = new List<PrescriptionItem>();

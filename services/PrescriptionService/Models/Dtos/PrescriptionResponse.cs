@@ -9,7 +9,9 @@ public sealed record PrescriptionResponse(
     string DoctorName,
     string Status,
     DateTime CreatedAt,
-    IReadOnlyList<PrescriptionItemResponse> Medicines);
+    IReadOnlyList<PrescriptionItemResponse> Medicines,
+    string? DispensedBy = null,
+    DateTime? DispensedAt = null);
 
 public sealed record PrescriptionItemResponse(
     Guid Id,

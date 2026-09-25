@@ -268,5 +268,7 @@ public sealed class PrescriptionManagementService(
                 item.Frequency,
                 item.Duration,
                 item.Instructions))
-            .ToArray());
+            .ToArray(),
+        prescription.DispensedBy,
+        prescription.DispensedAt);
 }
