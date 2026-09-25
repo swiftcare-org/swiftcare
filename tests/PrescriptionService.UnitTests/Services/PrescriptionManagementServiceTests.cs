@@ -89,9 +89,13 @@ public class PrescriptionManagementServiceTests
         var newerRequest = ValidRequest(patientId);
         await service.CreateAsync(newerRequest, Guid.NewGuid(), "Dr. Priya Rao");
         await service.CreateAsync(ValidRequest(Guid.NewGuid()), Guid.NewGuid(), "Dr. Other");
+        dbContext.ChangeTracker.Clear();
 
         var history = await service.GetForPatientAsync(patientId);
 
+        Assert.All(
+            history,
+            prescription => Assert.Equal(DateTimeKind.Utc, prescription.CreatedAt.Kind));
         Assert.Collection(
             history,
             prescription =>
@@ -307,20 +311,25 @@ public class PrescriptionManagementServiceTests
         using var connection = OpenConnection();
         await using var dbContext = await CreateDbContextAsync(connection);
         var request = ValidRequest();
-        var service = new PrescriptionManagementService(
-            dbContext,
-            new MutableTimeProvider(InitialTime));
+        var timeProvider = new MutableTimeProvider(InitialTime);
+        var service = new PrescriptionManagementService(dbContext, timeProvider);
         var created = await service.CreateAsync(
             request,
             Guid.NewGuid(),
             "Dr. Amara Chen");
+        timeProvider.UtcNow = InitialTime.AddHours(2);
+        await service.DispenseAsync(created.Prescription!.Id, "Nadia Silva");
+        dbContext.ChangeTracker.Clear();
 
         var result = await service.GetByQueueIdAsync(request.QueueId);
 
         Assert.NotNull(result);
-        Assert.Equal(created.Prescription!.Id, result.Id);
+        Assert.Equal(created.Prescription.Id, result.Id);
         Assert.Equal(request.QueueId, result.QueueId);
         Assert.Equal([0, 1], result.Medicines.Select(item => item.ItemOrder));
+        Assert.Equal(DateTimeKind.Utc, result.CreatedAt.Kind);
+        Assert.NotNull(result.DispensedAt);
+        Assert.Equal(DateTimeKind.Utc, result.DispensedAt.Value.Kind);
     }
 
     [Fact]

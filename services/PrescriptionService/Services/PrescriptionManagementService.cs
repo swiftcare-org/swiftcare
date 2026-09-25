@@ -309,6 +309,12 @@ public sealed class PrescriptionManagementService(
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static DateTime MarkAsUtc(DateTime value) =>
+        DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+    private static DateTime? MarkAsUtc(DateTime? value) =>
+        value.HasValue ? MarkAsUtc(value.Value) : null;
+
     private static PrescriptionResponse ToResponse(Prescription prescription) => new(
         prescription.Id,
         prescription.ConsultationId,
@@ -317,7 +323,7 @@ public sealed class PrescriptionManagementService(
         prescription.DoctorId,
         prescription.DoctorName,
         prescription.Status,
-        prescription.CreatedAt,
+        MarkAsUtc(prescription.CreatedAt),
         prescription.Items
             .OrderBy(item => item.ItemOrder)
             .Select(item => new PrescriptionItemResponse(
@@ -330,5 +336,5 @@ public sealed class PrescriptionManagementService(
                 item.Instructions))
             .ToArray(),
         prescription.DispensedBy,
-        prescription.DispensedAt);
+        MarkAsUtc(prescription.DispensedAt));
 }
