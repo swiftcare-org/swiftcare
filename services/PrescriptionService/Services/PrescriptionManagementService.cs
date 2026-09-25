@@ -119,6 +119,66 @@ public sealed class PrescriptionManagementService(
         return prescriptions.Select(ToResponse).ToArray();
     }
 
+    public async Task<PrescriptionResponse?> GetByQueueIdAsync(
+        Guid queueId,
+        CancellationToken cancellationToken = default)
+    {
+        if (queueId == Guid.Empty)
+        {
+            throw new ArgumentException("Queue ID must be provided.", nameof(queueId));
+        }
+
+        var prescription = await dbContext.Prescriptions
+            .AsNoTracking()
+            .Include(candidate => candidate.Items)
+            .SingleOrDefaultAsync(
+                candidate => candidate.QueueId == queueId,
+                cancellationToken);
+
+        return prescription is null ? null : ToResponse(prescription);
+    }
+
+    public async Task<DispensePrescriptionResult> DispenseAsync(
+        Guid prescriptionId,
+        string receptionistName,
+        CancellationToken cancellationToken = default)
+    {
+        if (prescriptionId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Prescription ID must be provided.",
+                nameof(prescriptionId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(receptionistName);
+
+        var prescription = await dbContext.Prescriptions
+            .Include(candidate => candidate.Items)
+            .SingleOrDefaultAsync(
+                candidate => candidate.Id == prescriptionId,
+                cancellationToken);
+        if (prescription is null)
+        {
+            return new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.PrescriptionNotFound);
+        }
+
+        if (IsDispensed(prescription))
+        {
+            return new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.AlreadyDispensed);
+        }
+
+        prescription.Status = Prescription.DispensedStatus;
+        prescription.DispensedBy = receptionistName.Trim();
+        prescription.DispensedAt = timeProvider.GetUtcNow().UtcDateTime;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new DispensePrescriptionResult(
+            DispensePrescriptionOutcome.Success,
+            ToResponse(prescription));
+    }
+
     public async Task<PrescriptionItemChangeResult> AddMedicineAsync(
         Guid prescriptionId,
         PrescriptionItemRequest medicine,
@@ -249,6 +309,12 @@ public sealed class PrescriptionManagementService(
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static DateTime MarkAsUtc(DateTime value) =>
+        DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+    private static DateTime? MarkAsUtc(DateTime? value) =>
+        value.HasValue ? MarkAsUtc(value.Value) : null;
+
     private static PrescriptionResponse ToResponse(Prescription prescription) => new(
         prescription.Id,
         prescription.ConsultationId,
@@ -257,7 +323,7 @@ public sealed class PrescriptionManagementService(
         prescription.DoctorId,
         prescription.DoctorName,
         prescription.Status,
-        prescription.CreatedAt,
+        MarkAsUtc(prescription.CreatedAt),
         prescription.Items
             .OrderBy(item => item.ItemOrder)
             .Select(item => new PrescriptionItemResponse(
@@ -268,5 +334,7 @@ public sealed class PrescriptionManagementService(
                 item.Frequency,
                 item.Duration,
                 item.Instructions))
-            .ToArray());
+            .ToArray(),
+        prescription.DispensedBy,
+        MarkAsUtc(prescription.DispensedAt));
 }

@@ -30,6 +30,8 @@ export interface Prescription {
   status: 'PENDING' | 'DISPENSED';
   createdAt: string;
   medicines: PrescriptionMedicine[];
+  dispensedBy: string | null;
+  dispensedAt: string | null;
 }
 
 export function createPrescription(
@@ -44,6 +46,19 @@ export function createPrescription(
 export function getPatientPrescriptions(patientId: string): Promise<Prescription[]> {
   return apiRequest<Prescription[]>(
     `/api/prescriptions/patient/${encodeURIComponent(patientId)}`,
+  );
+}
+
+export function getPrescriptionByQueueId(queueId: string): Promise<Prescription> {
+  return apiRequest<Prescription>(
+    `/api/prescriptions/queue/${encodeURIComponent(queueId)}`,
+  );
+}
+
+export function dispensePrescription(prescriptionId: string): Promise<Prescription> {
+  return apiRequest<Prescription>(
+    `/api/prescriptions/${encodeURIComponent(prescriptionId)}/dispense`,
+    { method: 'PUT' },
   );
 }
 

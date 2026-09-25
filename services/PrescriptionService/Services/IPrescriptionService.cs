@@ -15,6 +15,15 @@ public interface IPrescriptionService
         Guid patientId,
         CancellationToken cancellationToken = default);
 
+    Task<PrescriptionResponse?> GetByQueueIdAsync(
+        Guid queueId,
+        CancellationToken cancellationToken = default);
+
+    Task<DispensePrescriptionResult> DispenseAsync(
+        Guid prescriptionId,
+        string receptionistName,
+        CancellationToken cancellationToken = default);
+
     Task<PrescriptionItemChangeResult> AddMedicineAsync(
         Guid prescriptionId,
         PrescriptionItemRequest medicine,

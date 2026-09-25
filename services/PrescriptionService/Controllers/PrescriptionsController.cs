@@ -35,6 +35,30 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
         return Ok(prescriptions);
     }
 
+    [HttpGet("queue/{queueId:guid}")]
+    [ProducesResponseType(typeof(PrescriptionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetByQueueId(
+        Guid queueId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsRoleAllowed("Doctor", "Receptionist", "Admin"))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new MessageResponse("Forbidden"));
+        }
+
+        var prescription = await prescriptionService.GetByQueueIdAsync(
+            queueId,
+            cancellationToken);
+
+        return prescription is null
+            ? NotFound(new MessageResponse("Prescription was not found"))
+            : Ok(prescription);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(PrescriptionResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -135,6 +159,51 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
         return ItemChangeResponse(result, StatusCodes.Status200OK);
     }
 
+    [HttpPut("{prescriptionId:guid}/dispense")]
+    [ProducesResponseType(typeof(PrescriptionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DispensePrescription(
+        Guid prescriptionId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsRoleAllowed("Receptionist"))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new MessageResponse("Forbidden"));
+        }
+
+        var receptionistName = Request.Headers[UserNameHeaderName].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(receptionistName))
+        {
+            return Unauthorized(new MessageResponse("Receptionist identity is unavailable"));
+        }
+
+        var result = await prescriptionService.DispenseAsync(
+            prescriptionId,
+            receptionistName,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            DispensePrescriptionOutcome.Success when result.Prescription is not null =>
+                Ok(result.Prescription),
+            DispensePrescriptionOutcome.Success => throw new InvalidOperationException(
+                "A successful dispense result must contain the prescription."),
+            DispensePrescriptionOutcome.PrescriptionNotFound => NotFound(
+                new MessageResponse("Prescription was not found")),
+            DispensePrescriptionOutcome.AlreadyDispensed => Conflict(
+                new MessageResponse("Prescription has already been dispensed")),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(result),
+                result.Outcome,
+                "Unsupported dispense-prescription outcome.")
+        };
+    }
+
     private IActionResult? GetDoctorIdentityError(out Guid doctorId)
     {
         doctorId = Guid.Empty;
@@ -180,4 +249,10 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
         Request.Headers[UserRoleHeaderName].FirstOrDefault(),
         "Doctor",
         StringComparison.Ordinal);
+
+    private bool IsRoleAllowed(params string[] roles)
+    {
+        var role = Request.Headers[UserRoleHeaderName].FirstOrDefault();
+        return role is not null && roles.Contains(role, StringComparer.Ordinal);
+    }
 }

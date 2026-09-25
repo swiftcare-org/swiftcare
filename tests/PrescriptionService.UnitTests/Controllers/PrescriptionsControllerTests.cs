@@ -158,6 +158,119 @@ public class PrescriptionsControllerTests
         service.VerifyAll();
     }
 
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task GetByQueueIdAllowsSupportedStaffRoles(string role)
+    {
+        var request = ValidRequest();
+        var expected = ExpectedResponse(request, Guid.NewGuid());
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.GetByQueueIdAsync(
+                request.QueueId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var controller = CreateController(service, role);
+
+        var result = await controller.GetByQueueId(
+            request.QueueId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task DispenseUsesTrustedReceptionistNameAndReturnsUpdatedPrescription()
+    {
+        var request = ValidRequest();
+        var expected = ExpectedResponse(request, Guid.NewGuid()) with
+        {
+            Status = "DISPENSED",
+            DispensedBy = "Nadia Silva",
+            DispensedAt = new DateTime(2026, 9, 23, 10, 30, 0, DateTimeKind.Utc)
+        };
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.DispenseAsync(
+                expected.Id,
+                "Nadia Silva",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.Success,
+                expected));
+        var controller = CreateController(
+            service,
+            "Receptionist",
+            doctorName: "Nadia Silva");
+
+        var result = await controller.DispensePrescription(
+            expected.Id,
+            CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task DispenseAsNonReceptionistReturnsForbidden(string role)
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, role, doctorName: "Staff Member");
+
+        var result = await controller.DispensePrescription(
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DispenseWithoutReceptionistNameReturnsUnauthorized()
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, "Receptionist");
+
+        var result = await controller.DispensePrescription(
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DispenseAgainReturnsConflict()
+    {
+        var prescriptionId = Guid.NewGuid();
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.DispenseAsync(
+                prescriptionId,
+                "Nadia Silva",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.AlreadyDispensed));
+        var controller = CreateController(
+            service,
+            "Receptionist",
+            doctorName: "Nadia Silva");
+
+        var result = await controller.DispensePrescription(
+            prescriptionId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ConflictObjectResult>(result);
+        var message = Assert.IsType<MessageResponse>(response.Value);
+        Assert.Equal("Prescription has already been dispensed", message.Message);
+        service.VerifyAll();
+    }
+
     private static PrescriptionsController CreateController(
         Mock<IPrescriptionService> service,
         string role,
