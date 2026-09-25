@@ -90,6 +90,8 @@ builder.Services.AddAuthorization(options =>
     // to all authorized profile roles so doctors can see clinical alerts before consulting.
     options.AddPolicy("PatientSearchAndReadPolicy", policy => policy.RequireAuthenticatedUser()
         .RequireRole("Doctor", "Receptionist", "Admin"));
+    options.AddPolicy("PrescriptionReadPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Doctor", "Receptionist", "Admin"));
     // Admin is read-only for allergies by stakeholder decision - only Doctor and
     // Receptionist may record, update, or remove one.
     options.AddPolicy("AllergyWritePolicy", policy => policy.RequireAuthenticatedUser()
