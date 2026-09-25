@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
+import { getPrescriptionByQueueId, type Prescription } from '../api/prescriptions';
 import { getTodayQueue, type TodayQueueEntry, type TodayQueueStatus } from '../api/queue';
 import { DashboardShell } from '../dashboards/DashboardShell';
 
 type QueueLoadState = 'loading' | 'loaded' | 'error';
+type PrescriptionDisplayState = Prescription['status'] | 'NOT_CREATED' | 'UNAVAILABLE';
 
 interface QueueDisplayRow extends TodayQueueEntry {
   patientName: string;
+  prescriptionState: PrescriptionDisplayState | null;
 }
 
 interface StatusPresentation {
@@ -75,7 +78,67 @@ async function addPatientNames(
   return entries.map((entry) => ({
     ...entry,
     patientName: patientNameCache.get(entry.patientId) ?? PATIENT_UNAVAILABLE,
+    prescriptionState: null,
   }));
+}
+
+async function addPrescriptionStates(rows: QueueDisplayRow[]): Promise<QueueDisplayRow[]> {
+  return Promise.all(
+    rows.map(async (row) => {
+      if (row.status !== 'COMPLETED') {
+        return row;
+      }
+
+      try {
+        const prescription = await getPrescriptionByQueueId(row.queueId);
+        return { ...row, prescriptionState: prescription.status };
+      } catch (error) {
+        return {
+          ...row,
+          prescriptionState:
+            error instanceof ApiError && error.status === 404 ? 'NOT_CREATED' : 'UNAVAILABLE',
+        };
+      }
+    }),
+  );
+}
+
+function prescriptionCell(row: QueueDisplayRow) {
+  if (row.status !== 'COMPLETED') {
+    return (
+      <span className="text-slate-500" title="Available after the consultation is completed">
+        —
+      </span>
+    );
+  }
+
+  if (row.prescriptionState === 'PENDING') {
+    return (
+      <Link
+        to={`/prescriptions/queue/${row.queueId}`}
+        className="inline-block border-2 border-brand-blue px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-brand-blue hover:bg-blue-50"
+      >
+        View Prescription
+      </Link>
+    );
+  }
+
+  if (row.prescriptionState === 'DISPENSED') {
+    return (
+      <Link
+        to={`/prescriptions/queue/${row.queueId}`}
+        className="inline-block border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
+      >
+        ✅ DISPENSED
+      </Link>
+    );
+  }
+
+  if (row.prescriptionState === 'NOT_CREATED') {
+    return <span className="text-xs font-semibold text-amber-800">Prescription pending</span>;
+  }
+
+  return <span className="text-xs text-slate-500">Status unavailable</span>;
 }
 
 function queueErrorMessage(error: unknown): string {
@@ -107,12 +170,13 @@ export function QueueManagementPage() {
       try {
         const entries = await getTodayQueue();
         const namedRows = await addPatientNames(entries, patientNameCache);
+        const displayRows = await addPrescriptionStates(namedRows);
 
         if (disposed) {
           return;
         }
 
-        setRows(namedRows);
+        setRows(displayRows);
         setErrorMessage(null);
         setLoadState('loaded');
         hasLoaded = true;
@@ -231,23 +295,7 @@ export function QueueManagementPage() {
                         {row.doctorName ?? '—'}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        {row.status === 'COMPLETED' ? (
-                          <button
-                            type="button"
-                            disabled
-                            title="Prescription viewing will be available with SWC-30"
-                            className="border-2 border-slate-300 bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-slate-500 disabled:cursor-not-allowed"
-                          >
-                            View Prescription
-                          </button>
-                        ) : (
-                          <span
-                            className="text-slate-500"
-                            title="Available after the consultation is completed"
-                          >
-                            —
-                          </span>
-                        )}
+                        {prescriptionCell(row)}
                       </td>
                     </tr>
                   );
