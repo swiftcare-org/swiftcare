@@ -8,6 +8,7 @@ import { QueueManagementPage } from './pages/QueueManagementPage';
 import { WaitingRoomDisplayPage } from './pages/WaitingRoomDisplayPage';
 import { ConsultationPage } from './pages/ConsultationPage';
 import { PrescriptionPage } from './pages/PrescriptionPage';
+import { PrescriptionDetailsPage } from './pages/PrescriptionDetailsPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -39,6 +40,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="Doctor">
             <PrescriptionPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/prescriptions/queue/:queueId"
+        element={
+          <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
+            <PrescriptionDetailsPage />
           </ProtectedRoute>
         }
       />
