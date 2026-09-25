@@ -301,6 +301,99 @@ public class PrescriptionManagementServiceTests
         Assert.Equal(2, await dbContext.PrescriptionItems.CountAsync());
     }
 
+    [Fact]
+    public async Task GetByQueueIdReturnsPrescriptionWithOrderedMedicines()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var request = ValidRequest();
+        var service = new PrescriptionManagementService(
+            dbContext,
+            new MutableTimeProvider(InitialTime));
+        var created = await service.CreateAsync(
+            request,
+            Guid.NewGuid(),
+            "Dr. Amara Chen");
+
+        var result = await service.GetByQueueIdAsync(request.QueueId);
+
+        Assert.NotNull(result);
+        Assert.Equal(created.Prescription!.Id, result.Id);
+        Assert.Equal(request.QueueId, result.QueueId);
+        Assert.Equal([0, 1], result.Medicines.Select(item => item.ItemOrder));
+    }
+
+    [Fact]
+    public async Task DispenseTransitionsPendingPrescriptionAndStoresReceptionistDetails()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var timeProvider = new MutableTimeProvider(InitialTime);
+        var service = new PrescriptionManagementService(dbContext, timeProvider);
+        var created = await service.CreateAsync(
+            ValidRequest(),
+            Guid.NewGuid(),
+            "Dr. Amara Chen");
+        var dispensedTime = InitialTime.AddHours(2);
+        timeProvider.UtcNow = dispensedTime;
+
+        var result = await service.DispenseAsync(
+            created.Prescription!.Id,
+            "  Nadia Silva  ");
+
+        Assert.Equal(DispensePrescriptionOutcome.Success, result.Outcome);
+        Assert.NotNull(result.Prescription);
+        Assert.Equal(Prescription.DispensedStatus, result.Prescription.Status);
+        Assert.Equal("Nadia Silva", result.Prescription.DispensedBy);
+        Assert.Equal(dispensedTime.UtcDateTime, result.Prescription.DispensedAt);
+
+        var stored = await dbContext.Prescriptions.AsNoTracking().SingleAsync();
+        Assert.Equal(Prescription.DispensedStatus, stored.Status);
+        Assert.Equal("Nadia Silva", stored.DispensedBy);
+        Assert.Equal(dispensedTime.UtcDateTime, stored.DispensedAt);
+    }
+
+    [Fact]
+    public async Task DispenseAgainPreservesOriginalReceptionistAndTimestamp()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var timeProvider = new MutableTimeProvider(InitialTime);
+        var service = new PrescriptionManagementService(dbContext, timeProvider);
+        var created = await service.CreateAsync(
+            ValidRequest(),
+            Guid.NewGuid(),
+            "Dr. Amara Chen");
+        var firstDispensedTime = InitialTime.AddHours(2);
+        timeProvider.UtcNow = firstDispensedTime;
+        await service.DispenseAsync(created.Prescription!.Id, "Nadia Silva");
+        timeProvider.UtcNow = InitialTime.AddHours(3);
+
+        var duplicate = await service.DispenseAsync(
+            created.Prescription.Id,
+            "Another Receptionist");
+
+        Assert.Equal(DispensePrescriptionOutcome.AlreadyDispensed, duplicate.Outcome);
+        var stored = await dbContext.Prescriptions.AsNoTracking().SingleAsync();
+        Assert.Equal("Nadia Silva", stored.DispensedBy);
+        Assert.Equal(firstDispensedTime.UtcDateTime, stored.DispensedAt);
+    }
+
+    [Fact]
+    public async Task DispenseUnknownPrescriptionReturnsNotFound()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var service = new PrescriptionManagementService(
+            dbContext,
+            new MutableTimeProvider(InitialTime));
+
+        var result = await service.DispenseAsync(Guid.NewGuid(), "Nadia Silva");
+
+        Assert.Equal(DispensePrescriptionOutcome.PrescriptionNotFound, result.Outcome);
+        Assert.Empty(await dbContext.Prescriptions.ToListAsync());
+    }
+
     private static CreatePrescriptionRequest ValidRequest(Guid? patientId = null) => new()
     {
         ConsultationId = Guid.NewGuid(),
