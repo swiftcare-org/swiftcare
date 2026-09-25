@@ -135,7 +135,16 @@ function prescriptionCell(row: QueueDisplayRow) {
   }
 
   if (row.prescriptionState === 'NOT_CREATED') {
-    return <span className="text-xs font-semibold text-amber-800">Prescription pending</span>;
+    return (
+      <button
+        type="button"
+        disabled
+        title="Prescription has not been created yet"
+        className="border-2 border-slate-300 bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-slate-500 disabled:cursor-not-allowed"
+      >
+        View Prescription
+      </button>
+    );
   }
 
   return <span className="text-xs text-slate-500">Status unavailable</span>;
