@@ -15,6 +15,9 @@ public interface IPrescriptionService
         Guid patientId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<PrescriptionResponse>> GetPendingAsync(
+        CancellationToken cancellationToken = default);
+
     Task<PrescriptionResponse?> GetByQueueIdAsync(
         Guid queueId,
         CancellationToken cancellationToken = default);

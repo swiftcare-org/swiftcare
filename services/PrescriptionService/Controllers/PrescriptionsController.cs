@@ -14,6 +14,22 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
     private const string UserIdHeaderName = "X-User-Id";
     private const string UserNameHeaderName = "X-User-Name";
 
+    [HttpGet("pending")]
+    [ProducesResponseType(typeof(IReadOnlyList<PrescriptionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetPending(CancellationToken cancellationToken)
+    {
+        if (!IsRoleAllowed("Receptionist"))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new MessageResponse("Forbidden"));
+        }
+
+        var prescriptions = await prescriptionService.GetPendingAsync(cancellationToken);
+        return Ok(prescriptions);
+    }
+
     [HttpGet("patient/{patientId:guid}")]
     [ProducesResponseType(typeof(IReadOnlyList<PrescriptionResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
