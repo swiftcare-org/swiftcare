@@ -136,14 +136,12 @@ function prescriptionCell(row: QueueDisplayRow) {
 
   if (row.prescriptionState === 'NOT_CREATED') {
     return (
-      <button
-        type="button"
-        disabled
-        title="Prescription has not been created yet"
-        className="border-2 border-slate-300 bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-slate-500 disabled:cursor-not-allowed"
+      <Link
+        to={`/prescriptions/queue/${row.queueId}`}
+        className="inline-block border-2 border-brand-blue px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-brand-blue hover:bg-blue-50"
       >
         View Prescription
-      </button>
+      </Link>
     );
   }
 
