@@ -28,7 +28,8 @@ prescriptions and the dispensing counter, the same model as the local SWC-126 su
 | `results/RESULT-smoke-azure-20260914.md` | Sprint 2 Smoke gate report (SWC-88). |
 | `results/RESULT-load-azure-20260914.md` | Sprint 2 Load run report (SWC-88), compared against the 2026-09-07 baseline. |
 | `results/RESULT-smoke-azure-20260927.md` | Sprint 3 Smoke gate report (SWC-127). |
-| `results/RESULT-load-azure-20260927.md` | Sprint 3 Load run report (SWC-127), compared against the Sprint 2 Azure baseline and the local SWC-126 run. |
+| `results/RESULT-load-azure-20260928.md` | Sprint 3 Load result (SWC-127), the official result: PASS 6 of 6. |
+| `results/RESULT-load-azure-20260927.md` | Earlier Sprint 3 Load run (SWC-127), superseded by the identical repeat above. |
 
 ## Prerequisites
 

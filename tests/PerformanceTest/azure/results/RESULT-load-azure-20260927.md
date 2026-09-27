@@ -2,6 +2,8 @@
 
 **Jira:** SWC-127  **Plan:** [`TEST-PLAN-AZURE.md`](../TEST-PLAN-AZURE.md) section 12
 
+> **Superseded.** The official SWC-127 Load result is [`RESULT-load-azure-20260928.md`](RESULT-load-azure-20260928.md), an identical repeat of this run. This report is kept as the earlier run.
+
 The Sprint 3 part of the deployed-environment baseline: the clinical workflow at the modelled clinic peak, against the live Azure deployment. It extends the Sprint 1 ([`RESULT-load-azure-20260907.md`](RESULT-load-azure-20260907.md)) and Sprint 2 ([`RESULT-load-azure-20260914.md`](RESULT-load-azure-20260914.md)) baselines, and runs the same workload as the local Sprint 3 run ([`../../local/results/RESULT-load-SWC-126-20260927.md`](../../local/results/RESULT-load-SWC-126-20260927.md)).
 
 ## Headline
