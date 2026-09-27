@@ -244,7 +244,7 @@ the JTL. The error rate is stated on response code, with duration breaches repor
 | Smoke | 1 Doctor + 1 Receptionist, 60 s, 5 s cycle pause | Required, gate for the rest |
 | Load | 10 Doctor + 10 Receptionist, 30 s ramp, 900 s | Required |
 | Stress | 150 Doctor + 150 Receptionist, linear ramp over 600 s, capped stack | Required |
-| Stress, isolated | as Stress with `-JcounterQueuePoll=false` | Only if Stress saturates QueueService first |
+| Stress, isolated | as Stress with `-JcounterQueuePoll=false` | Only if Stress saturates QueueService first. Deferred until SWC-128 is fixed (see below) |
 
 **Stress calibration.** The Load run (`results/RESULT-load-SWC-126-20260927.md`) left every
 container under 11% CPU at 20 users. As in section 5.2 and SWC-87, the ceiling is scaled about
@@ -258,6 +258,13 @@ A 6,000-entry day makes `GET /api/queue/today` return the whole day's queue on e
 poll. That is SWC-87's known QueueService bottleneck and could hide the Sprint 3 services. If
 the combined run shows QueueService saturating first, the isolated run repeats it without the
 counter's queue poll, to find the Sprint 3 services' own knee.
+
+**Deviation (2026-09-27).** The combined Stress run (`results/RESULT-stress-SWC-126-20260927.md`)
+did show QueueService saturating first. It also found that concurrent call-next requests
+deadlock in MySQL and return 500, raised as SWC-128 for Sprint 4. Every doctor cycle starts
+with call-next, so the isolated run would still load the Sprint 3 doctor endpoints only
+lightly until that is fixed. The isolated run is therefore deferred. Once SWC-128 is merged,
+the Stress profile is re-run to verify it (0 call-next 500s), followed by the isolated run.
 
 ### 9.7 Test data
 

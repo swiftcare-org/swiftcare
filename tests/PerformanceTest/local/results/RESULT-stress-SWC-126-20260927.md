@@ -10,7 +10,8 @@ Sprint 2 QueueService endpoints:
 - the counter's `GET /api/queue/today` returns the whole day's queue on every poll (1.46 MB for
   a 6,000-entry day);
 - concurrent `PUT /api/queue/call-next` transactions **deadlock in MySQL and return 500**. That
-  happened 1,842 times, from 14 active threads onward.
+  happened 1,842 times, from 14 active threads onward. Raised as **SWC-128**, scheduled for
+  Sprint 4.
 
 **The Sprint 3 endpoints did not break.** They returned no error responses across 10,027 samples
 (one pending-list sample breached the 1.5 s Duration Assertion at 1.8 s), and their per-minute
@@ -190,17 +191,19 @@ refresh, and its call-next transaction deadlocks under concurrent doctors.
 The Sprint 3 services kept headroom throughout. PrescriptionService and MedicalRecordService
 stayed mostly under 45% and 10% CPU. Every Sprint 3 endpoint stayed error-free with p95 under
 1.6 s, even while the QueueService calls around them took 5-15 s. Their own breaking point is
-therefore not established by this run. As planned in `TEST-PLAN.md` section 9.6, the isolated
-run repeats Stress with `-JcounterQueuePoll=false` to find it. The doctor chain still depends
-on call-next, so the deadlock will still limit doctor throughput there. The isolated run shows
-how far it does so without QueueService's CPU pinned.
+therefore not established by this run. The isolated run planned in `TEST-PLAN.md` section 9.6
+(`-JcounterQueuePoll=false`) is deferred until SWC-128 is fixed. Every doctor cycle starts with
+call-next, so while the deadlock remains, that run would still load the Sprint 3 doctor
+endpoints only lightly. After the fix, the Stress profile and then the isolated run are
+repeated to establish the Sprint 3 services' own knee.
 
 Findings for the development team:
 
-1. **Defect: `PUT /api/queue/call-next` returns 500 on a MySQL deadlock.** It appeared with
-   about 7 concurrent doctors and reached 90% of calls under load. The Serializable transaction
-   needs deadlock retry (or `EnableRetryOnFailure`), and a `(QueueDate, Status)` index to
-   narrow the range it locks. To be raised as a bug and linked to SWC-126.
+1. **Defect SWC-128: `PUT /api/queue/call-next` returns 500 on a MySQL deadlock.** It appeared
+   with about 7 concurrent doctors and reached 90% of calls under load. The Serializable
+   transaction needs deadlock retry, and a `(QueueDate, Status)` index to narrow the range it
+   locks. Scheduled for Sprint 4. The fix is verified by re-running this Stress profile, which
+   should give 0 call-next 500s.
 2. **Scalability: `GET /api/queue/today` returns the whole day** (1.46 MB at 6,000 entries) on a
    5 s poll from every counter screen, with no index on `(QueueDate, Status)`. This confirms
    and quantifies the SWC-87 follow-up.
