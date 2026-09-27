@@ -419,6 +419,42 @@ jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
 
 Write up `results/RESULT-smoke-azure-<date>.md` and `results/RESULT-load-azure-<date>.md` against 12.5. Open each with the load profile and time window (users, role split, ramp, duration, warm-up excluded, samples, throughput). Compare them explicitly with the Sprint 2 Azure baseline (`results/RESULT-load-azure-20260914.md`) and with the local Sprint 3 run (`../local/results/RESULT-load-SWC-126-20260927.md`).
 
+#### Repeat of run 1 (recorded before the run)
+
+Run 1 (`results/RESULT-load-azure-20260927.md`) showed a slow phase of about three minutes after load started, while Azure Monitor showed every app and the database far from their limits. JMeter measures from the load generator, so a slow or unstable internet connection there looks the same as a slow deployment.
+
+A first re-run attempt on 2026-09-27 (23:29 IST), with a full-size warm-up, was discarded because the load generator's connection was unstable for the first half of the run.
+
+The repeat is therefore **identical to run 1**, the same steps as 12.7 with nothing changed: seed, 1 + 1 warm-up, doctor reset, Smoke gate, doctor reset, then the same Load profile, thresholds and measurement windows. The only addition is a checked precondition. The warm-up starts only when 20 consecutive `GET /health` requests all answer 200 in under 1 s, so the load generator's connection is known to be stable.
+
+**Both runs are reported, and this repeat is final.** Run 1 and the repeat appear side by side. The repeat is the SWC-127 Load result, whatever it shows, unless a concrete environment fault (load generator connection, deployment outage) is observed and recorded during the run. The discarded attempt is recorded in one line with its reason.
+
+```powershell
+# connection check: all 20 must be 200 and under 1 s
+1..20 | ForEach-Object { curl.exe -s -o NUL -w "%{http_code} %{time_total}`n" https://api.swiftcare.me/health }
+
+# top up the waiting queue (also resets doctors left mid-consultation)
+./seed-clinical-flow-azure.ps1 -QueueVolume 100
+
+# warm-up, as run 1 (results discarded), then reset
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersClinicDoctor=1 -JusersClinicCounter=1 -Jrampup=1 -Jduration=60 `
+  -JcycleDelay=5000 -JcycleRange=0 -JdispenseAfterMs=5000 -l results/warmup-swc127-repeat.jtl
+./seed-clinical-flow-azure.ps1 -QueueVolume 0
+
+# Smoke gate, as run 1, then reset
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersClinicDoctor=1 -JusersClinicCounter=1 -Jrampup=1 -Jduration=60 `
+  -JcycleDelay=5000 -JcycleRange=0 -JdispenseAfterMs=5000 `
+  -l results/smoke-swc127-repeat.jtl -e -o results/smoke-swc127-repeat-report
+./seed-clinical-flow-azure.ps1 -QueueVolume 0
+
+# Load, as run 1
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersClinicDoctor=10 -JusersClinicCounter=10 -Jrampup=30 -Jduration=900 `
+  -l results/load-swc127-repeat.jtl -e -o results/load-swc127-repeat-report
+```
+
 ### 12.8 Data footprint
 
 A seeded run adds these to the deployed databases:
