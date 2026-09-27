@@ -24,3 +24,4 @@ jmeter.log
 !results/stress-SWC-23-solo-docker-stats.log
 !results/stress-SWC-20-solo-docker-stats.log
 !results/stress-SWC-21-solo-docker-stats.log
+!results/load-SWC-126-docker-stats.log
