@@ -7,8 +7,8 @@ and user-management screens) is tracked under
 for SWC-15, SWC-18, SWC-20, SWC-21, SWC-22, SWC-23 and SWC-24 plus one cross-story clinic-day
 journey, tracked under SPRINT2-QA-01.
 Sprint 3 adds SWC-25 vital-sign form, SWC-28 medical-alert, combined SWC-26/SWC-38
-consultation-completion, combined SWC-29/SWC-40 prescription and combined SWC-30/SWC-41
-prescription-counter coverage under SWC-110.
+consultation-completion, combined SWC-29/SWC-40 prescription, combined SWC-30/SWC-41
+prescription-counter and SWC-94 allergy load-failure coverage under SWC-110.
 
 Unlike `AuthService.UnitTests` / `ApiGateway.UnitTests`, this project has no
 `ProjectReference` to any service, and it only talks to whatever is already
@@ -112,12 +112,20 @@ list from being empty. The setup finds those leftovers through the real APIs. If
 `QA Empty-State Setup`; otherwise the test fails with an explanation instead of changing data
 it does not own. CI sets the variable because its database is discarded after each run.
 
+### Simulated request failures
+
+SWC-94 must show how the patient profile copes when only the allergies request fails, which
+the real stack cannot produce on demand. `Support/BrowserFaults.cs` wraps the page's `fetch`
+through one Chrome DevTools command before any page script runs, so a chosen API path
+returns an error inside that browser tab only. The backend and every other request are
+untouched.
+
 ## Parallel-safety classification
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
 | Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `PrescriptionCounterTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
-| Isolated patient/profile | Allergy, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
+| Isolated patient/profile | Allergy, allergy load-failure, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
 | Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
 
 Every generated value is tagged through `TestData.RunId`, which includes the test-process
