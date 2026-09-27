@@ -83,6 +83,19 @@ public class PatientProfilePage
     public bool ShowsNoAllergiesRecorded =>
         _driver.FindElements(By.XPath("//*[normalize-space()='No allergies recorded']")).Count > 0;
 
+    // SWC-94 - a failed allergies request degrades to this section-level message instead of
+    // taking down the whole profile.
+    private static readonly By AllergiesLoadError =
+        By.XPath("//p[@role='alert'][normalize-space()='Unable to load allergies.']");
+
+    public bool ShowsAllergiesLoadError => _driver.FindElements(AllergiesLoadError).Count > 0;
+
+    public void WaitForAllergiesLoadError() => _wait.Until(d => d.FindElements(AllergiesLoadError).Count > 0);
+
+    // The whole-page failure SWC-94 prevents; its heading is upper-cased by CSS only.
+    public bool HasProfileLoadError =>
+        _driver.FindElements(By.XPath("//p[normalize-space()='Unable to Load Patient']")).Count > 0;
+
     public void WaitForAllergyRow(string name) => _wait.Until(d => d.FindElements(RowCell(name)).Count > 0);
 
     public void WaitForAllergyRowGone(string name) => _wait.Until(d => d.FindElements(RowCell(name)).Count == 0);
@@ -188,6 +201,9 @@ public class PatientProfilePage
 
     public bool ShowsNoChronicConditionsRecorded =>
         _driver.FindElements(By.XPath("//*[normalize-space()='No chronic conditions recorded']")).Count > 0;
+
+    public bool ShowsChronicConditionsLoadError =>
+        _driver.FindElements(By.XPath("//*[normalize-space()='Unable to load chronic conditions.']")).Count > 0;
 
     public void WaitForConditionRow(string name) => _wait.Until(d => d.FindElements(RowCell(name)).Count > 0);
 
