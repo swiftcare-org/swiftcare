@@ -206,6 +206,7 @@ jobs:
       - build-frontend
     env:
       AUTH_SEED_PASSWORD: ci-only-e2e-seed-password
+      E2E_ALLOW_EMPTY_STATE_SETUP: "true"
       E2E_BASE_URL: http://localhost:5173
       E2E_HEADLESS: "true"
       MYSQL_USER: swiftcare_user

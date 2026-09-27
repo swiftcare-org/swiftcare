@@ -80,6 +80,7 @@ Environment variables:
 | `MEDICAL_RECORD_DB_NAME` | `swiftcare_medical_record` | MedicalRecordService database name |
 | `E2E_MEDICAL_RECORD_DB_HOST` | `localhost` | Host used by the SWC-28 historical follow-up fixture |
 | `E2E_MEDICAL_RECORD_DB_CONNECTION` | *(unset)* | Full MedicalRecordService connection string override |
+| `E2E_ALLOW_EMPTY_STATE_SETUP` | `false` | Set to `true` on a disposable stack to let the empty pending-list test dispense leftover prescriptions it did not create |
 
 ### Why the suite touches MySQL directly
 
@@ -97,6 +98,18 @@ completes a consultation through the real APIs with a valid date, then
 `Support/MedicalRecordDatabase.cs` backdates only that test-owned row by consultation and
 patient id. It never changes another consultation or bypasses the browser behavior under
 test.
+
+### Empty pending-prescription list
+
+SWC-110 names SWC-96 as the repeatable setup for empty-state tests, but no SWC-96 work
+exists, so `SeedClient.EnsureNoOtherPendingPrescriptionsToday` stands in for it. The queue
+screen shows "All prescriptions dispensed today" only when no PENDING prescription belongs
+to one of today's COMPLETED queue entries. Every test removes its own queue rows on disposal,
+so only data created outside the suite, such as API collections or manual QA, can keep the
+list from being empty. The setup finds those leftovers through the real APIs. If
+`E2E_ALLOW_EMPTY_STATE_SETUP=true`, it dispenses them as a throwaway receptionist named
+`QA Empty-State Setup`; otherwise the test fails with an explanation instead of changing data
+it does not own. CI sets the variable because its database is discarded after each run.
 
 ## Parallel-safety classification
 
