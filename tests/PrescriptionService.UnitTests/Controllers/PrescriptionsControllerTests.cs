@@ -158,6 +158,42 @@ public class PrescriptionsControllerTests
         service.VerifyAll();
     }
 
+    [Fact]
+    public async Task GetPendingAsReceptionistReturnsPrescriptions()
+    {
+        var expected = new[]
+        {
+            ExpectedResponse(ValidRequest(), Guid.NewGuid()),
+            ExpectedResponse(ValidRequest(), Guid.NewGuid())
+        };
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.GetPendingAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var controller = CreateController(service, "Receptionist");
+
+        var result = await controller.GetPending(CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task GetPendingAsNonReceptionistReturnsForbidden(string role)
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, role);
+
+        var result = await controller.GetPending(CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
     [Theory]
     [InlineData("Doctor")]
     [InlineData("Receptionist")]

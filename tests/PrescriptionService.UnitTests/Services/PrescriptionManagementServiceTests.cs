@@ -129,6 +129,74 @@ public class PrescriptionManagementServiceTests
     }
 
     [Fact]
+    public async Task GetPendingReturnsOnlyPendingPrescriptionsOldestFirst()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var timeProvider = new MutableTimeProvider(InitialTime);
+        var service = new PrescriptionManagementService(dbContext, timeProvider);
+        var olderRequest = ValidRequest();
+        var older = await service.CreateAsync(
+            olderRequest,
+            Guid.NewGuid(),
+            "Dr. Amara Chen");
+        timeProvider.UtcNow = InitialTime.AddHours(1);
+        var dispensed = await service.CreateAsync(
+            ValidRequest(),
+            Guid.NewGuid(),
+            "Dr. Priya Rao");
+        await service.DispenseAsync(dispensed.Prescription!.Id, "Nadia Silva");
+        timeProvider.UtcNow = InitialTime.AddHours(2);
+        var newerRequest = ValidRequest();
+        var newer = await service.CreateAsync(
+            newerRequest,
+            Guid.NewGuid(),
+            "Dr. Mateo Silva");
+        dbContext.ChangeTracker.Clear();
+
+        var pending = await service.GetPendingAsync();
+
+        Assert.Collection(
+            pending,
+            prescription =>
+            {
+                Assert.Equal(older.Prescription!.Id, prescription.Id);
+                Assert.Equal(olderRequest.QueueId, prescription.QueueId);
+                Assert.Equal(Prescription.PendingStatus, prescription.Status);
+                Assert.Equal(DateTimeKind.Utc, prescription.CreatedAt.Kind);
+                Assert.Equal([0, 1], prescription.Medicines.Select(item => item.ItemOrder));
+            },
+            prescription =>
+            {
+                Assert.Equal(newer.Prescription!.Id, prescription.Id);
+                Assert.Equal(newerRequest.QueueId, prescription.QueueId);
+                Assert.Equal(Prescription.PendingStatus, prescription.Status);
+                Assert.Equal(DateTimeKind.Utc, prescription.CreatedAt.Kind);
+                Assert.Equal([0, 1], prescription.Medicines.Select(item => item.ItemOrder));
+            });
+    }
+
+    [Fact]
+    public async Task GetPendingWithoutPendingPrescriptionsReturnsEmptyCollection()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        var service = new PrescriptionManagementService(
+            dbContext,
+            new MutableTimeProvider(InitialTime));
+        var created = await service.CreateAsync(
+            ValidRequest(),
+            Guid.NewGuid(),
+            "Dr. Amara Chen");
+        await service.DispenseAsync(created.Prescription!.Id, "Nadia Silva");
+        dbContext.ChangeTracker.Clear();
+
+        var pending = await service.GetPendingAsync();
+
+        Assert.Empty(pending);
+    }
+
+    [Fact]
     public async Task CreateWithNoMedicinesIsRejectedBeforePersistence()
     {
         using var connection = OpenConnection();
