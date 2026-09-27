@@ -106,7 +106,9 @@ public class ConsultationCompletionTests : SeleniumTestBase
         Driver.SwitchTo().Window(receptionistTab);
         queue.WaitForStatus(assignment.QueueNumber, "COMPLETED", TimeSpan.FromSeconds(20));
         Assert.True(queue.HasViewPrescriptionAction(assignment.QueueNumber));
-        Assert.True(queue.IsViewPrescriptionEnabled(assignment.QueueNumber));
+        Assert.Equal(
+            $"/prescriptions/queue/{assignment.QueueId}",
+            queue.ViewPrescriptionPath(assignment.QueueNumber));
 
         Driver.SwitchTo().Window(doctorTab);
         dashboard.WaitForPatientRow(patient2.FullName);
