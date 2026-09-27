@@ -125,6 +125,14 @@ public sealed class SeedClient : IDisposable
         params SeededMedicine[] medicines) =>
         CreatePrescriptionAsync(consultation, username, password, medicines).GetAwaiter().GetResult();
 
+    // Dispenses a prescription through the real SWC-41 API as a receptionist. The seeded
+    // reception.silva is used when no throwaway receptionist is supplied.
+    public void DispensePrescription(
+        string prescriptionId,
+        string username = "reception.silva",
+        string? password = null) =>
+        DispensePrescriptionAsync(prescriptionId, username, password).GetAwaiter().GetResult();
+
     private async Task<SeededPatient> RegisterPatientAsync(string? fullName)
     {
         var name = fullName ?? TestData.FullName("Patient");
@@ -383,6 +391,17 @@ public sealed class SeedClient : IDisposable
         var body = await response.Content.ReadFromJsonAsync<CreatedPrescriptionBody>(Json)
                    ?? throw new InvalidOperationException("Empty response creating a seed prescription.");
         return body.Id;
+    }
+
+    private async Task DispensePrescriptionAsync(string prescriptionId, string username, string? password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"/api/prescriptions/{prescriptionId}/dispense",
+            new { },
+            token);
+        response.EnsureSuccessStatusCode();
     }
 
     // password is null for the dev-seeded accounts (dr.chen, reception.silva,

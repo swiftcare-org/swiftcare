@@ -80,9 +80,6 @@ Environment variables:
 | `MEDICAL_RECORD_DB_NAME` | `swiftcare_medical_record` | MedicalRecordService database name |
 | `E2E_MEDICAL_RECORD_DB_HOST` | `localhost` | Host used by the SWC-28 historical follow-up fixture |
 | `E2E_MEDICAL_RECORD_DB_CONNECTION` | *(unset)* | Full MedicalRecordService connection string override |
-| `PRESCRIPTION_DB_NAME` | `swiftcare_prescription` | PrescriptionService database name |
-| `E2E_PRESCRIPTION_DB_HOST` | `localhost` | Host used by the SWC-40 dispensed-prescription fixture |
-| `E2E_PRESCRIPTION_DB_CONNECTION` | *(unset)* | Full PrescriptionService connection string override |
 
 ### Why the suite touches MySQL directly
 
@@ -100,11 +97,6 @@ completes a consultation through the real APIs with a valid date, then
 `Support/MedicalRecordDatabase.cs` backdates only that test-owned row by consultation and
 patient id. It never changes another consultation or bypasses the browser behavior under
 test.
-
-SWC-40 makes a DISPENSED prescription read-only, but no API can dispense a prescription
-until SWC-41. The prescription test saves a prescription through the real API, then
-`Support/PrescriptionDatabase.cs` marks only that test-owned PENDING row as DISPENSED by
-prescription and patient id before the browser checks the read-only view.
 
 ## Parallel-safety classification
 
