@@ -46,3 +46,18 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  # Added for SWC-126 (Sprint 3 clinical flow).
+  medicalrecordservice:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  prescriptionservice:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
