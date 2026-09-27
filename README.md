@@ -182,6 +182,10 @@ After a doctor saves a consultation and its vital signs, Complete Consultation w
 
 After a successful consultation, a doctor can add multiple medicines with a name, dosage, frequency, duration, and optional instructions. The form shows PatientService allergy information as an advisory warning and loads the patient's previous prescriptions for reference. `POST /api/prescriptions` stores the consultation, queue, patient, and trusted doctor identifiers with a default `PENDING` status. After saving, the prescribing doctor can add medicines or remove a confirmed item while keeping at least one medicine. A `DISPENSED` prescription is read-only. A unique consultation index prevents a second prescription for the same consultation. See the [PrescriptionService guide](services/PrescriptionService/README.md) for endpoints, configuration, and local startup.
 
+### View prescriptions at the counter
+
+The receptionist queue shows today's pending prescriptions in prescription-time order so the oldest is handled first. Each link opens the full counter view with the patient name, queue number, date, doctor, room, status, and all medicine details. If the consultation is complete but the doctor has not saved a prescription, the page explains that the doctor may still be writing it instead of displaying an error. When no pending prescriptions remain, the queue shows `All prescriptions dispensed today`.
+
 ### Dispense a prescription
 
 Receptionists open a completed queue entry's prescription details and use **Mark as Dispensed** while its status is `PENDING`. PrescriptionService changes the status to `DISPENSED` and records the trusted receptionist name and current UTC timestamp. The details page then shows who dispensed it and the clinic-local time, and the queue displays `✅ DISPENSED`. Doctor and Admin access is read-only, and an already dispensed prescription cannot be dispensed again.

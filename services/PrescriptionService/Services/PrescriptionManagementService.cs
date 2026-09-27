@@ -119,6 +119,20 @@ public sealed class PrescriptionManagementService(
         return prescriptions.Select(ToResponse).ToArray();
     }
 
+    public async Task<IReadOnlyList<PrescriptionResponse>> GetPendingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var prescriptions = await dbContext.Prescriptions
+            .AsNoTracking()
+            .Include(prescription => prescription.Items)
+            .Where(prescription => prescription.Status == Prescription.PendingStatus)
+            .OrderBy(prescription => prescription.CreatedAt)
+            .ThenBy(prescription => prescription.Id)
+            .ToListAsync(cancellationToken);
+
+        return prescriptions.Select(ToResponse).ToArray();
+    }
+
     public async Task<PrescriptionResponse?> GetByQueueIdAsync(
         Guid queueId,
         CancellationToken cancellationToken = default)
