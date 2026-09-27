@@ -95,7 +95,7 @@ public class ConsultationCompletionTests : SeleniumTestBase
         queue.WaitUntilLoaded();
         queue.WaitForQueueRow(assignment.QueueNumber);
         Assert.Contains("IN CONSULTATION", queue.StatusFor(assignment.QueueNumber));
-        Assert.False(queue.HasViewPrescriptionButton(assignment.QueueNumber));
+        Assert.False(queue.HasViewPrescriptionAction(assignment.QueueNumber));
 
         seed.CompleteConsultation(consultation.Id, doctor.Username, doctor.Password);
 
@@ -105,8 +105,8 @@ public class ConsultationCompletionTests : SeleniumTestBase
 
         Driver.SwitchTo().Window(receptionistTab);
         queue.WaitForStatus(assignment.QueueNumber, "COMPLETED", TimeSpan.FromSeconds(20));
-        Assert.True(queue.HasViewPrescriptionButton(assignment.QueueNumber));
-        Assert.False(queue.IsViewPrescriptionEnabled(assignment.QueueNumber));
+        Assert.True(queue.HasViewPrescriptionAction(assignment.QueueNumber));
+        Assert.True(queue.IsViewPrescriptionEnabled(assignment.QueueNumber));
 
         Driver.SwitchTo().Window(doctorTab);
         dashboard.WaitForPatientRow(patient2.FullName);
