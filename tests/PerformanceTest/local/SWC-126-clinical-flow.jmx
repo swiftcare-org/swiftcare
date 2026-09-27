@@ -611,31 +611,47 @@ vars.put(&apos;doctorFree&apos;, String.valueOf(prev.getResponseCode() == &apos;
         <hashTree/>
 
         <!-- The queue screen refreshes the queue and the pending list together every ~5 s. -->
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/queue/today" enabled="true">
-          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
-            <collectionProp name="Arguments.arguments"/>
-          </elementProp>
-          <stringProp name="HTTPSampler.path">/api/queue/today</stringProp>
-          <stringProp name="HTTPSampler.method">GET</stringProp>
-          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
-          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
-        </HTTPSamplerProxy>
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="Screen refresh" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
         <hashTree>
           <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="~5s poll interval" enabled="true">
             <stringProp name="ConstantTimer.delay">${__P(pollDelay,4500)}</stringProp>
             <stringProp name="RandomTimer.range">${__P(pollRange,1000)}</stringProp>
           </UniformRandomTimer>
           <hashTree/>
-          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
-            <collectionProp name="Asserion.test_strings">
-              <stringProp name="49586">200</stringProp>
-            </collectionProp>
-            <stringProp name="Assertion.custom_message"></stringProp>
-            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
-            <boolProp name="Assertion.assume_success">false</boolProp>
-            <intProp name="Assertion.test_type">8</intProp>
-          </ResponseAssertion>
-          <hashTree/>
+        </hashTree>
+
+        <!-- -JcounterQueuePoll=false isolates the Sprint 3 endpoints from the Sprint 2 queue poll. -->
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Counter polls the queue" enabled="true">
+          <stringProp name="IfController.condition">${__P(counterQueuePoll,true)}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/queue/today" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/queue/today</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message"></stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+          </hashTree>
         </hashTree>
 
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/prescriptions/pending" enabled="true">
