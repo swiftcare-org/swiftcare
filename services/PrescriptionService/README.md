@@ -14,6 +14,7 @@ PrescriptionService owns digital prescriptions and their medicine items. It stor
 - Returns a patient's previous prescriptions newest first for clinical reference.
 - Rejects a second prescription for the same consultation.
 - Retrieves the prescription linked to a queue entry for the shared staff details page.
+- Returns `PENDING` prescriptions oldest first for the receptionist counter queue.
 - Allows a receptionist to dispense a `PENDING` prescription once and records their trusted name and the UTC dispensing time.
 
 The doctor dashboard and prescription page can recover an unfinished prescription after navigation state is lost. They read the authenticated doctor's latest completed consultation from MedicalRecordService and compare its consultation ID with PrescriptionService history before offering the form again.
@@ -32,11 +33,12 @@ Allergy details remain owned by PatientService. The frontend reads them from Pat
 | `POST` | `/api/prescriptions/{prescriptionId}/items` | Doctor | Adds a medicine to the doctor's saved prescription. |
 | `DELETE` | `/api/prescriptions/{prescriptionId}/items/{medicineId}` | Doctor | Removes a medicine when at least one other medicine remains. |
 | `GET` | `/api/prescriptions/patient/{patientId}` | Doctor | Returns the patient's prescriptions newest first, including ordered medicine items. |
+| `GET` | `/api/prescriptions/pending` | Receptionist | Returns all `PENDING` prescriptions oldest first, including ordered medicine items. |
 | `GET` | `/api/prescriptions/queue/{queueId}` | Doctor, Receptionist, Admin | Returns the prescription and ordered medicines for a queue entry. |
 | `PUT` | `/api/prescriptions/{prescriptionId}/dispense` | Receptionist | Changes a `PENDING` prescription to `DISPENSED` and records who dispensed it and when. |
 | `GET` | `/health` | Anonymous | Service health check. |
 
-The API Gateway uses `DoctorOnly` for prescription creation, history, and medicine changes; `PrescriptionReadPolicy` for queue-based details; and `ReceptionistOnly` for dispensing. PrescriptionService repeats the relevant role and identity checks after `GatewaySecretMiddleware` validates `X-Gateway-Secret` and the Gateway supplies trusted identity headers.
+The API Gateway uses `DoctorOnly` for prescription creation, history, and medicine changes; `PrescriptionReadPolicy` for queue-based details; and `ReceptionistOnly` for the pending list and dispensing. PrescriptionService repeats the relevant role and identity checks after `GatewaySecretMiddleware` validates `X-Gateway-Secret` and the Gateway supplies trusted identity headers.
 
 ## Create request
 
@@ -66,6 +68,14 @@ The prescribing doctor can add another medicine to a saved prescription by sendi
 Removing a medicine uses `DELETE /api/prescriptions/{prescriptionId}/items/{medicineId}`. The frontend asks for confirmation before calling this endpoint. Removing the final medicine returns HTTP `409` with `Prescription must have at least one medicine`.
 
 Both operations are limited to the doctor who created the prescription. A prescription with `DISPENSED` status is read-only, and either operation returns HTTP `409` with `Cannot modify a dispensed prescription`.
+
+## View prescriptions at the counter
+
+The receptionist queue combines PrescriptionService results with today's QueueService entries and PatientService details. This keeps prescription storage independent while allowing the counter view to show the patient name, queue number, prescription date, doctor name, room, status, and every medicine with its dosage, frequency, duration, and optional instructions.
+
+`GET /api/prescriptions/pending` returns only `PENDING` prescriptions in ascending creation-time order. The frontend intersects that result with today's completed queue entries and displays the oldest waiting prescription first. When none remain, it shows `All prescriptions dispensed today`.
+
+A completed queue entry remains available before the doctor saves its prescription. In that case, the queue link opens the details page and a `404` from `GET /api/prescriptions/queue/{queueId}` is presented as `No prescription recorded yet. Doctor may still be writing it.` rather than as an application error.
 
 ## Dispense a prescription
 
@@ -118,10 +128,11 @@ The local API Gateway cluster forwards prescription requests to `http://localhos
 dotnet test tests/PrescriptionService.UnitTests/PrescriptionService.UnitTests.csproj
 ```
 
-Backend coverage includes request validation, required linkage, trusted doctor identity, `PENDING` status, ordered medicine persistence, duplicate-consultation prevention, role handling, patient-history and queue lookup, medicine additions and removals, minimum-one enforcement, prescription ownership, dispensing identity and timestamps, duplicate-dispense prevention, dispensed read-only behavior, and empty history. Frontend behavior is validated with lint, a production build, and manual QA; the repository does not use frontend unit tests.
+Backend coverage includes request validation, required linkage, trusted doctor identity, `PENDING` status, ordered medicine persistence, duplicate-consultation prevention, role handling, patient-history and queue lookup, pending-only filtering and oldest-first ordering, medicine additions and removals, minimum-one enforcement, prescription ownership, dispensing identity and timestamps, duplicate-dispense prevention, dispensed read-only behavior, and empty results. Frontend behavior is validated with lint, a production build, and manual QA; the repository does not use frontend unit tests.
 
 ## Scope boundaries
 
 - SWC-29 does not add Docker Compose, CI/CD image publishing, Terraform, Azure database resources, or Container App deployment for PrescriptionService.
 - SWC-41 adds the dispensing application workflow but does not add PrescriptionService to Docker Compose or Azure deployment.
+- SWC-30 adds the counter viewing workflow but does not add PrescriptionService infrastructure or cross-service database access.
 - PrescriptionService does not query PatientService, MedicalRecordService, or QueueService databases.
