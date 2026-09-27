@@ -107,11 +107,58 @@ public class QueueManagementPage
     public bool HasViewPrescriptionAction(string queueNumber) =>
         _driver.FindElements(ViewPrescriptionActionLocator(queueNumber)).Count > 0;
 
-    public bool IsViewPrescriptionEnabled(string queueNumber) =>
-        _driver.FindElement(ViewPrescriptionActionLocator(queueNumber)).Enabled;
+    // A link is always "enabled" to Selenium, so callers check where it leads instead.
+    public string ViewPrescriptionPath(string queueNumber) =>
+        PathOf(_driver.FindElement(ViewPrescriptionActionLocator(queueNumber)));
+
+    public void ClickViewPrescription(string queueNumber) =>
+        _wait.Until(d => d.FindElement(ViewPrescriptionActionLocator(queueNumber))).Click();
 
     private static By ViewPrescriptionActionLocator(string queueNumber) => By.XPath(
         $"//table//tr[td[1][normalize-space()='{queueNumber}']]/td[7]//*[self::a or self::button][normalize-space()='View Prescription']");
+
+    // SWC-41 - a dispensed entry's prescription cell becomes a "✅ DISPENSED" link, picked up
+    // by the page's own five-second poll.
+    public void WaitForDispensedStatus(string queueNumber, TimeSpan timeout) =>
+        PollingWait(timeout).Until(d => d.FindElements(By.XPath(
+            $"//table//tr[td[1][normalize-space()='{queueNumber}']]/td[7]//a[contains(normalize-space(), 'DISPENSED')]")).Count > 0);
+
+    // --- Pending Prescriptions list (SWC-30) ---
+
+    private static readonly By PendingSection =
+        By.CssSelector("section[aria-labelledby='pending-prescriptions-heading']");
+
+    // Queue numbers in list order, read from each entry's "Q-007 · Patient name" line.
+    public IReadOnlyList<string> PendingPrescriptionQueueNumbers =>
+        _driver.FindElements(By.CssSelector(
+                "section[aria-labelledby='pending-prescriptions-heading'] li > div > p:first-child"))
+            .Select(element => element.Text.Split('·')[0].Trim())
+            .ToList();
+
+    public void WaitForPendingPrescription(string queueNumber, TimeSpan timeout) =>
+        PollingWait(timeout).Until(_ => PendingPrescriptionQueueNumbers.Contains(queueNumber));
+
+    public bool ShowsAllPrescriptionsDispensed =>
+        _driver.FindElement(PendingSection)
+            .FindElements(By.XPath(".//p[normalize-space()='All prescriptions dispensed today']")).Count > 0;
+
+    public void WaitForAllPrescriptionsDispensed(TimeSpan timeout) =>
+        PollingWait(timeout).Until(_ => ShowsAllPrescriptionsDispensed);
+
+    // The queue re-renders every five seconds, so a read can land on a replaced element.
+    private WebDriverWait PollingWait(TimeSpan timeout)
+    {
+        var wait = new WebDriverWait(_driver, timeout);
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        return wait;
+    }
+
+    private static string PathOf(IWebElement link)
+    {
+        var href = link.GetDomAttribute("href")
+            ?? throw new InvalidOperationException("View Prescription link has no href.");
+        return Uri.TryCreate(href, UriKind.Absolute, out var absolute) ? absolute.AbsolutePath : href;
+    }
 
     private string CellText(string queueNumber, int columnIndex) =>
         _driver.FindElement(By.XPath(

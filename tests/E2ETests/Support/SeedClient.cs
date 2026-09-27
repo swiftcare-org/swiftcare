@@ -66,8 +66,22 @@ public sealed class SeedClient : IDisposable
         string patientId, string conditionName, string? dateDiagnosed = null, string? notes = null) =>
         AddChronicConditionAsync(patientId, conditionName, dateDiagnosed, notes).GetAwaiter().GetResult();
 
-    public SeededUser CreateUser(string role, string? username = null, string? password = null) =>
-        CreateUserAsync(role, username, password).GetAwaiter().GetResult();
+    public SeededUser CreateUser(
+        string role,
+        string? username = null,
+        string? password = null,
+        string? fullName = null) =>
+        CreateUserAsync(role, username, password, fullName).GetAwaiter().GetResult();
+
+    // SWC-110 names SWC-96 as the repeatable setup for empty-state tests, but no SWC-96 work
+    // exists. This stands in for it: the queue screen's pending list only counts PENDING
+    // prescriptions for today's COMPLETED queue entries, and every test removes its own queue
+    // rows on disposal, so only data created outside the suite (API collections, manual QA)
+    // can keep the list from being empty. Those are dispensed only when the environment opts
+    // in with E2E_ALLOW_EMPTY_STATE_SETUP=true, as a clearly named throwaway receptionist;
+    // otherwise the test fails rather than changing data it does not own.
+    public void EnsureNoOtherPendingPrescriptionsToday(params string[] ownQueueIds) =>
+        EnsureNoOtherPendingPrescriptionsTodayAsync(ownQueueIds).GetAwaiter().GetResult();
 
     // Waits for the patient-checked-in Kafka consumer to place a registered patient
     // into the WAITING pool. Needed before CallNext, which acts on whichever entry is
@@ -124,6 +138,14 @@ public sealed class SeedClient : IDisposable
         string password,
         params SeededMedicine[] medicines) =>
         CreatePrescriptionAsync(consultation, username, password, medicines).GetAwaiter().GetResult();
+
+    // Dispenses a prescription through the real SWC-41 API as a receptionist. The seeded
+    // reception.silva is used when no throwaway receptionist is supplied.
+    public void DispensePrescription(
+        string prescriptionId,
+        string username = "reception.silva",
+        string? password = null) =>
+        DispensePrescriptionAsync(prescriptionId, username, password).GetAwaiter().GetResult();
 
     private async Task<SeededPatient> RegisterPatientAsync(string? fullName)
     {
@@ -206,7 +228,11 @@ public sealed class SeedClient : IDisposable
         return body.ConditionId;
     }
 
-    private async Task<SeededUser> CreateUserAsync(string role, string? username, string? password)
+    private async Task<SeededUser> CreateUserAsync(
+        string role,
+        string? username,
+        string? password,
+        string? fullName)
     {
         var user = username ?? TestData.Username(role.ToLowerInvariant());
         var pw = password ?? TestData.Password();
@@ -215,7 +241,7 @@ public sealed class SeedClient : IDisposable
         {
             username = user,
             password = pw,
-            fullName = TestData.FullName(role),
+            fullName = fullName ?? TestData.FullName(role),
             role,
             roomNumber = role == "Doctor" ? TestData.RoomNumber() : null,
         };
@@ -226,6 +252,51 @@ public sealed class SeedClient : IDisposable
         var createdUser = await response.Content.ReadFromJsonAsync<CreatedUserBody>(Json)
             ?? throw new InvalidOperationException($"Empty response creating E2E user '{user}'.");
         return new SeededUser(user, pw, role, request.roomNumber, createdUser.UserId, request.fullName);
+    }
+
+    private async Task EnsureNoOtherPendingPrescriptionsTodayAsync(string[] ownQueueIds)
+    {
+        var token = await TokenForAsync("reception.silva");
+        var completedToday = (await GetAsync<List<TodayQueueRowBody>>("/api/queue/today", token))
+            .Where(row => row.Status == "COMPLETED")
+            .Select(row => row.QueueId)
+            .ToHashSet();
+        var leftovers = (await GetAsync<List<PendingPrescriptionBody>>("/api/prescriptions/pending", token))
+            .Where(prescription => completedToday.Contains(prescription.QueueId)
+                && !ownQueueIds.Contains(prescription.QueueId))
+            .ToList();
+
+        if (leftovers.Count == 0)
+        {
+            return;
+        }
+
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("E2E_ALLOW_EMPTY_STATE_SETUP"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"{leftovers.Count} pending prescription(s) for today's completed patients were not " +
+                "created by this test, so the empty pending list cannot be reached. Dispense them, or set " +
+                "E2E_ALLOW_EMPTY_STATE_SETUP=true on a disposable stack to let the suite dispense them.");
+        }
+
+        var setupUser = await CreateUserAsync("Receptionist", null, null, $"QA Empty-State Setup {TestData.RunId}");
+        foreach (var prescription in leftovers)
+        {
+            await DispensePrescriptionAsync(prescription.Id, setupUser.Username, setupUser.Password);
+        }
+    }
+
+    private async Task<T> GetAsync<T>(string path, string token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(Json)
+            ?? throw new InvalidOperationException($"Empty response from {path}.");
     }
 
     private async Task WaitUntilWaitingAsync(string patientId, TimeSpan timeout)
@@ -385,6 +456,17 @@ public sealed class SeedClient : IDisposable
         return body.Id;
     }
 
+    private async Task DispensePrescriptionAsync(string prescriptionId, string username, string? password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"/api/prescriptions/{prescriptionId}/dispense",
+            new { },
+            token);
+        response.EnsureSuccessStatusCode();
+    }
+
     // password is null for the dev-seeded accounts (dr.chen, reception.silva,
     // admin.fernando), which all share TestConfig.SeedPassword; a throwaway account
     // created via CreateUser carries its own generated password instead.
@@ -445,6 +527,10 @@ public sealed class SeedClient : IDisposable
     private sealed record CalledQueueEntryBody(string QueueNumber, string RoomNumber);
 
     private sealed record CreatedPrescriptionBody(string Id);
+
+    private sealed record TodayQueueRowBody(string QueueId, string Status);
+
+    private sealed record PendingPrescriptionBody(string Id, string QueueId);
 }
 
 public sealed record SeededMedicine(

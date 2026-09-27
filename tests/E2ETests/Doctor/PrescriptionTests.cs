@@ -133,8 +133,8 @@ public class PrescriptionTests : SeleniumTestBase
         Assert.Equal(new[] { "Amoxicillin" }, prescription.LatestHistoryMedicineNames);
     }
 
-    // SWC-40 AC4 - a DISPENSED prescription is read-only. SWC-41 dispensing does not exist
-    // yet, so only this test's own prescription is marked DISPENSED in the database.
+    // SWC-40 AC4 - a DISPENSED prescription is read-only. The prescription is dispensed
+    // through the real SWC-41 API before the doctor reloads the page.
     [Fact]
     public void DispensedPrescription_IsReadOnly()
     {
@@ -147,7 +147,7 @@ public class PrescriptionTests : SeleniumTestBase
             arranged.Doctor.Password,
             new SeededMedicine("Amoxicillin", "500 mg", "Twice daily", "5 days"),
             new SeededMedicine("Cetirizine", "10 mg", "Once daily", "7 days"));
-        PrescriptionDatabase.MarkDispensed(prescriptionId, arranged.Patient.PatientId);
+        seed.DispensePrescription(prescriptionId);
 
         prescription.Refresh();
         prescription.WaitForSavedMedicineNames("Amoxicillin", "Cetirizine");

@@ -7,7 +7,8 @@ and user-management screens) is tracked under
 for SWC-15, SWC-18, SWC-20, SWC-21, SWC-22, SWC-23 and SWC-24 plus one cross-story clinic-day
 journey, tracked under SPRINT2-QA-01.
 Sprint 3 adds SWC-25 vital-sign form, SWC-28 medical-alert, combined SWC-26/SWC-38
-consultation-completion and combined SWC-29/SWC-40 prescription coverage under SWC-110.
+consultation-completion, combined SWC-29/SWC-40 prescription and combined SWC-30/SWC-41
+prescription-counter coverage under SWC-110.
 
 Unlike `AuthService.UnitTests` / `ApiGateway.UnitTests`, this project has no
 `ProjectReference` to any service, and it only talks to whatever is already
@@ -80,9 +81,7 @@ Environment variables:
 | `MEDICAL_RECORD_DB_NAME` | `swiftcare_medical_record` | MedicalRecordService database name |
 | `E2E_MEDICAL_RECORD_DB_HOST` | `localhost` | Host used by the SWC-28 historical follow-up fixture |
 | `E2E_MEDICAL_RECORD_DB_CONNECTION` | *(unset)* | Full MedicalRecordService connection string override |
-| `PRESCRIPTION_DB_NAME` | `swiftcare_prescription` | PrescriptionService database name |
-| `E2E_PRESCRIPTION_DB_HOST` | `localhost` | Host used by the SWC-40 dispensed-prescription fixture |
-| `E2E_PRESCRIPTION_DB_CONNECTION` | *(unset)* | Full PrescriptionService connection string override |
+| `E2E_ALLOW_EMPTY_STATE_SETUP` | `false` | Set to `true` on a disposable stack to let the empty pending-list test dispense leftover prescriptions it did not create |
 
 ### Why the suite touches MySQL directly
 
@@ -101,16 +100,23 @@ completes a consultation through the real APIs with a valid date, then
 patient id. It never changes another consultation or bypasses the browser behavior under
 test.
 
-SWC-40 makes a DISPENSED prescription read-only, but no API can dispense a prescription
-until SWC-41. The prescription test saves a prescription through the real API, then
-`Support/PrescriptionDatabase.cs` marks only that test-owned PENDING row as DISPENSED by
-prescription and patient id before the browser checks the read-only view.
+### Empty pending-prescription list
+
+SWC-110 names SWC-96 as the repeatable setup for empty-state tests, but no SWC-96 work
+exists, so `SeedClient.EnsureNoOtherPendingPrescriptionsToday` stands in for it. The queue
+screen shows "All prescriptions dispensed today" only when no PENDING prescription belongs
+to one of today's COMPLETED queue entries. Every test removes its own queue rows on disposal,
+so only data created outside the suite, such as API collections or manual QA, can keep the
+list from being empty. The setup finds those leftovers through the real APIs. If
+`E2E_ALLOW_EMPTY_STATE_SETUP=true`, it dispenses them as a throwaway receptionist named
+`QA Empty-State Setup`; otherwise the test fails with an explanation instead of changing data
+it does not own. CI sets the variable because its database is discarded after each run.
 
 ## Parallel-safety classification
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
-| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `PrescriptionCounterTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
 | Isolated patient/profile | Allergy, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
 | Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
 
