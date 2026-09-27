@@ -134,3 +134,167 @@ error rate, and the first resource to saturate (container CPU / memory from
 - A filled `results/REPORT-*.md` for the Smoke, Load and Stress runs, each with
   the metrics table, a pass/fail verdict against §5, and a short analysis of the
   breaking point and first-saturating resource.
+
+## 9. Sprint 3 clinical flow (SWC-126)
+
+Sections 1 to 8 describe the Sprint 1 suite and still hold for it. This section adds the
+Sprint 3 clinical workflow as a separate plan, `SWC-126-clinical-flow.jmx`, with its own seed
+script and results. It keeps the same tool, measurement rules, thresholds and capped-stack
+approach.
+
+### 9.1 Objective
+
+Establish a Load baseline and a Stress breaking point for vital signs, consultation completion,
+prescriptions and the dispensing counter. Name the first resource to saturate. These endpoints
+are chained writes across MedicalRecordService, PrescriptionService and QueueService, joined by
+the consultation-completed Kafka event, so the plan drives them in the order a real
+consultation runs.
+
+### 9.2 Scope
+
+**In**, all through the API Gateway on `:8000`:
+
+| Story | Endpoint | Role | Class |
+|---|---|---|---|
+| SWC-28 | `GET /api/consultations/patient/{id}/latest-follow-up` | Doctor | read |
+| SWC-25 | `POST /api/consultations/{id}/vitals` | Doctor | write |
+| SWC-26 / SWC-38 | `POST /api/consultations/{id}/complete` | Doctor | write |
+| SWC-29 | `GET /api/consultations/latest-completed` | Doctor | read |
+| SWC-29 | `GET /api/prescriptions/patient/{id}` | Doctor | read |
+| SWC-29 | `POST /api/prescriptions` | Doctor | write |
+| SWC-40 | `POST /api/prescriptions/{id}/items` | Doctor | write |
+| SWC-40 | `DELETE /api/prescriptions/{id}/items/{medicineId}` | Doctor | write |
+| SWC-41 | `GET /api/prescriptions/pending` | Receptionist | read |
+| SWC-30 | `GET /api/prescriptions/queue/{queueId}` | Receptionist | read |
+| SWC-41 | `PUT /api/prescriptions/{id}/dispense` | Receptionist | write |
+
+**Reported, not pass/fail:** the Sprint 2 endpoints the workflow cannot run without:
+`GET /api/queue/today/current`, `PUT /api/queue/call-next`, `POST /api/consultations` and the
+counter's `GET /api/queue/today`.
+
+**Out:** the deployed environment (SWC-127), Spike and Soak, CI integration, the frontend.
+
+### 9.3 Assumptions (locked before execution)
+
+| # | Assumption |
+|---|---|
+| B1 | Clinic peak is 20 concurrent staff sessions, as in SWC-67: 10 doctors and 10 counter sessions. |
+| B2 | A doctor completes about one consultation a minute under Load, roughly ten times a real clinic's rate. |
+| B3 | The counter screen refreshes the queue and the pending list together every ~5 s (`QueueManagementPage.tsx`). |
+| B4 | A patient reaches the counter no earlier than 30 s after the doctor saves the prescription, so the doctor has finished editing it. |
+| B5 | Login is a once-per-thread setup step, not part of either class (A3). |
+
+### 9.4 Workload model
+
+**Doctor workflow** (`usersDoctor`). Each thread logs in as its own seeded doctor and repeats:
+
+1. Poll `GET /api/queue/today/current` until it answers 204. Completion frees the doctor only
+   once QueueService consumes the completion event. No delay before the first poll, then
+   500 ms between polls, up to 20.
+2. `PUT /api/queue/call-next`.
+3. Latest follow-up, create consultation, record vital signs, complete.
+4. Latest completed consultation, prescription history.
+5. Create the prescription (2 medicines), add a third, remove it.
+6. Pause before the next patient.
+
+Think time is 1-3 s between steps and 40-50 s before the next patient. If call-next does not
+return a patient, the rest of that cycle is skipped.
+
+**Receptionist counter** (`usersCounter`). Each thread logs in, then every 4.5-5.5 s polls
+`GET /api/queue/today` and `GET /api/prescriptions/pending`. It dispenses one pending
+prescription when all of these hold:
+
+- one of this suite's doctors wrote it, so manual QA data is never touched;
+- its id hashes to this thread's number, so two threads never dispense the same one and a 409
+  is a real defect;
+- it is at least `dispenseAfterMs` old (B4).
+
+Dispensing is `GET /api/prescriptions/queue/{queueId}` then
+`PUT /api/prescriptions/{id}/dispense`.
+
+### 9.5 Pass / fail criteria (defined in advance)
+
+Measurement rules are those of section 5: discard the ramp-up and the first 30 s of steady
+state; "sustained" means holding for 60 s or more. Reads and writes are the classes in 9.2.
+
+**Load: PASS requires all six.**
+
+| Metric | Threshold |
+|---|---|
+| Reads p95 | 800 ms or less |
+| Reads p99 | 1500 ms or less |
+| Writes p95 | 1500 ms or less |
+| Writes p99 | 3000 ms or less |
+| Error rate, all requests | 0.5% or less |
+| Latency drift | last-third p95 within 20% of first-third p95, per class |
+
+**Stress: the breaking point** is the first point at which any of these holds for 60 s or
+more: aggregate p95 above 2000 ms, aggregate error rate above 1%, or throughput flat or falling
+while active threads still rise. Record active threads, throughput, p95, error rate and the
+first resource to saturate.
+
+Every sampler carries a Duration Assertion at its class's p99 budget (`readSlaMs` 1500,
+`writeSlaMs` 3000) as a per-sample tripwire. Pass/fail is still decided on percentiles from
+the JTL. The error rate is stated on response code, with duration breaches reported apart.
+
+### 9.6 Test types
+
+| Type | Profile | Status |
+|---|---|---|
+| Smoke | 1 Doctor + 1 Receptionist, 60 s, 5 s cycle pause | Required, gate for the rest |
+| Load | 10 Doctor + 10 Receptionist, 30 s ramp, 900 s | Required |
+| Stress | 150 Doctor + 150 Receptionist, linear ramp over 600 s, capped stack | Required |
+| Stress, isolated | as Stress with `-JcounterQueuePoll=false` | Only if Stress saturates QueueService first |
+
+**Stress calibration.** The Load run (`results/RESULT-load-SWC-126-20260927.md`) left every
+container under 11% CPU at 20 users. As in section 5.2 and SWC-87, the ceiling is scaled about
+×15 to 150 + 150 = 300 threads, keeping the 1:1 ratio. Think time drops to 100-300 ms between
+steps, the counter polls every 300-600 ms, and dispensing starts 10 s after a save. The pause
+before the next patient stays at 5-10 s. It bounds how many patients the run consumes: about
+4,000 at an average of 80 doctor threads, so Stress is seeded with 6,000. The ramp is the whole
+run, so the knee is read off threads against time.
+
+A 6,000-entry day makes `GET /api/queue/today` return the whole day's queue on every counter
+poll. That is SWC-87's known QueueService bottleneck and could hide the Sprint 3 services. If
+the combined run shows QueueService saturating first, the isolated run repeats it without the
+counter's queue poll, to find the Sprint 3 services' own knee.
+
+### 9.7 Test data
+
+`seed-clinical-flow.ps1` creates:
+
+- `perf.clinic.doctor.NNN` accounts, each with its own room `PC-NNN`;
+- `perf.clinic.reception.NNN` accounts;
+- `-QueueVolume` patient check-ins, which QueueService turns into today's Waiting entries.
+
+Each doctor thread reads one account row, once. There must be at least as many doctor rows as
+doctor threads: call-next allows one open consultation per doctor and per room, so a thread
+with no row left stops. Re-running the seed completes any consultation an interrupted run left
+open.
+
+Comparable Load and Stress runs start from a fresh database. `GET /api/prescriptions/pending`
+returns every PENDING prescription ever created, so leftover data changes what it measures.
+
+### 9.8 Post-run verification
+
+After Load and Stress, read-only queries (`README.md`) confirm:
+
+- every COMPLETE consultation has a Completed queue entry, and the reverse;
+- no consultation has more than one prescription;
+- every prescription belongs to a COMPLETE consultation;
+- every DISPENSED prescription has DispensedAt and DispensedBy, and no PENDING one has either;
+- the medicine added in each cycle was removed.
+
+MedicalRecordService, PrescriptionService, QueueService and Gateway logs for the run window
+are searched for errors, warnings and Kafka consumer failures (carried from the Sprint 2 QA
+report).
+
+### 9.9 Deliverables
+
+- `SWC-126-clinical-flow.jmx`, `seed-clinical-flow.ps1`, `data/clinic-*.csv.example`,
+  MedicalRecordService and PrescriptionService limits in `docker-compose.perf.yml`, this
+  section and the README runbook.
+- `results/RESULT-load-SWC-126-<date>.md` and `results/RESULT-stress-SWC-126-<date>.md`, each
+  opening with the load profile and time window (users, role split, ramp, duration, samples,
+  throughput) before the percentiles, followed by the verdict, the post-run checks, the log
+  scan and a short analysis.
