@@ -8,7 +8,8 @@ for SWC-15, SWC-18, SWC-20, SWC-21, SWC-22, SWC-23 and SWC-24 plus one cross-sto
 journey, tracked under SPRINT2-QA-01.
 Sprint 3 adds SWC-25 vital-sign form, SWC-28 medical-alert, combined SWC-26/SWC-38
 consultation-completion, combined SWC-29/SWC-40 prescription, combined SWC-30/SWC-41
-prescription-counter and SWC-94 allergy load-failure coverage under SWC-110.
+prescription-counter and SWC-94 allergy load-failure coverage, plus one cross-story clinical
+journey from check-in to a dispensed prescription, under SWC-110.
 
 Unlike `AuthService.UnitTests` / `ApiGateway.UnitTests`, this project has no
 `ProjectReference` to any service, and it only talks to whatever is already
@@ -124,7 +125,7 @@ untouched.
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
-| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `PrescriptionCounterTests`, `ClinicDayJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `PrescriptionCounterTests`, `ClinicDayJourneyTests`, `ClinicalJourneyTests` | Exclusive `Shared queue E2E` collection |
 | Isolated patient/profile | Allergy, allergy load-failure, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
 | Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
 
