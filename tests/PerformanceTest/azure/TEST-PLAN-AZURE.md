@@ -1,9 +1,9 @@
 # SwiftCare - Azure Deployment Performance Test Plan
 
-**Jira:** SWC-67, extended by SWC-88  **Tool:** Apache JMeter 5.6.3
+**Jira:** SWC-67, extended by SWC-88 and SWC-127  **Tool:** Apache JMeter 5.6.3
 **Target:** Real Azure deployment (AuthService, PatientService, API Gateway; QueueService present but see section 6.2)
 
-Sections 1 to 10 are the original SWC-67 round, unchanged. Section 11 adds the Sprint 2 endpoints (SWC-20, SWC-21, SWC-23, SWC-24) to the same suite.
+Sections 1 to 10 are the original SWC-67 round, unchanged. Section 11 adds the Sprint 2 endpoints (SWC-20, SWC-21, SWC-23, SWC-24) to the same suite. Section 12 adds the Sprint 3 clinical workflow (SWC-127).
 
 This is the additive Azure counterpart to the local plan at
 [`../local/TEST-PLAN.md`](../local/TEST-PLAN.md). Nothing in the local setup
@@ -312,3 +312,121 @@ Write up `results/RESULT-load-azure-<date>.md` against 11.5, and compare it expl
 ### 11.7 Data footprint
 
 A seeded run of this size adds about 200 patient rows, about 200 queue rows, 70 doctor accounts, 10 receptionist accounts and up to about 60 consultation rows to the deployed databases, and leaves about 70 queue entries in `IN_CONSULTATION` with no way to close them from outside the VNet. There is no `docker compose down -v` equivalent, so agree with DevOps beforehand whether that data stays. All of it is synthetic.
+
+## 12. Sprint 3 extension (SWC-127)
+
+Sections 1 to 11 still hold for their rounds. This section adds the Sprint 3 clinical workflow to the same deployed-environment suite. It keeps the same target, tool and section 6.1 thresholds, and the same no-Stress decision. The workload model is the one the local suite already ran (`../local/TEST-PLAN.md` section 9, SWC-126), so the two runs compare endpoint by endpoint.
+
+### 12.1 Scope
+
+**In**, all through the Gateway at `https://api.swiftcare.me`:
+
+| Story | Endpoint | Role | Class |
+|---|---|---|---|
+| SWC-28 | `GET /api/consultations/patient/{id}/latest-follow-up` | Doctor | read |
+| SWC-25 | `POST /api/consultations/{id}/vitals` | Doctor | write |
+| SWC-26 / SWC-38 | `POST /api/consultations/{id}/complete` | Doctor | write |
+| SWC-29 | `GET /api/consultations/latest-completed` | Doctor | read |
+| SWC-29 | `GET /api/prescriptions/patient/{id}` | Doctor | read |
+| SWC-29 | `POST /api/prescriptions` | Doctor | write |
+| SWC-40 | `POST /api/prescriptions/{id}/items` | Doctor | write |
+| SWC-40 | `DELETE /api/prescriptions/{id}/items/{medicineId}` | Doctor | write |
+| SWC-41 | `GET /api/prescriptions/pending` | Receptionist | read |
+| SWC-30 | `GET /api/prescriptions/queue/{queueId}` | Receptionist | read |
+| SWC-41 | `PUT /api/prescriptions/{id}/dispense` | Receptionist | write |
+
+**Reported, not pass/fail:** the Sprint 2 endpoints the workflow cannot run without: `GET /api/queue/today/current`, `PUT /api/queue/call-next`, `POST /api/consultations` and the counter's `GET /api/queue/today`.
+
+**Out:** Stress against Azure (unchanged from section 5). Database row checks and Kafka consumer lag (unchanged from section 6.2: the databases and the broker are private to the VNet). The local post-run checks in `../local/TEST-PLAN.md` section 9.8 cover consistency instead. The Sprint 1 and Sprint 2 groups are not re-run this round.
+
+### 12.2 Workload model
+
+Two Thread Groups in `swiftcare-load-azure.jmx`, copied from `../local/SWC-126-clinical-flow.jmx` with the same samplers, assertions and labels. Both default to 0 users, so every earlier command line keeps its meaning.
+
+| Group | `-J` property | Load run | Pacing |
+|---|---|---:|---|
+| SWC-127 Doctor Clinical Workflow | `usersClinicDoctor` | 10 | 1-3 s between steps, 40-50 s before the next patient (about one consultation a minute) |
+| SWC-127 Receptionist Counter | `usersClinicCounter` | 10 | queue and pending list every 4.5-5.5 s, dispense 30 s or more after a save |
+
+That is 20 concurrent users, 30 s ramp and 900 s, matching sections 5 and 11.2. Each doctor thread repeats:
+
+1. Wait until the doctor is free.
+2. Call next.
+3. Latest follow-up, consultation, vital signs, complete.
+4. Latest completed consultation, prescription history.
+5. Create the prescription, add a medicine, remove it.
+
+Each counter thread dispenses only prescriptions written by this suite's doctors whose id hashes to its own thread number, so two threads never dispense the same one and a 409 is a real defect.
+
+### 12.3 Test data
+
+`seed-clinical-flow-azure.ps1` creates:
+
+- the Doctor pool, `perf.clinic.doctor.NNN`, each with its own room `PC-NNN`;
+- the Receptionist pool, `perf.clinic.reception.NNN`;
+- `-QueueVolume` patient check-ins (default 200), registered by the first receptionist because Admin cannot register patients.
+
+These accounts are separate from the Sprint 2 `load.doctor.*` pool.
+
+Two constraints follow from the workflow:
+
+- **Seed on the day of the run.** Check-ins become today's Waiting entries, and call-next only takes today's.
+- **Reset the doctors between runs.** A run ends part-way through some cycles, leaving those doctors holding a called patient. `./seed-clinical-flow-azure.ps1 -QueueVolume 0` completes those consultations through the real APIs. Run it after the warm-up and after the Smoke gate.
+
+### 12.4 Assertions
+
+As in section 11.4: a status assertion on every sampler (200/201, and 204 accepted where the endpoint answers "none"), a body assertion on key contract fields, and a Duration Assertion at the class p99 budget (`readSlaMs` 2000 ms, `writeSlaMs` 3500 ms) as a tripwire. Pass/fail is decided on percentiles from the JTL. The error rate is stated on response code, with duration breaches reported apart.
+
+### 12.5 Pass / fail criteria
+
+Section 6.1 thresholds apply per class: reads p95 1200 ms or less, reads p99 2000 ms or less, writes p95 2000 ms or less, writes p99 3500 ms or less, error rate 0.5% or less, and last-third p95 within 20% of first-third p95. Reads and writes are the classes in 12.1. Warm-up samples are excluded. The measurement window discards the ramp-up and the first 30 s of steady state. If the deployment is still settling, the window moves as documented in `results/RESULT-load-azure-20260907.md`, and the report says so.
+
+### 12.6 Environment since SWC-88
+
+- **Cloudflare.** `api.swiftcare.me` is now proxied by Cloudflare, added outside this repository. API responses are not cached (`cf-cache-status: DYNAMIC`). A request sent with JMeter's user agent was answered 200 with JSON and no challenge. The Cloudflare edge adds a hop the Sprint 2 baseline may not have had, and the report states this when comparing.
+- **Replicas.** CD now sets `min-replicas=1, max-replicas=1` at 0.25 vCPU / 0.5 GiB for every app. Apps no longer scale to zero while running, but the environment is stopped between sprints, so the warm-up still runs after it is started.
+- **Deployment state.** The run needs the current `develop` deployed through CD, with the PrescriptionService and MedicalRecordService migrations applied, and the Kafka messaging layer recreated by Terraform.
+- **Plan structure.** The Sprint 1 `users.csv`, `patients.csv` and `search-terms.csv` Data Sets moved from plan level into the Sprint 1 group (and `users.csv` into SWC-20), the only groups that read them. With `shareMode.all` the rows those groups read are unchanged. The SWC-127 groups no longer need the Sprint 1 seed files or share their variables.
+- **JMeter on Java 17 to 21.** The SWC-127 groups use Groovy, which JMeter 5.6.3 cannot compile on Java 22 or later (see `README.md`).
+
+### 12.7 Execution
+
+From `tests/PerformanceTest/azure/`, non-GUI only, within the window agreed with DevOps.
+
+```powershell
+# 1. Seed, on the day of the run. Set AZURE_ADMIN_PASSWORD first.
+./seed-clinical-flow-azure.ps1
+
+# 2. Warm the deployment. Results discarded.
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersClinicDoctor=1 -JusersClinicCounter=1 -Jrampup=1 -Jduration=60 `
+  -JcycleDelay=5000 -JcycleRange=0 -JdispenseAfterMs=5000 -l results/warmup-swc127.jtl
+
+# 3. Reset any doctor the warm-up left mid-consultation, then run the Smoke gate:
+#    every sample 2xx and all 17 labels present.
+./seed-clinical-flow-azure.ps1 -QueueVolume 0
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersClinicDoctor=1 -JusersClinicCounter=1 -Jrampup=1 -Jduration=60 `
+  -JcycleDelay=5000 -JcycleRange=0 -JdispenseAfterMs=5000 `
+  -l results/smoke-swc127.jtl -e -o results/smoke-swc127-report
+
+# 4. Reset again, then Load, only if Smoke passed.
+./seed-clinical-flow-azure.ps1 -QueueVolume 0
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties `
+  -Jthreads=0 -JusersClinicDoctor=10 -JusersClinicCounter=10 -Jrampup=30 -Jduration=900 `
+  -l results/load-swc127.jtl -e -o results/load-swc127-report
+```
+
+Write up `results/RESULT-smoke-azure-<date>.md` and `results/RESULT-load-azure-<date>.md` against 12.5. Open each with the load profile and time window (users, role split, ramp, duration, warm-up excluded, samples, throughput). Compare them explicitly with the Sprint 2 Azure baseline (`results/RESULT-load-azure-20260914.md`) and with the local Sprint 3 run (`../local/results/RESULT-load-SWC-126-20260927.md`).
+
+### 12.8 Data footprint
+
+A seeded run adds these to the deployed databases:
+
+- 10 doctor and 10 receptionist accounts;
+- about 200 patient and queue rows;
+- about 150 consultations with vital signs, about 150 completed queue entries, and about 150 prescriptions (most of them dispensed).
+
+A few consultations and prescriptions stay open where the run's end cut a cycle off, until the next `-QueueVolume 0` reset. There is no reset equivalent on Azure, so agree with DevOps beforehand whether the data stays. All of it is synthetic.
+
+After the run, shut the environment down as described in `deployment/terraform/README.md`, "Cost controls", unless DevOps says otherwise.
