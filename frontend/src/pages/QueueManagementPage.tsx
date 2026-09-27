@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
-import { getPrescriptionByQueueId, type Prescription } from '../api/prescriptions';
+import {
+  getPendingPrescriptions,
+  getPrescriptionByQueueId,
+  type Prescription,
+} from '../api/prescriptions';
 import { getTodayQueue, type TodayQueueEntry, type TodayQueueStatus } from '../api/queue';
 import { DashboardShell } from '../dashboards/DashboardShell';
 
@@ -12,6 +16,11 @@ type PrescriptionDisplayState = Prescription['status'] | 'NOT_CREATED' | 'UNAVAI
 interface QueueDisplayRow extends TodayQueueEntry {
   patientName: string;
   prescriptionState: PrescriptionDisplayState | null;
+}
+
+interface PendingPrescriptionRow {
+  prescription: Prescription;
+  queueEntry: QueueDisplayRow;
 }
 
 interface StatusPresentation {
@@ -45,9 +54,20 @@ const checkInTimeFormatter = new Intl.DateTimeFormat('en-LK', {
   timeZone: CLINIC_TIME_ZONE,
 });
 
+const prescriptionTimeFormatter = new Intl.DateTimeFormat('en-LK', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: CLINIC_TIME_ZONE,
+});
+
 function formatCheckInTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : checkInTimeFormatter.format(date);
+}
+
+function formatPrescriptionTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Time unavailable' : prescriptionTimeFormatter.format(date);
 }
 
 async function addPatientNames(
@@ -101,6 +121,22 @@ async function addPrescriptionStates(rows: QueueDisplayRow[]): Promise<QueueDisp
       }
     }),
   );
+}
+
+function selectTodayPendingPrescriptions(
+  prescriptions: Prescription[],
+  rows: QueueDisplayRow[],
+): PendingPrescriptionRow[] {
+  const completedRows = new Map(
+    rows
+      .filter((row) => row.status === 'COMPLETED')
+      .map((row) => [row.queueId, row]),
+  );
+
+  return prescriptions.flatMap((prescription) => {
+    const queueEntry = completedRows.get(prescription.queueId);
+    return queueEntry ? [{ prescription, queueEntry }] : [];
+  });
 }
 
 function prescriptionCell(row: QueueDisplayRow) {
@@ -159,6 +195,8 @@ function queueErrorMessage(error: unknown): string {
 export function QueueManagementPage() {
   const [loadState, setLoadState] = useState<QueueLoadState>('loading');
   const [rows, setRows] = useState<QueueDisplayRow[]>([]);
+  const [pendingRows, setPendingRows] = useState<PendingPrescriptionRow[]>([]);
+  const [pendingLoadFailed, setPendingLoadFailed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -177,13 +215,25 @@ export function QueueManagementPage() {
       try {
         const entries = await getTodayQueue();
         const namedRows = await addPatientNames(entries, patientNameCache);
+        const pendingRequest = getPendingPrescriptions().then(
+          (prescriptions) => ({ status: 'fulfilled' as const, prescriptions }),
+          () => ({ status: 'rejected' as const }),
+        );
         const displayRows = await addPrescriptionStates(namedRows);
+        const pendingResult = await pendingRequest;
 
         if (disposed) {
           return;
         }
 
         setRows(displayRows);
+        if (pendingResult.status === 'fulfilled') {
+          setPendingRows(selectTodayPendingPrescriptions(pendingResult.prescriptions, displayRows));
+          setPendingLoadFailed(false);
+        } else {
+          setPendingRows([]);
+          setPendingLoadFailed(true);
+        }
         setErrorMessage(null);
         setLoadState('loaded');
         hasLoaded = true;
@@ -239,6 +289,56 @@ export function QueueManagementPage() {
         )}
 
         {loadState === 'loading' && <p className="text-sm text-slate-500">Loading today’s queue…</p>}
+
+        {loadState === 'loaded' && (
+          <section className="mb-8" aria-labelledby="pending-prescriptions-heading">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Medicines Counter
+                </p>
+                <h3 id="pending-prescriptions-heading" className="mt-1 text-lg font-semibold text-slate-900">
+                  Pending Prescriptions
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500">Oldest prescription first</p>
+            </div>
+
+            {pendingLoadFailed ? (
+              <p className="border-l-4 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
+                Unable to load pending prescriptions. Please try again.
+              </p>
+            ) : pendingRows.length === 0 ? (
+              <p className="border-l-4 border-emerald-700 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                All prescriptions dispensed today
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-200 border border-slate-300 bg-white">
+                {pendingRows.map(({ prescription, queueEntry }) => (
+                  <li
+                    key={prescription.id}
+                    className="flex flex-wrap items-center justify-between gap-4 px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-900">
+                        {queueEntry.queueNumber} · {queueEntry.patientName}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Prescribed {formatPrescriptionTime(prescription.createdAt)} by {prescription.doctorName}
+                      </p>
+                    </div>
+                    <Link
+                      to={`/prescriptions/queue/${queueEntry.queueId}`}
+                      className="border-2 border-brand-blue px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-brand-blue hover:bg-blue-50"
+                    >
+                      View Prescription
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         {loadState === 'loaded' && rows.length === 0 && (
           <div className="border-t-4 border-b border-slate-400 bg-slate-50 px-6 py-3">

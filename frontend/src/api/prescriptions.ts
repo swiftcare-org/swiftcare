@@ -55,6 +55,10 @@ export function getPrescriptionByQueueId(queueId: string): Promise<Prescription>
   );
 }
 
+export function getPendingPrescriptions(): Promise<Prescription[]> {
+  return apiRequest<Prescription[]>('/api/prescriptions/pending');
+}
+
 export function dispensePrescription(prescriptionId: string): Promise<Prescription> {
   return apiRequest<Prescription>(
     `/api/prescriptions/${encodeURIComponent(prescriptionId)}/dispense`,
