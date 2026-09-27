@@ -29,6 +29,12 @@ public class PrescriptionPage
         _driver.FindElements(By.XPath(
             "//*[normalize-space()='Consultation completed successfully.']")).Count > 0;
 
+    // "Q-007 Patient name", carried over from the completed consultation.
+    public string ConsultationContext =>
+        _driver.FindElement(By.XPath(
+            "//section[h1[normalize-space()='Prescription']]/p[not(normalize-space()='Consultation completed successfully.')]"))
+            .Text.Trim();
+
     // The context recovery and the allergy/history requests both finish after the heading
     // renders; wait for both before reading the form or the saved prescription.
     public void WaitUntilReady()
