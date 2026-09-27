@@ -27,6 +27,8 @@ prescriptions and the dispensing counter, the same model as the local SWC-126 su
 | `results/RESULT-queueservice-verification-azure-20260907.md` | Records why section 6.2 was deferred and what unblocks it. |
 | `results/RESULT-smoke-azure-20260914.md` | Sprint 2 Smoke gate report (SWC-88). |
 | `results/RESULT-load-azure-20260914.md` | Sprint 2 Load run report (SWC-88), compared against the 2026-09-07 baseline. |
+| `results/RESULT-smoke-azure-20260927.md` | Sprint 3 Smoke gate report (SWC-127). |
+| `results/RESULT-load-azure-20260927.md` | Sprint 3 Load run report (SWC-127), compared against the Sprint 2 Azure baseline and the local SWC-126 run. |
 
 ## Prerequisites
 
