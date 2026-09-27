@@ -19,6 +19,7 @@ import { AlertBanner } from '../components/AlertBanner';
 type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
 type QueueStatusLoadState = 'idle' | 'loading' | 'loaded' | 'error';
+type AllergiesLoadState = 'loading' | 'loaded' | 'error';
 type ConditionsLoadState = 'loading' | 'loaded' | 'error';
 type ProfileUpdateStatus = 'idle' | 'submitting' | 'saved' | 'failed';
 type CheckInStatus = 'idle' | 'submitting' | 'awaitingQueue' | 'succeeded' | 'accepted' | 'failed';
@@ -220,6 +221,7 @@ export function PatientProfilePage() {
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [patient, setPatient] = useState<PatientProfile | null>(null);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
+  const [allergiesLoadState, setAllergiesLoadState] = useState<AllergiesLoadState>('loading');
   const [conditions, setConditions] = useState<ChronicCondition[]>([]);
   const [conditionsLoadState, setConditionsLoadState] = useState<ConditionsLoadState>('loading');
   const [overdueFollowUp, setOverdueFollowUp] = useState<OverdueFollowUp | null>(null);
@@ -268,6 +270,8 @@ export function PatientProfilePage() {
 
     const requestId = ++latestRequestId.current;
     setLoadStatus('loading');
+    setAllergies([]);
+    setAllergiesLoadState('loading');
     setConditions([]);
     setConditionsLoadState('loading');
     setOverdueFollowUp(null);
@@ -287,6 +291,10 @@ export function PatientProfilePage() {
       .then((items) => ({ items, failed: false as const }))
       .catch(() => ({ items: [], failed: true as const }));
 
+    const allergiesRequest = getAllergies(patientId)
+      .then((items) => ({ items, failed: false as const }))
+      .catch(() => ({ items: [], failed: true as const }));
+
     const followUpRequest = user?.role === 'Doctor'
       ? getLatestOverdueFollowUp(patientId)
           .then((followUp) => ({ followUp: followUp ?? null, failed: false as const }))
@@ -295,7 +303,7 @@ export function PatientProfilePage() {
 
     Promise.all([
       getPatient(patientId),
-      getAllergies(patientId),
+      allergiesRequest,
       conditionsRequest,
       queueStatusRequest,
       followUpRequest,
@@ -311,7 +319,8 @@ export function PatientProfilePage() {
           return;
         }
         setPatient(loadedPatient);
-        setAllergies(loadedAllergies);
+        setAllergies(loadedAllergies.items);
+        setAllergiesLoadState(loadedAllergies.failed ? 'error' : 'loaded');
         setConditions(loadedConditions.items);
         setConditionsLoadState(loadedConditions.failed ? 'error' : 'loaded');
         setOverdueFollowUp(loadedFollowUp.followUp);
@@ -993,7 +1002,14 @@ export function PatientProfilePage() {
           <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Allergies</p>
 
-            {allergies.length === 0 ? (
+            {allergiesLoadState === 'error' ? (
+              <p
+                className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700"
+                role="alert"
+              >
+                Unable to load allergies.
+              </p>
+            ) : allergies.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">No allergies recorded</p>
             ) : (
               <div className="mt-3 overflow-x-auto border border-slate-300">
