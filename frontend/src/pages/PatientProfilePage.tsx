@@ -784,6 +784,14 @@ export function PatientProfilePage() {
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Patient</p>
                 <p className="mt-1 text-2xl font-semibold text-slate-900">{patient.fullName}</p>
               </div>
+              {user?.role === 'Doctor' && (
+                <Link
+                  to={`/patients/${patient.patientId}/history`}
+                  className="border-2 border-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:bg-brand-blue hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                >
+                  View History
+                </Link>
+              )}
               {isReceptionist && !isEditingProfile && (
                 <button
                   type="button"
