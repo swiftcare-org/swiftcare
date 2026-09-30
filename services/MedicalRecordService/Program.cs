@@ -38,12 +38,14 @@ builder.Services.AddScoped<IConsultationFollowUpRepository, AdoNetConsultationFo
 builder.Services.AddScoped<IConsultationHistoryRepository, AdoNetConsultationHistoryRepository>();
 builder.Services.AddScoped<IConsultationCompletionRepository, AdoNetConsultationCompletionRepository>();
 builder.Services.AddScoped<IVitalSignsRepository, AdoNetVitalSignsRepository>();
+builder.Services.AddScoped<IVitalSignsHistoryRepository, AdoNetVitalSignsHistoryRepository>();
 builder.Services.AddScoped<IConsultationTemplateService, ConsultationTemplateService>();
 builder.Services.AddScoped<IConsultationService, ConsultationService>();
 builder.Services.AddScoped<IConsultationFollowUpService, ConsultationFollowUpService>();
 builder.Services.AddScoped<IConsultationHistoryService, ConsultationHistoryService>();
 builder.Services.AddScoped<IConsultationCompletionService, ConsultationCompletionService>();
 builder.Services.AddScoped<IVitalSignsService, VitalSignsService>();
+builder.Services.AddScoped<IVitalSignsHistoryService, VitalSignsHistoryService>();
 builder.Services.Configure<KafkaCompletionOptions>(builder.Configuration.GetSection("Kafka"));
 builder.Services.AddOptions<MedicalRecordOptions>()
     .Bind(builder.Configuration.GetSection(MedicalRecordOptions.SectionName))
