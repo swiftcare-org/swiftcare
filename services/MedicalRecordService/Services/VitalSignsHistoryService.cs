@@ -23,7 +23,12 @@ public sealed class VitalSignsHistoryService : IVitalSignsHistoryService
         }
 
         var readings = await _repository.ListForPatientAsync(patientId, cancellationToken);
-        return readings.Select(ToResponse).ToList();
+        // Newest first is part of the contract, so it is enforced here rather than left to
+        // whichever order the repository happens to return.
+        return readings
+            .OrderByDescending(reading => reading.RecordedAt)
+            .Select(ToResponse)
+            .ToList();
     }
 
     private static VitalSignsResponse ToResponse(VitalSigns vitalSigns) => new()

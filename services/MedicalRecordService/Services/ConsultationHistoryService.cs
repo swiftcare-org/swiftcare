@@ -20,7 +20,12 @@ public sealed class ConsultationHistoryService : IConsultationHistoryService
         EnsurePatientId(patientId);
 
         var consultations = await _repository.ListCompletedAsync(patientId, cancellationToken);
-        return consultations.Select(ToResponse).ToList();
+        // Newest first is part of the contract, so it is enforced here rather than left to
+        // whichever order the repository happens to return.
+        return consultations
+            .OrderByDescending(consultation => consultation.ConsultationDate)
+            .Select(ToResponse)
+            .ToList();
     }
 
     public async Task<ConsultationResponse?> GetLatestAsync(
