@@ -4,8 +4,10 @@ import { DashboardShell } from '../dashboards/DashboardShell';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
 import type { PatientProfile } from '../api/patients';
-import { getPatientConsultationHistory } from '../api/consultations';
-import type { Consultation } from '../api/consultations';
+import { getPatientConsultationHistory, getPatientVitalsHistory } from '../api/consultations';
+import type { Consultation, VitalSigns } from '../api/consultations';
+import { trendFor } from '../consultations/vitalsTrend';
+import type { TrendMetric } from '../consultations/vitalsTrend';
 
 type PatientLoadState = 'loading' | 'loaded' | 'notFound' | 'error';
 type SectionLoadState = 'loading' | 'loaded' | 'error';
@@ -30,6 +32,44 @@ function summarize(notes: string | null): string {
   return singleLine.length > NOTES_SUMMARY_LENGTH
     ? `${singleLine.slice(0, NOTES_SUMMARY_LENGTH).trimEnd()}…`
     : singleLine;
+}
+
+function formatMeasurement(value: number | null, fractionDigits = 0): string {
+  return value === null ? '—' : value.toFixed(fractionDigits);
+}
+
+function formatBloodPressure(reading: VitalSigns): string {
+  return reading.systolicBloodPressure === null || reading.diastolicBloodPressure === null
+    ? '—'
+    : `${reading.systolicBloodPressure}/${reading.diastolicBloodPressure}`;
+}
+
+const TREND_SYMBOLS = { up: '▲', down: '▼', unchanged: '=' } as const;
+const TREND_WORDS = { up: 'Up', down: 'Down', unchanged: 'Unchanged' } as const;
+
+function TrendIndicator({
+  readings,
+  index,
+  metric,
+}: {
+  readings: readonly VitalSigns[];
+  index: number;
+  metric: TrendMetric;
+}) {
+  const trend = trendFor(readings, index, metric);
+  if (!trend) {
+    return null;
+  }
+
+  return (
+    <span
+      className="ml-1.5 text-xs font-bold text-slate-600"
+      title={`${TREND_WORDS[trend.direction]} from ${trend.previousValue}`}
+    >
+      <span aria-hidden="true">{TREND_SYMBOLS[trend.direction]}</span>
+      <span className="sr-only">{`${TREND_WORDS[trend.direction]} from ${trend.previousValue}`}</span>
+    </span>
+  );
 }
 
 function DetailField({ label, value }: { label: string; value: string | null }) {
@@ -73,6 +113,8 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [consultationsLoadState, setConsultationsLoadState] =
     useState<SectionLoadState>('loading');
+  const [vitals, setVitals] = useState<VitalSigns[]>([]);
+  const [vitalsLoadState, setVitalsLoadState] = useState<SectionLoadState>('loading');
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
@@ -108,6 +150,21 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
           return;
         }
         setConsultationsLoadState('error');
+      });
+
+    getPatientVitalsHistory(patientId)
+      .then((items) => {
+        if (disposed) {
+          return;
+        }
+        setVitals(items);
+        setVitalsLoadState('loaded');
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        setVitalsLoadState('error');
       });
 
     return () => {
@@ -251,6 +308,127 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                   );
                 })}
               </ol>
+            )}
+          </section>
+
+          <section
+            className="mt-6 border border-slate-300 bg-white px-6 py-6"
+            aria-labelledby="vitals-history-heading"
+          >
+            <h2
+              id="vitals-history-heading"
+              className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
+            >
+              Vitals History
+            </h2>
+
+            {vitalsLoadState === 'loading' && (
+              <p className="mt-3 text-sm text-slate-500">Loading vital signs…</p>
+            )}
+
+            {vitalsLoadState === 'error' && (
+              <p className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700" role="alert">
+                Unable to load vitals history.
+              </p>
+            )}
+
+            {vitalsLoadState === 'loaded' && vitals.length === 0 && (
+              <p className="mt-3 text-sm text-slate-500">No vital signs recorded yet</p>
+            )}
+
+            {vitalsLoadState === 'loaded' && vitals.length > 0 && (
+              <>
+                <p className="mt-3 text-xs text-slate-500">
+                  Arrows compare each reading with the previous recorded value.
+                </p>
+                <div className="mt-3 overflow-x-auto border border-slate-300">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        {[
+                          'Date',
+                          'BP (mmHg)',
+                          'Temp (°C)',
+                          'Pulse (bpm)',
+                          'Resp. Rate (/min)',
+                          'O₂ Sat (%)',
+                          'Height (cm)',
+                          'Weight (kg)',
+                          'BMI',
+                        ].map((heading) => (
+                          <th
+                            key={heading}
+                            scope="col"
+                            className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600"
+                          >
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {vitals.map((reading, index) => (
+                        <tr key={reading.id}>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-900">
+                            {formatDateTime(reading.recordedAt)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatBloodPressure(reading)}
+                            <TrendIndicator
+                              readings={vitals}
+                              index={index}
+                              metric="systolicBloodPressure"
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.temperatureCelsius, 1)}
+                            <TrendIndicator
+                              readings={vitals}
+                              index={index}
+                              metric="temperatureCelsius"
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.pulseRate)}
+                            <TrendIndicator readings={vitals} index={index} metric="pulseRate" />
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.respiratoryRate)}
+                            <TrendIndicator
+                              readings={vitals}
+                              index={index}
+                              metric="respiratoryRate"
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.oxygenSaturation)}
+                            <TrendIndicator
+                              readings={vitals}
+                              index={index}
+                              metric="oxygenSaturation"
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.heightCentimeters, 1)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.weightKilograms, 1)}
+                            <TrendIndicator
+                              readings={vitals}
+                              index={index}
+                              metric="weightKilograms"
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2 text-slate-800">
+                            {formatMeasurement(reading.bmi, 1)}
+                            <TrendIndicator readings={vitals} index={index} metric="bmi" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </>
