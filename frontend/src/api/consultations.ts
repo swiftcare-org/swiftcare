@@ -95,6 +95,16 @@ export function getLatestOverdueFollowUp(
   );
 }
 
+export function getPatientConsultationHistory(patientId: string): Promise<Consultation[]> {
+  return apiRequest<Consultation[]>(
+    `/api/consultations/patient/${encodeURIComponent(patientId)}`,
+  );
+}
+
+export function getPatientVitalsHistory(patientId: string): Promise<VitalSigns[]> {
+  return apiRequest<VitalSigns[]>(`/api/vitals/patient/${encodeURIComponent(patientId)}`);
+}
+
 export function getConsultationTemplates(): Promise<ConsultationTemplate[]> {
   return apiRequest<ConsultationTemplate[]>('/api/templates');
 }
