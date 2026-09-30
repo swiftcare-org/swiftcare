@@ -4,6 +4,7 @@ import { UserManagementPage } from './pages/UserManagementPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
 import { PatientProfilePage } from './pages/PatientProfilePage';
+import { PatientHistoryPage } from './pages/PatientHistoryPage';
 import { QueueManagementPage } from './pages/QueueManagementPage';
 import { WaitingRoomDisplayPage } from './pages/WaitingRoomDisplayPage';
 import { ConsultationPage } from './pages/ConsultationPage';
@@ -104,6 +105,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
             <PatientProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/patients/:patientId/history"
+        element={
+          <ProtectedRoute allowedRole="Doctor">
+            <PatientHistoryPage />
           </ProtectedRoute>
         }
       />
