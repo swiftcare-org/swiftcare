@@ -8,19 +8,20 @@ namespace MedicalRecordService.UnitTests.Services;
 public class VitalSignsHistoryServiceTests
 {
     [Fact]
-    public async Task GetHistoryMapsEveryReadingInRepositoryOrder()
+    public async Task GetHistoryReturnsEveryReadingNewestFirst()
     {
         var patientId = Guid.NewGuid();
         var newest = CreateReading(new DateTime(2026, 9, 21, 4, 0, 0, DateTimeKind.Utc));
+        var middle = CreateReading(new DateTime(2026, 9, 15, 4, 0, 0, DateTimeKind.Utc));
         var oldest = CreateReading(new DateTime(2026, 9, 10, 4, 0, 0, DateTimeKind.Utc));
         var repository = new Mock<IVitalSignsHistoryRepository>(MockBehavior.Strict);
         repository
             .Setup(item => item.ListForPatientAsync(patientId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([newest, oldest]);
+            .ReturnsAsync([oldest, newest, middle]);
 
         var result = await new VitalSignsHistoryService(repository.Object).GetHistoryAsync(patientId);
 
-        Assert.Equal([newest.Id, oldest.Id], result.Select(item => item.Id));
+        Assert.Equal([newest.Id, middle.Id, oldest.Id], result.Select(item => item.Id));
         var first = result[0];
         Assert.Equal(newest.ConsultationId, first.ConsultationId);
         Assert.Equal(newest.SystolicBloodPressure, first.SystolicBloodPressure);

@@ -8,19 +8,20 @@ namespace MedicalRecordService.UnitTests.Services;
 public class ConsultationHistoryServiceTests
 {
     [Fact]
-    public async Task GetHistoryMapsEveryCompletedConsultationInRepositoryOrder()
+    public async Task GetHistoryReturnsEveryCompletedConsultationNewestFirst()
     {
         var patientId = Guid.NewGuid();
         var newest = CreateConsultation(patientId, new DateTime(2026, 9, 21, 4, 0, 0, DateTimeKind.Utc));
+        var middle = CreateConsultation(patientId, new DateTime(2026, 9, 15, 4, 0, 0, DateTimeKind.Utc));
         var oldest = CreateConsultation(patientId, new DateTime(2026, 9, 10, 4, 0, 0, DateTimeKind.Utc));
         var repository = new Mock<IConsultationHistoryRepository>(MockBehavior.Strict);
         repository
             .Setup(item => item.ListCompletedAsync(patientId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([newest, oldest]);
+            .ReturnsAsync([oldest, newest, middle]);
 
         var result = await new ConsultationHistoryService(repository.Object).GetHistoryAsync(patientId);
 
-        Assert.Equal([newest.Id, oldest.Id], result.Select(item => item.Id));
+        Assert.Equal([newest.Id, middle.Id, oldest.Id], result.Select(item => item.Id));
         var first = result[0];
         Assert.Equal(newest.DoctorName, first.DoctorName);
         Assert.Equal(newest.Symptoms, first.Symptoms);
