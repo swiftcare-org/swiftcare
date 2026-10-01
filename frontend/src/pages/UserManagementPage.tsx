@@ -171,7 +171,7 @@ export function UserManagementPage() {
       : undefined;
 
   return (
-    <DashboardShell sectionLabel="User Management" backLink={{ to: '/admin', destination: 'Dashboard' }}>
+    <DashboardShell sectionLabel="Staff Accounts">
       {/* Status region - one persistent aria-live container, content swapped by status */}
       <div aria-live="polite" className="empty:hidden">
         {status === 'created' && (
@@ -186,7 +186,7 @@ export function UserManagementPage() {
         )}
       </div>
 
-      <SectionCard eyebrow="New Account" title="Create Staff Account">
+      <SectionCard title="Create Account" description="Add a doctor, receptionist or administrator.">
         <form onSubmit={handleSubmit} noValidate className="grid gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <RequiredLegend />
@@ -303,7 +303,7 @@ export function UserManagementPage() {
         </form>
       </SectionCard>
 
-      <SectionCard eyebrow="Directory" title="Staff Accounts" description={accountCount}>
+      <SectionCard title="All Accounts" description={accountCount}>
         {listStatus === 'loading' && <LoadingText>Loading users…</LoadingText>}
         {listStatus === 'error' && (
           <Banner tone="error" title="Staff Accounts Unavailable" role="alert">

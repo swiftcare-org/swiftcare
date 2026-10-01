@@ -4,8 +4,6 @@ import { DashboardShell } from '../dashboards/DashboardShell';
 import { registerPatient } from '../api/patients';
 import type { BloodGroup, Gender, RegisterPatientRequestBody, RegisteredPatient } from '../api/patients';
 import { ApiError } from '../api/client';
-import { useAuth } from '../auth/useAuth';
-import { roleRoutes } from '../auth/roleRoutes';
 import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { Field, RequiredLegend } from '../components/ui/Field';
@@ -65,8 +63,6 @@ function todayAsDateInputValue(): string {
 }
 
 export function PatientRegistrationPage() {
-  const { user } = useAuth();
-  const backRoute = user ? roleRoutes[user.role] : '/login';
 
   const [nic, setNic] = useState('');
   const [fullName, setFullName] = useState('');
@@ -181,7 +177,7 @@ export function PatientRegistrationPage() {
   }
 
   return (
-    <DashboardShell sectionLabel="Register Patient" backLink={{ to: backRoute, destination: 'Dashboard' }}>
+    <DashboardShell sectionLabel="Register Patient">
       {/* Status region - one persistent aria-live container, content swapped by status */}
       <div aria-live="polite" className="empty:hidden">
         {status === 'created' && registeredPatient && (
@@ -201,7 +197,7 @@ export function PatientRegistrationPage() {
         )}
       </div>
 
-      <SectionCard eyebrow="New Patient" title="Patient Details">
+      <SectionCard title="Patient Details">
         <form onSubmit={handleSubmit} noValidate className="grid gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <RequiredLegend />

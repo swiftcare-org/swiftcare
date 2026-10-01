@@ -295,7 +295,7 @@ export function DoctorDashboard() {
   return (
     <DashboardShell sectionLabel="Doctor Dashboard">
       <ActionTileGrid label="Doctor actions">
-        <ActionTile to="/patients/search" title="Search Patients" description="Find a patient by name, NIC or phone number." />
+        <ActionTile icon="search" to="/patients/search" title="Search Patients" description="Name, NIC or phone" />
       </ActionTileGrid>
 
       {pendingPrescription && (
@@ -311,10 +311,9 @@ export function DoctorDashboard() {
       )}
 
       <SectionCard
-        eyebrow="Shared Queue"
         title="Waiting Pool"
         titleId="waiting-pool-heading"
-        description="Refreshes every 5 seconds."
+        description="Shared queue. Refreshes every 5 seconds."
         actions={
           <Button
             disabled={callNextDisabled && callNextState !== 'calling'}

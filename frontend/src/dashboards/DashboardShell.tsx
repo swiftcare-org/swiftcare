@@ -1,10 +1,11 @@
-import { useEffect, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
+import type { UserRole } from '../auth/types';
 import { logout } from '../api/auth';
 import { BackLink } from '../components/ui/BackLink';
-import { Button } from '../components/ui/Button';
+import { Icon, type IconName } from '../components/ui/Icon';
 import swiftcareLogo from '../assets/swiftcare-logo.png';
 
 interface DashboardShellProps {
@@ -12,9 +13,15 @@ interface DashboardShellProps {
   sectionLabel: string;
   /** "wide" gives table-heavy pages the room to avoid sideways scrolling. */
   width?: 'default' | 'wide';
-  /** Where "back" goes from this page. Omit on the dashboards themselves. */
+  /** Where "back" goes from this page. Omit on pages reachable from the sidebar. */
   backLink?: { to: string; destination: string };
   children?: ReactNode;
+}
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: IconName;
 }
 
 const WIDTHS = {
@@ -22,10 +29,43 @@ const WIDTHS = {
   wide: 'max-w-6xl',
 };
 
+// One list per role, so every signed-in screen offers the same way to move around.
+const NAVIGATION: Record<UserRole, NavItem[]> = {
+  Doctor: [
+    { to: '/doctor', label: 'Dashboard', icon: 'home' },
+    { to: '/patients/search', label: 'Patients', icon: 'search' },
+  ],
+  Receptionist: [
+    { to: '/reception', label: 'Dashboard', icon: 'home' },
+    { to: '/reception/queue', label: 'Queue', icon: 'queue' },
+    { to: '/patients/search', label: 'Patients', icon: 'search' },
+    { to: '/reception/patients/new', label: 'Register Patient', icon: 'userPlus' },
+  ],
+  Admin: [
+    { to: '/admin', label: 'Dashboard', icon: 'home' },
+    { to: '/admin/users', label: 'Staff Accounts', icon: 'users' },
+    { to: '/patients/search', label: 'Patients', icon: 'search' },
+  ],
+};
+
+const NAV_ITEM_BASE =
+  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40';
+
+function initialsOf(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? '';
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (first + last).toUpperCase();
+}
+
 export function DashboardShell({ sectionLabel, width = 'default', backLink, children }: DashboardShellProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const column = `mx-auto ${WIDTHS[width]} px-4 sm:px-6`;
+  const location = useLocation();
+  const [menuOpenAt, setMenuOpenAt] = useState<string | null>(null);
+
+  // The phone menu is open only for the page it was opened on, so following a link closes it.
+  const menuOpen = menuOpenAt === location.pathname;
 
   useEffect(() => {
     document.title = `${sectionLabel} · SwiftCare`;
@@ -41,45 +81,122 @@ export function DashboardShell({ sectionLabel, width = 'default', backLink, chil
     navigate('/login', { replace: true });
   }
 
+  const homeRoute = user ? roleRoutes[user.role] : '/login';
+  const items = user ? NAVIGATION[user.role] : [];
+
+  const navigation = (
+    <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      {items.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end
+          className={({ isActive }) =>
+            `${NAV_ITEM_BASE} ${
+              isActive
+                ? 'bg-brand-blue-tint text-brand-blue-dark'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`
+          }
+        >
+          <Icon name={item.icon} />
+          {item.label}
+        </NavLink>
+      ))}
+      <a
+        href="/queue/display"
+        target="_blank"
+        rel="noreferrer"
+        className={`${NAV_ITEM_BASE} text-slate-600 hover:bg-slate-100 hover:text-slate-900`}
+      >
+        <Icon name="display" />
+        Waiting Room Display
+      </a>
+    </nav>
+  );
+
+  const account = user && (
+    <div className="border-t border-slate-200 p-3">
+      <div className="flex items-center gap-3 px-1 py-1">
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600"
+          aria-hidden="true"
+        >
+          {initialsOf(user.fullName)}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-900">{user.fullName}</p>
+          <p className="truncate text-xs text-slate-500">
+            {user.role}
+            {user.roomNumber ? ` · Room ${user.roomNumber}` : ''}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        className={`${NAV_ITEM_BASE} mt-2 w-full text-slate-600 hover:bg-slate-100 hover:text-slate-900`}
+      >
+        <Icon name="signOut" />
+        Sign Out
+      </button>
+    </div>
+  );
+
+  const logo = (
+    <Link
+      to={homeRoute}
+      aria-label="SwiftCare, go to your dashboard"
+      className="inline-flex rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-4"
+    >
+      <img src={swiftcareLogo} alt="" width={603} height={176} className="h-9 w-auto" />
+    </Link>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className={`${column} flex items-center justify-between gap-3 py-3`}>
-          <Link
-            to={user ? roleRoutes[user.role] : '/login'}
-            aria-label="SwiftCare, go to your dashboard"
-            className="shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-4"
-          >
-            <img src={swiftcareLogo} alt="" width={603} height={176} className="h-8 w-auto sm:h-9" />
-          </Link>
-          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            {user && (
-              <div className="min-w-0 text-right">
-                <p className="truncate text-sm font-medium text-slate-900">{user.fullName}</p>
-                <p className="truncate text-xs text-slate-500">
-                  {user.role}
-                  {user.roomNumber ? ` · Room ${user.roomNumber}` : ''}
-                </p>
-              </div>
-            )}
-            <Button variant="secondary" size="sm" className="shrink-0" onClick={handleSignOut}>
-              Sign Out
-            </Button>
-          </div>
-        </div>
+      {/* Desktop: navigation is always on screen. */}
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="flex h-16 items-center border-b border-slate-200 px-5">{logo}</div>
+        {navigation}
+        {account}
+      </aside>
+
+      {/* Phone and tablet: a top bar, with the same navigation behind a menu button. */}
+      <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden">
+        {logo}
+        <button
+          type="button"
+          onClick={() => setMenuOpenAt(menuOpen ? null : location.pathname)}
+          aria-expanded={menuOpen}
+          aria-controls="mobile-navigation"
+          className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40"
+        >
+          <Icon name={menuOpen ? 'close' : 'menu'} />
+          Menu
+        </button>
       </header>
 
-      <main className={`${column} space-y-6 py-6 sm:py-8`}>
-        <div>
-          {backLink && (
-            <nav aria-label="Breadcrumb" className="mb-2">
-              <BackLink to={backLink.to} destination={backLink.destination} />
-            </nav>
-          )}
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{sectionLabel}</h1>
+      {menuOpen && (
+        <div id="mobile-navigation" className="fixed inset-x-0 bottom-0 top-14 z-10 flex flex-col bg-white lg:hidden">
+          {navigation}
+          {account}
         </div>
-        {children}
-      </main>
+      )}
+
+      <div className="lg:pl-64">
+        <main className={`mx-auto ${WIDTHS[width]} space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8`}>
+          <div>
+            {backLink && (
+              <nav aria-label="Breadcrumb" className="mb-3">
+                <BackLink to={backLink.to} destination={backLink.destination} />
+              </nav>
+            )}
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">{sectionLabel}</h1>
+          </div>
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

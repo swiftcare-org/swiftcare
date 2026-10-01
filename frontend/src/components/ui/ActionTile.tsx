@@ -1,37 +1,40 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { Icon, type IconName } from './Icon';
 
 interface ActionTileProps {
   to: string;
   title: string;
   description: string;
+  icon: IconName;
 }
 
-// A dashboard destination. The whole tile is the link, so the target is large and the
+// A dashboard shortcut. The whole tile is the link, so the target is large and the
 // description says what will happen before the user commits to it.
-export function ActionTile({ to, title, description }: ActionTileProps) {
+export function ActionTile({ to, title, description, icon }: ActionTileProps) {
   return (
     <Link
       to={to}
-      className="group flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-blue hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-2"
+      className="group flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-5 transition-colors hover:border-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-2"
     >
-      <span className="min-w-0">
-        <span className="block text-base font-semibold text-slate-900 group-hover:text-brand-blue">{title}</span>
-        <span className="mt-1 block text-sm text-slate-500">{description}</span>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-blue-tint text-brand-blue">
+        <Icon name={icon} />
       </span>
-      <span
-        className="text-lg leading-none text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-brand-blue"
-        aria-hidden="true"
-      >
-        →
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-slate-900">{title}</span>
+        <span className="mt-0.5 block truncate text-sm text-slate-500">{description}</span>
       </span>
+      <Icon
+        name="chevronRight"
+        className="h-4 w-4 text-slate-300 transition-colors group-hover:text-brand-blue"
+      />
     </Link>
   );
 }
 
 export function ActionTileGrid({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <nav aria-label={label} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <nav aria-label={label} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {children}
     </nav>
   );

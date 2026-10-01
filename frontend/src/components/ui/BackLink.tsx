@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Icon } from './Icon';
 
 interface BackLinkProps {
   to: string;
@@ -10,9 +11,9 @@ export function BackLink({ to, destination }: BackLinkProps) {
   return (
     <Link
       to={to}
-      className="inline-flex items-center gap-1.5 rounded text-sm font-medium text-slate-600 hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-2"
+      className="inline-flex items-center gap-1.5 rounded text-sm font-medium text-slate-500 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-2"
     >
-      <span aria-hidden="true">←</span>
+      <Icon name="arrowLeft" className="h-4 w-4" />
       Back to {destination}
     </Link>
   );

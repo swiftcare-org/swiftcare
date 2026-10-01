@@ -238,7 +238,6 @@ export function QueueManagementPage() {
     <DashboardShell
       sectionLabel="Queue Management"
       width="wide"
-      backLink={{ to: '/reception', destination: 'Dashboard' }}
     >
       <div aria-live="polite" className="space-y-6">
         {errorMessage && (
@@ -249,10 +248,9 @@ export function QueueManagementPage() {
 
         {loadState === 'loaded' && (
           <SectionCard
-            eyebrow="Medicines Counter"
             title="Pending Prescriptions"
             titleId="pending-prescriptions-heading"
-            description="Oldest prescription first."
+            description="Medicines counter. Oldest prescription first."
           >
             {pendingLoadFailed ? (
               <Banner tone="error" role="alert">
@@ -263,7 +261,7 @@ export function QueueManagementPage() {
                 <p className="font-semibold">All prescriptions dispensed today</p>
               </Banner>
             ) : (
-              <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <ul className="divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200 bg-white">
                 {pendingRows.map(({ prescription, queueEntry }) => (
                   <li
                     key={prescription.id}
@@ -287,7 +285,7 @@ export function QueueManagementPage() {
           </SectionCard>
         )}
 
-        <SectionCard eyebrow="Today" title="Full Patient Queue" description="Refreshes every 5 seconds.">
+        <SectionCard title="Full Patient Queue" description="Today. Refreshes every 5 seconds.">
           {loadState === 'loading' && <LoadingText>Loading today’s queue…</LoadingText>}
 
           {loadState === 'error' && (

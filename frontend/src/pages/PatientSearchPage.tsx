@@ -5,7 +5,6 @@ import { searchPatients } from '../api/patients';
 import type { PatientSearchResult } from '../api/patients';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { roleRoutes } from '../auth/roleRoutes';
 import { Banner } from '../components/ui/Banner';
 import { LoadingText } from '../components/ui/Feedback';
 import { Field } from '../components/ui/Field';
@@ -31,7 +30,6 @@ const GENERIC_ERROR_MESSAGE = 'Unable to search. Please try again.';
 
 export function PatientSearchPage() {
   const { user } = useAuth();
-  const backRoute = user ? roleRoutes[user.role] : '/login';
 
   const [term, setTerm] = useState('');
   const [status, setStatus] = useState<SearchStatus>('idle');
@@ -87,7 +85,7 @@ export function PatientSearchPage() {
   }, [term]);
 
   return (
-    <DashboardShell sectionLabel="Patient Search" backLink={{ to: backRoute, destination: 'Dashboard' }}>
+    <DashboardShell sectionLabel="Patients">
       <SectionCard>
         <Field
           id="patientSearch"

@@ -13,7 +13,6 @@ import { ApiError } from '../api/client';
 import { getLatestOverdueFollowUp } from '../api/consultations';
 import type { OverdueFollowUp } from '../api/consultations';
 import { useAuth } from '../auth/useAuth';
-import { roleRoutes } from '../auth/roleRoutes';
 import { AlertBanner } from '../components/AlertBanner';
 import { Banner } from '../components/ui/Banner';
 import { Button, ButtonLink } from '../components/ui/Button';
@@ -211,7 +210,6 @@ function validateConditionForm(form: ConditionFormState): ConditionFieldErrors {
 export function PatientProfilePage() {
   const { patientId } = useParams<{ patientId: string }>();
   const { user } = useAuth();
-  const backRoute = user ? roleRoutes[user.role] : '/login';
   const canManage = user?.role === 'Doctor' || user?.role === 'Receptionist';
   const isReceptionist = user?.role === 'Receptionist';
 
@@ -705,7 +703,7 @@ export function PatientProfilePage() {
   const conditionColumnCount = isReceptionist ? 4 : 3;
 
   return (
-    <DashboardShell sectionLabel="Patient Profile" backLink={{ to: backRoute, destination: 'Dashboard' }}>
+    <DashboardShell sectionLabel="Patient Profile" backLink={{ to: '/patients/search', destination: 'Patients' }}>
       {loadStatus === 'loading' && <LoadingText>Loading patient…</LoadingText>}
 
       {loadStatus === 'notFound' && (
@@ -731,8 +729,8 @@ export function PatientProfilePage() {
           </div>
 
           <SectionCard
-            eyebrow="Patient"
             title={patient.fullName}
+            description="Patient record"
             actions={
               <>
                 {user?.role === 'Doctor' && (
@@ -925,7 +923,7 @@ export function PatientProfilePage() {
           )}
 
           {isReceptionist && (
-            <SectionCard eyebrow="Today's Queue" title="Check-In">
+            <SectionCard title="Check-In" description="Today's queue">
               <div aria-live="polite" className="space-y-3">
                 {queueStatusLoadState === 'loading' && <LoadingText>Checking today&apos;s queue…</LoadingText>}
 
