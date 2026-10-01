@@ -52,6 +52,14 @@ body {
   }
 
   ::picker(select) {
+    /* Always open below the field: without this the browser flips the list above
+       whenever there is more room there, so its position would change from field to field. */
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: none;
+    position-try-order: normal;
+    /* The browser limits the list to the space left below the field; it scrolls inside
+       that space instead of running off the screen. */
+    overflow-y: auto;
     margin-top: 0.25rem;
     padding: 0.25rem;
     border: 1px solid #e2e8f0;
