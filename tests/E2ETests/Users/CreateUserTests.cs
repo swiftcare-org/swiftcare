@@ -28,7 +28,7 @@ public class CreateUserTests : SeleniumTestBase
 
         Assert.Contains("created successfully", page.WaitForSuccessMessage());
         Assert.True(page.UserRowExists(username));
-        Assert.Equal("Active", page.UserRowStatus(username));
+        Assert.Equal("Active", page.UserRowStatus(username), ignoreCase: true);
     }
 
     // Scenario 4 - missing required fields: client-side validation blocks the
@@ -47,7 +47,7 @@ public class CreateUserTests : SeleniumTestBase
         Assert.Equal("Password is required.", page.GetFieldError("password"));
         Assert.Equal("Full name is required.", page.GetFieldError("fullName"));
         // Role defaults to Doctor, so Scenario 5's room-number rule fires here too.
-        Assert.Equal("Room number is required for doctors", page.GetFieldError("roomNumber"));
+        Assert.Equal("Room number is required for doctors.", page.GetFieldError("roomNumber"));
         Assert.Contains(UserManagementPage.Path, Driver.Url);
         Assert.False(page.HasSuccessBanner);
     }

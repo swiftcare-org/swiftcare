@@ -6,6 +6,11 @@ import type { BloodGroup, Gender, RegisterPatientRequestBody, RegisteredPatient 
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
+import { Banner } from '../components/ui/Banner';
+import { Button } from '../components/ui/Button';
+import { Field, RequiredLegend } from '../components/ui/Field';
+import { SectionCard } from '../components/ui/SectionCard';
+import { textLinkClassName } from '../components/ui/table';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'created' | 'failed';
 
@@ -40,12 +45,6 @@ const GENDER_OPTIONS: Gender[] = ['Male', 'Female', 'Other'];
 const BLOOD_GROUP_OPTIONS: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 
 const GENERIC_ERROR_MESSAGE = 'Unable to register the patient. Please try again.';
-
-function inputClassName(hasError: boolean): string {
-  return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
-    hasError ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
-  }`;
-}
 
 // Server errors are keyed by lowercased field name (see ApiError.fieldErrors); an unknown
 // key is silently ignored rather than merged, since this form has a fixed field set.
@@ -86,7 +85,7 @@ export function PatientRegistrationPage() {
 
   function clearFieldError(field: keyof FieldErrors) {
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: null } : prev));
-    if (status === 'failed') {
+    if (status === 'failed' || status === 'created') {
       setStatus('idle');
       setServerMessage(null);
     }
@@ -181,236 +180,165 @@ export function PatientRegistrationPage() {
   }
 
   return (
-    <DashboardShell sectionLabel="Register Patient">
-      <Link
-        to={backRoute}
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        ← Back to Dashboard
-      </Link>
-
+    <DashboardShell sectionLabel="Register Patient" backLink={{ to: backRoute, destination: 'Dashboard' }}>
       {/* Status region - one persistent aria-live container, content swapped by status */}
       <div aria-live="polite">
         {status === 'created' && registeredPatient && (
-          <div className="mt-6 border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-emerald-800">Patient Registered</p>
-            <p className="mt-1 text-sm text-emerald-900">
-              Patient registered successfully. Patient ID: {registeredPatient.patientId}
+          <Banner tone="success" title="Patient Registered">
+            <p>Patient registered successfully. Patient ID: {registeredPatient.patientId}</p>
+            <p className="mt-1">
+              <Link to={`/patients/${registeredPatient.patientId}`} className={textLinkClassName}>
+                Open patient profile
+              </Link>
             </p>
-          </div>
+          </Banner>
         )}
         {status === 'failed' && serverMessage && (
-          <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Patient Not Registered</p>
-            <p className="mt-1 text-sm text-red-900">{serverMessage}</p>
-          </div>
+          <Banner tone="error" title="Patient Not Registered">
+            {serverMessage}
+          </Banner>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-5 border border-slate-300 bg-white px-6 py-6">
-        <div>
-          <label htmlFor="nic" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            NIC
-          </label>
-          <input
-            id="nic"
-            name="nic"
-            type="text"
-            autoComplete="off"
-            value={nic}
-            onChange={(event) => {
-              setNic(event.target.value);
-              clearFieldError('nic');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.nic ? true : undefined}
-            aria-describedby={fieldErrors.nic ? 'nic-error' : undefined}
-            className={inputClassName(!!fieldErrors.nic)}
-          />
-          {fieldErrors.nic && (
-            <p id="nic-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.nic}
-            </p>
-          )}
-        </div>
+      <SectionCard eyebrow="New Patient" title="Patient Details">
+        <form onSubmit={handleSubmit} noValidate className="grid gap-5 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <RequiredLegend />
+          </div>
 
-        <div>
-          <label htmlFor="fullName" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Full Name
-          </label>
-          <input
-            id="fullName"
-            name="fullName"
-            type="text"
-            autoComplete="off"
-            value={fullName}
-            onChange={(event) => {
-              setFullName(event.target.value);
-              clearFieldError('fullname');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.fullname ? true : undefined}
-            aria-describedby={fieldErrors.fullname ? 'fullName-error' : undefined}
-            className={inputClassName(!!fieldErrors.fullname)}
-          />
-          {fieldErrors.fullname && (
-            <p id="fullName-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.fullname}
-            </p>
-          )}
-        </div>
+          <Field id="nic" label="NIC" required hint="9 digits followed by V or X, or 12 digits." error={fieldErrors.nic}>
+            {(control) => (
+              <input
+                {...control}
+                name="nic"
+                type="text"
+                autoComplete="off"
+                value={nic}
+                onChange={(event) => {
+                  setNic(event.target.value);
+                  clearFieldError('nic');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
 
-        <div>
-          <label htmlFor="dateOfBirth" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Date of Birth
-          </label>
-          <input
-            id="dateOfBirth"
-            name="dateOfBirth"
-            type="date"
-            max={todayAsDateInputValue()}
-            value={dateOfBirth}
-            onChange={(event) => {
-              setDateOfBirth(event.target.value);
-              clearFieldError('dateofbirth');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.dateofbirth ? true : undefined}
-            aria-describedby={fieldErrors.dateofbirth ? 'dateOfBirth-error' : undefined}
-            className={inputClassName(!!fieldErrors.dateofbirth)}
-          />
-          {fieldErrors.dateofbirth && (
-            <p id="dateOfBirth-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.dateofbirth}
-            </p>
-          )}
-        </div>
+          <Field id="fullName" label="Full Name" required error={fieldErrors.fullname}>
+            {(control) => (
+              <input
+                {...control}
+                name="fullName"
+                type="text"
+                autoComplete="off"
+                value={fullName}
+                onChange={(event) => {
+                  setFullName(event.target.value);
+                  clearFieldError('fullname');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
 
-        <div>
-          <label htmlFor="gender" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Gender
-          </label>
-          <select
-            id="gender"
-            name="gender"
-            value={gender}
-            onChange={(event) => {
-              setGender(event.target.value as Gender);
-              clearFieldError('gender');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.gender ? true : undefined}
-            aria-describedby={fieldErrors.gender ? 'gender-error' : undefined}
-            className={inputClassName(!!fieldErrors.gender)}
-          >
-            {GENDER_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          {fieldErrors.gender && (
-            <p id="gender-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.gender}
-            </p>
-          )}
-        </div>
+          <Field id="dateOfBirth" label="Date of Birth" required error={fieldErrors.dateofbirth}>
+            {(control) => (
+              <input
+                {...control}
+                name="dateOfBirth"
+                type="date"
+                max={todayAsDateInputValue()}
+                value={dateOfBirth}
+                onChange={(event) => {
+                  setDateOfBirth(event.target.value);
+                  clearFieldError('dateofbirth');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
 
-        <div>
-          <label htmlFor="address" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Address
-          </label>
-          <textarea
-            id="address"
-            name="address"
-            rows={2}
-            value={address}
-            onChange={(event) => {
-              setAddress(event.target.value);
-              clearFieldError('address');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.address ? true : undefined}
-            aria-describedby={fieldErrors.address ? 'address-error' : undefined}
-            className={inputClassName(!!fieldErrors.address)}
-          />
-          {fieldErrors.address && (
-            <p id="address-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.address}
-            </p>
-          )}
-        </div>
+          <Field id="gender" label="Gender" required error={fieldErrors.gender}>
+            {(control) => (
+              <select
+                {...control}
+                name="gender"
+                value={gender}
+                onChange={(event) => {
+                  setGender(event.target.value as Gender);
+                  clearFieldError('gender');
+                }}
+                disabled={isBusy}
+              >
+                {GENDER_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
 
-        <div>
-          <label htmlFor="phoneNumber" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Phone Number
-          </label>
-          <input
-            id="phoneNumber"
-            name="phoneNumber"
-            type="tel"
-            autoComplete="off"
-            placeholder="0771234567 or +94771234567"
-            value={phoneNumber}
-            onChange={(event) => {
-              setPhoneNumber(event.target.value);
-              clearFieldError('phonenumber');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.phonenumber ? true : undefined}
-            aria-describedby={fieldErrors.phonenumber ? 'phoneNumber-error' : undefined}
-            className={inputClassName(!!fieldErrors.phonenumber)}
-          />
-          {fieldErrors.phonenumber && (
-            <p id="phoneNumber-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.phonenumber}
-            </p>
-          )}
-        </div>
+          <Field id="phoneNumber" label="Phone Number" required hint="For example 0771234567 or +94771234567." error={fieldErrors.phonenumber}>
+            {(control) => (
+              <input
+                {...control}
+                name="phoneNumber"
+                type="tel"
+                autoComplete="off"
+                value={phoneNumber}
+                onChange={(event) => {
+                  setPhoneNumber(event.target.value);
+                  clearFieldError('phonenumber');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
 
-        <div>
-          <label htmlFor="bloodGroup" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Blood Group
-          </label>
-          <select
-            id="bloodGroup"
-            name="bloodGroup"
-            value={bloodGroup}
-            onChange={(event) => {
-              setBloodGroup(event.target.value as BloodGroup);
-              clearFieldError('bloodgroup');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.bloodgroup ? true : undefined}
-            aria-describedby={fieldErrors.bloodgroup ? 'bloodGroup-error' : undefined}
-            className={inputClassName(!!fieldErrors.bloodgroup)}
-          >
-            {BLOOD_GROUP_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          {fieldErrors.bloodgroup && (
-            <p id="bloodGroup-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.bloodgroup}
-            </p>
-          )}
-        </div>
+          <Field id="bloodGroup" label="Blood Group" required error={fieldErrors.bloodgroup}>
+            {(control) => (
+              <select
+                {...control}
+                name="bloodGroup"
+                value={bloodGroup}
+                onChange={(event) => {
+                  setBloodGroup(event.target.value as BloodGroup);
+                  clearFieldError('bloodgroup');
+                }}
+                disabled={isBusy}
+              >
+                {BLOOD_GROUP_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
 
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="relative w-full overflow-hidden bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        >
-          {isBusy ? 'Registering…' : 'Register Patient'}
-          {isBusy && (
-            <span className="absolute inset-x-0 bottom-0 block h-0.5 overflow-hidden bg-white/20" aria-hidden="true">
-              <span className="block h-full w-1/3 animate-[loading-sweep_1.1s_ease-in-out_infinite] bg-white" />
-            </span>
-          )}
-        </button>
-      </form>
+          <Field id="address" label="Address" required error={fieldErrors.address} className="sm:col-span-2">
+            {(control) => (
+              <textarea
+                {...control}
+                name="address"
+                rows={2}
+                value={address}
+                onChange={(event) => {
+                  setAddress(event.target.value);
+                  clearFieldError('address');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
+
+          <div className="sm:col-span-2">
+            <Button type="submit" fullWidth loading={isBusy}>
+              {isBusy ? 'Registering…' : 'Register Patient'}
+            </Button>
+          </div>
+        </form>
+      </SectionCard>
     </DashboardShell>
   );
 }
