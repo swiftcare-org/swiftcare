@@ -20,3 +20,73 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Dropdown lists. A browser normally draws the open list itself, square and unstyled.
+   Where the browser allows it (current Chrome and Edge), opt the list into styling so it
+   matches the rounded cards and inputs. Other browsers keep their native list. */
+@supports (appearance: base-select) {
+  select,
+  ::picker(select) {
+    appearance: base-select;
+  }
+
+  select {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  select::picker-icon {
+    color: #64748b;
+    transition: rotate 150ms ease;
+  }
+
+  select:open::picker-icon {
+    rotate: 180deg;
+  }
+
+  ::picker(select) {
+    margin-top: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    background-color: #ffffff;
+    box-shadow:
+      0 10px 15px -3px rgb(15 23 42 / 0.1),
+      0 4px 6px -4px rgb(15 23 42 / 0.1);
+  }
+
+  select option {
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    color: #0f172a;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  select option:hover,
+  select option:focus-visible {
+    background-color: #f1f5f9;
+    outline: none;
+  }
+
+  select option:checked {
+    background-color: var(--color-brand-blue-tint);
+    color: var(--color-brand-blue-dark);
+    font-weight: 600;
+  }
+
+  select option:disabled {
+    display: none;
+  }
+
+  select option::checkmark {
+    display: none;
+  }
+}
