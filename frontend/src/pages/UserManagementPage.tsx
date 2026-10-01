@@ -173,7 +173,7 @@ export function UserManagementPage() {
   return (
     <DashboardShell sectionLabel="User Management" backLink={{ to: '/admin', destination: 'Dashboard' }}>
       {/* Status region - one persistent aria-live container, content swapped by status */}
-      <div aria-live="polite">
+      <div aria-live="polite" className="empty:hidden">
         {status === 'created' && (
           <Banner tone="success" title="Account Created">
             The new account was created successfully.

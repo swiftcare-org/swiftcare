@@ -182,7 +182,7 @@ export function PatientRegistrationPage() {
   return (
     <DashboardShell sectionLabel="Register Patient" backLink={{ to: backRoute, destination: 'Dashboard' }}>
       {/* Status region - one persistent aria-live container, content swapped by status */}
-      <div aria-live="polite">
+      <div aria-live="polite" className="empty:hidden">
         {status === 'created' && registeredPatient && (
           <Banner tone="success" title="Patient Registered">
             <p>Patient registered successfully. Patient ID: {registeredPatient.patientId}</p>

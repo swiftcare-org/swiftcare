@@ -107,7 +107,7 @@ export function PatientSearchPage() {
         </Field>
       </SectionCard>
 
-      <div aria-live="polite" className="space-y-3">
+      <div aria-live="polite" className="space-y-3 empty:hidden">
         {isSearching && <LoadingText>Searching…</LoadingText>}
 
         {status === 'error' && errorMessage && (

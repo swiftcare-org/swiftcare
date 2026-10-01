@@ -32,7 +32,7 @@ public class PatientProfilePage
     }
 
     public void WaitUntilLoaded() =>
-        _wait.Until(d => d.FindElements(By.XPath("//p[normalize-space()='Allergies']")).Count > 0);
+        _wait.Until(d => d.FindElements(By.XPath("//h2[normalize-space()='Allergies']")).Count > 0);
 
     // --- Demographics and access mode (SWC-92) ---
 
@@ -47,10 +47,10 @@ public class PatientProfilePage
     public string Address => DemographicValue("Address");
 
     public bool HasAllergiesSection =>
-        _driver.FindElements(By.XPath("//p[normalize-space()='Allergies']")).Count > 0;
+        _driver.FindElements(By.XPath("//h2[normalize-space()='Allergies']")).Count > 0;
 
     public bool HasChronicConditionsSection =>
-        _driver.FindElements(By.XPath("//p[normalize-space()='Chronic Conditions']")).Count > 0;
+        _driver.FindElements(By.XPath("//h2[normalize-space()='Chronic Conditions']")).Count > 0;
 
     // Doctors retain the existing read access from SWC-12. The demographic edit button
     // and its form are Receptionist-only; allergy controls are deliberately not included
@@ -86,7 +86,7 @@ public class PatientProfilePage
     // SWC-94 - a failed allergies request degrades to this section-level message instead of
     // taking down the whole profile.
     private static readonly By AllergiesLoadError =
-        By.XPath("//p[@role='alert'][normalize-space()='Unable to load allergies.']");
+        By.XPath("//*[@role='alert'][normalize-space()='Unable to load allergies.']");
 
     public bool ShowsAllergiesLoadError => _driver.FindElements(AllergiesLoadError).Count > 0;
 
@@ -265,7 +265,7 @@ public class PatientProfilePage
     {
         get
         {
-            var elements = _driver.FindElements(By.Id("condition-date-error"));
+            var elements = _driver.FindElements(By.Id("condition-date-diagnosed-error"));
             return elements.Count > 0 ? elements[0].Text : null;
         }
     }
@@ -352,7 +352,7 @@ public class PatientProfilePage
 
     private IReadOnlyList<string> ConditionColumnText(int columnIndex) =>
         _driver.FindElements(By.XPath(
-                $"//p[normalize-space()='Chronic Conditions']/following::table[1]//tbody/tr/td[{columnIndex}]"))
+                $"//h2[normalize-space()='Chronic Conditions']/following::table[1]//tbody/tr/td[{columnIndex}]"))
             .Select(e => e.Text.Trim())
             .ToList();
 
