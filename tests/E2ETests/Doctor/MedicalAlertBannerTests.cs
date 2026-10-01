@@ -62,7 +62,7 @@ public class MedicalAlertBannerTests : SeleniumTestBase
         Assert.Contains("border-red-700", classes[0]);
         Assert.Contains("border-red-700", classes[1]);
         Assert.Contains("border-amber-600", classes[2]);
-        Assert.Contains("border-blue-700", classes[3]);
+        Assert.Contains("border-brand-blue", classes[3]);
     }
 
     [Fact]
