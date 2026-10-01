@@ -41,12 +41,13 @@ public class CreateUserTests : SeleniumTestBase
 
         var page = new UserManagementPage(Driver);
         page.WaitUntilLoaded();
+        // No role is pre-selected, so Doctor is chosen for Scenario 5's room-number rule.
+        page.SelectRole("Doctor");
         page.Submit();
 
         Assert.Equal("Username is required.", page.GetFieldError("username"));
         Assert.Equal("Password is required.", page.GetFieldError("password"));
         Assert.Equal("Full name is required.", page.GetFieldError("fullName"));
-        // Role defaults to Doctor, so Scenario 5's room-number rule fires here too.
         Assert.Equal("Room number is required for doctors.", page.GetFieldError("roomNumber"));
         Assert.Contains(UserManagementPage.Path, Driver.Url);
         Assert.False(page.HasSuccessBanner);
@@ -63,7 +64,10 @@ public class CreateUserTests : SeleniumTestBase
         var page = new UserManagementPage(Driver);
         page.WaitUntilLoaded();
 
-        Assert.True(page.HasRoomNumberField, "Room number should be visible for the default Doctor role.");
+        Assert.False(page.HasRoomNumberField, "Room number should be hidden until a role is chosen.");
+
+        page.SelectRole("Doctor");
+        Assert.True(page.HasRoomNumberField, "Room number should be visible for the Doctor role.");
 
         page.SelectRole("Receptionist");
         Assert.False(page.HasRoomNumberField, "Room number should be hidden for non-Doctor roles.");

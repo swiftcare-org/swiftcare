@@ -1,6 +1,7 @@
 // One definition of table chrome. Wide tables scroll inside their own wrapper, so the
 // page itself never scrolls sideways.
-export const tableWrapperClassName = 'overflow-x-auto rounded-lg border border-slate-200';
+// "relative" keeps visually hidden text inside cells from widening the page.
+export const tableWrapperClassName = 'relative overflow-x-auto rounded-lg border border-slate-200';
 export const tableClassName = 'min-w-full divide-y divide-slate-200 text-sm';
 export const tableHeadClassName = 'bg-slate-50';
 export const tableHeaderCellClassName =

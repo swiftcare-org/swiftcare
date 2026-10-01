@@ -71,10 +71,11 @@ export function PatientRegistrationPage() {
   const [nic, setNic] = useState('');
   const [fullName, setFullName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [gender, setGender] = useState<Gender>('Male');
+  // Nothing is pre-selected: a default would be saved as fact if the receptionist skipped it.
+  const [gender, setGender] = useState<Gender | ''>('');
   const [address, setAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [bloodGroup, setBloodGroup] = useState<BloodGroup>('O+');
+  const [bloodGroup, setBloodGroup] = useState<BloodGroup | ''>('');
 
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(EMPTY_FIELD_ERRORS);
   const [status, setStatus] = useState<SubmissionStatus>('idle');
@@ -148,10 +149,10 @@ export function PatientRegistrationPage() {
       nic: trimmedNic,
       fullName: trimmedFullName,
       dateOfBirth,
-      gender,
+      gender: gender as Gender,
       address: trimmedAddress,
       phoneNumber: trimmedPhoneNumber,
-      bloodGroup,
+      bloodGroup: bloodGroup as BloodGroup,
     };
 
     try {
@@ -161,10 +162,10 @@ export function PatientRegistrationPage() {
       setNic('');
       setFullName('');
       setDateOfBirth('');
-      setGender('Male');
+      setGender('');
       setAddress('');
       setPhoneNumber('');
-      setBloodGroup('O+');
+      setBloodGroup('');
       setFieldErrors(EMPTY_FIELD_ERRORS);
     } catch (error) {
       setStatus('failed');
@@ -269,6 +270,9 @@ export function PatientRegistrationPage() {
                 }}
                 disabled={isBusy}
               >
+                <option value="" disabled>
+                  Select gender
+                </option>
                 {GENDER_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -307,6 +311,9 @@ export function PatientRegistrationPage() {
                 }}
                 disabled={isBusy}
               >
+                <option value="" disabled>
+                  Select blood group
+                </option>
                 {BLOOD_GROUP_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}

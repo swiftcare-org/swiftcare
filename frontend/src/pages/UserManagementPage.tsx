@@ -64,7 +64,7 @@ export function UserManagementPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<UserRole>('Doctor');
+  const [role, setRole] = useState<UserRole | ''>('');
   const [roomNumber, setRoomNumber] = useState('');
 
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(EMPTY_FIELD_ERRORS);
@@ -139,7 +139,7 @@ export function UserManagementPage() {
       username: trimmedUsername,
       password,
       fullName: trimmedFullName,
-      role,
+      role: role as UserRole,
       roomNumber: role === 'Doctor' ? trimmedRoomNumber : undefined,
     };
 
@@ -149,7 +149,7 @@ export function UserManagementPage() {
       setUsername('');
       setPassword('');
       setFullName('');
-      setRole('Doctor');
+      setRole('');
       setRoomNumber('');
       setFieldErrors(EMPTY_FIELD_ERRORS);
       await loadUsers();
@@ -258,6 +258,9 @@ export function UserManagementPage() {
                 onChange={(event) => handleRoleChange(event.target.value as UserRole)}
                 disabled={isBusy}
               >
+                <option value="" disabled>
+                  Select role
+                </option>
                 {ROLE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}

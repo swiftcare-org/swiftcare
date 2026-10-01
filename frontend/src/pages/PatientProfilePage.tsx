@@ -55,7 +55,7 @@ interface ProfileFieldErrors {
 
 interface AllergyFormState {
   allergyName: string;
-  severity: AllergySeverity;
+  severity: AllergySeverity | '';
   notes: string;
 }
 
@@ -76,7 +76,7 @@ interface ConditionFieldErrors {
 }
 
 const EMPTY_FIELD_ERRORS: AllergyFieldErrors = { allergyName: null, severity: null };
-const EMPTY_FORM: AllergyFormState = { allergyName: '', severity: 'Severe', notes: '' };
+const EMPTY_FORM: AllergyFormState = { allergyName: '', severity: '', notes: '' };
 const SEVERITY_OPTIONS: AllergySeverity[] = ['Severe', 'Moderate', 'Mild'];
 const EMPTY_CONDITION_FORM: ConditionFormState = {
   conditionName: '',
@@ -525,7 +525,7 @@ export function PatientProfilePage() {
 
     const request: AllergyRequestBody = {
       allergyName: addForm.allergyName.trim(),
-      severity: addForm.severity,
+      severity: addForm.severity as AllergySeverity,
       notes: addForm.notes.trim() || null,
     };
 
@@ -580,7 +580,7 @@ export function PatientProfilePage() {
 
     const request: AllergyRequestBody = {
       allergyName: editForm.allergyName.trim(),
-      severity: editForm.severity,
+      severity: editForm.severity as AllergySeverity,
       notes: editForm.notes.trim() || null,
     };
 
@@ -1062,6 +1062,9 @@ export function PatientProfilePage() {
                                       }}
                                       disabled={editStatus === 'submitting'}
                                     >
+                                      <option value="" disabled>
+                                        Select severity
+                                      </option>
                                       {SEVERITY_OPTIONS.map((option) => (
                                         <option key={option} value={option}>
                                           {option}
@@ -1116,7 +1119,7 @@ export function PatientProfilePage() {
                               {canManage && (
                                 <td className={tableCellClassName}>
                                   {confirmingRemovalId !== allergy.allergyId && (
-                                    <div className="flex flex-wrap gap-2">
+                                    <div className="flex gap-2">
                                       <Button variant="secondary" size="sm" onClick={() => startEdit(allergy)}>
                                         Edit
                                       </Button>
@@ -1209,6 +1212,9 @@ export function PatientProfilePage() {
                         }}
                         disabled={addStatus === 'submitting'}
                       >
+                        <option value="" disabled>
+                          Select severity
+                        </option>
                         {SEVERITY_OPTIONS.map((option) => (
                           <option key={option} value={option}>
                             {option}
