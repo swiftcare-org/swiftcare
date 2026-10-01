@@ -42,7 +42,9 @@ export function ConfirmPanel({
       <p id={labelId} className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
         {title}
       </p>
-      <div className="mt-1 text-sm text-amber-900">{children}</div>
+      <div className="mt-1 break-words text-sm text-amber-900" data-testid="confirm-message">
+        {children}
+      </div>
       {error && (
         <p role="alert" className="mt-2 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
           {error}

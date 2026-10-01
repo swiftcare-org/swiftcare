@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 export type StatusBadgeTone = 'success' | 'warning' | 'info' | 'danger' | 'neutral';
 
@@ -10,16 +10,16 @@ const TONES: Record<StatusBadgeTone, string> = {
   neutral: 'border-slate-400 bg-slate-100 text-slate-700',
 };
 
-interface StatusBadgeProps {
+interface StatusBadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone: StatusBadgeTone;
-  className?: string;
   children: ReactNode;
 }
 
-export function StatusBadge({ tone, className = '', children }: StatusBadgeProps) {
+export function StatusBadge({ tone, className = '', children, ...rest }: StatusBadgeProps) {
   return (
     <span
       className={`inline-flex items-center whitespace-nowrap border px-2 py-0.5 text-xs font-bold uppercase tracking-[0.08em] ${TONES[tone]} ${className}`}
+      {...rest}
     >
       {children}
     </span>

@@ -6,7 +6,7 @@ namespace E2ETests.Pages;
 // The doctor's Prescription screen (SWC-29 create, SWC-40 add/remove), reached from
 // Complete Consultation. Route and selectors mirror frontend/src/pages/PrescriptionPage.tsx.
 //
-// The medicine inputs have no ids, so each is found through its wrapping label. Allergy
+// The medicine inputs have generated ids, so each is found through the label before it. Allergy
 // banners also use role="alert", so form messages are always scoped to their own form.
 public class PrescriptionPage
 {
@@ -31,9 +31,7 @@ public class PrescriptionPage
 
     // "Q-007 Patient name", carried over from the completed consultation.
     public string ConsultationContext =>
-        _driver.FindElement(By.XPath(
-            "//section[h1[normalize-space()='Prescription']]/p[not(normalize-space()='Consultation completed successfully.')]"))
-            .Text.Trim();
+        _driver.FindElement(By.CssSelector("[data-testid='prescription-context']")).Text.Trim();
 
     // The context recovery and the allergy/history requests both finish after the heading
     // renders; wait for both before reading the form or the saved prescription.
@@ -91,7 +89,7 @@ public class PrescriptionPage
         _driver.FindElement(DraftForm).FindElement(By.XPath(".//button[@type='submit']")).Click();
 
     public string WaitForDraftMessage() =>
-        _wait.Until(d => d.FindElements(By.XPath("//form//p[@role='alert']")).FirstOrDefault()?.Text.Trim())
+        _wait.Until(d => d.FindElements(By.XPath("//form//*[@role='alert']")).FirstOrDefault()?.Text.Trim())
         ?? throw new InvalidOperationException("No prescription form message was shown.");
 
     private static By DraftRow(int position) =>
@@ -102,7 +100,8 @@ public class PrescriptionPage
     private static readonly By RemovalDialog = By.CssSelector("[role='alertdialog']");
 
     public string WaitForRemovalPrompt() =>
-        _wait.Until(d => d.FindElement(RemovalDialog)).FindElement(By.TagName("p")).Text.Trim();
+        _wait.Until(d => d.FindElement(RemovalDialog))
+            .FindElement(By.CssSelector("[data-testid='confirm-message']")).Text.Trim();
 
     public void ConfirmRemoval() =>
         _driver.FindElement(RemovalDialog).FindElement(By.XPath(".//button[normalize-space()='Confirm Remove']")).Click();
@@ -119,7 +118,7 @@ public class PrescriptionPage
     public void WaitForSavedPrescription() => _wait.Until(d => d.FindElements(SavedMedicineList).Count > 0);
 
     public IReadOnlyList<string> SavedMedicineNames =>
-        _driver.FindElements(By.CssSelector("ul[aria-label='Prescription medicines'] > li p.font-semibold"))
+        _driver.FindElements(By.CssSelector("ul[aria-label='Prescription medicines'] [data-testid='medicine-name']"))
             .Select(element => element.Text.Trim())
             .ToList();
 
@@ -157,10 +156,10 @@ public class PrescriptionPage
 
     public bool ShowsDispensedNotice =>
         _driver.FindElements(By.XPath(
-            "//p[@role='status'][normalize-space()='Cannot modify a dispensed prescription']")).Count > 0;
+            "//*[@role='status'][normalize-space()='Cannot modify a dispensed prescription']")).Count > 0;
 
     public bool HasBackToDashboardLink =>
-        _driver.FindElements(By.CssSelector("a[href='/doctor']")).Count > 0;
+        _driver.FindElements(By.CssSelector("a[data-testid='back-to-dashboard']")).Count > 0;
 
     // --- Previous prescriptions (SWC-29 AC4) ---
 
@@ -169,15 +168,15 @@ public class PrescriptionPage
 
     private IWebElement LatestHistoryEntry =>
         _wait.Until(d => d.FindElement(By.XPath(
-            "//section[.//h2[normalize-space()='Previous prescriptions']]//article[1]")));
+            "//section[.//h2[normalize-space()='Previous Prescriptions']]//article[1]")));
 
-    public string LatestHistoryStatus => LatestHistoryEntry.FindElement(By.CssSelector("p.font-bold")).Text.Trim();
+    public string LatestHistoryStatus => LatestHistoryEntry.FindElement(By.CssSelector("[data-testid='prescription-status']")).Text.Trim();
 
     public string LatestHistoryDoctorLine =>
         LatestHistoryEntry.FindElement(By.XPath(".//p[starts-with(normalize-space(), 'Prescribed by')]")).Text.Trim();
 
     public IReadOnlyList<string> LatestHistoryMedicineNames =>
-        LatestHistoryEntry.FindElements(By.CssSelector("ul li span.font-semibold"))
+        LatestHistoryEntry.FindElements(By.CssSelector("[data-testid='history-medicine-name']"))
             .Select(element => element.Text.Trim())
             .ToList();
 
@@ -200,5 +199,6 @@ public class PrescriptionPage
     }
 
     private static IWebElement Field(IWebElement container, string label, string tag) =>
-        container.FindElement(By.XPath($".//label[starts-with(normalize-space(), '{label}')]//{tag}"));
+        container.FindElement(By.XPath(
+            $".//label[starts-with(normalize-space(), '{label}')]/following-sibling::{tag}[1]"));
 }

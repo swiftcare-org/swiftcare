@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
 import {
@@ -10,54 +10,36 @@ import {
 import { getTodayQueue, type TodayQueueEntry } from '../api/queue';
 import { useAuth } from '../auth/useAuth';
 import type { UserRole } from '../auth/types';
+import { Banner } from '../components/ui/Banner';
+import { Button } from '../components/ui/Button';
+import { ConfirmPanel } from '../components/ui/ConfirmPanel';
+import { LoadingText } from '../components/ui/Feedback';
+import { SectionCard } from '../components/ui/SectionCard';
+import { StatusBadge } from '../components/ui/StatusBadge';
 import { DashboardShell } from '../dashboards/DashboardShell';
+import { formatDate, formatDateTime, formatTime } from '../lib/format';
 
 type LoadState = 'loading' | 'loaded' | 'error';
-type DispenseState = 'idle' | 'submitting';
+type DispenseState = 'idle' | 'confirming' | 'submitting';
 
 interface CounterContext {
   queueEntry: TodayQueueEntry;
   patientName: string;
 }
 
-const CLINIC_TIME_ZONE = 'Asia/Colombo';
+const DETAIL_TERM_CLASS_NAME = 'text-xs font-bold uppercase tracking-[0.12em] text-slate-500';
+const DETAIL_VALUE_CLASS_NAME = 'mt-0.5 break-words text-slate-900';
 
-function dashboardRoute(role: UserRole | undefined): string {
+function backTarget(role: UserRole | undefined): { to: string; destination: string } {
   if (role === 'Receptionist') {
-    return '/reception/queue';
+    return { to: '/reception/queue', destination: 'Queue' };
   }
 
   if (role === 'Admin') {
-    return '/admin';
+    return { to: '/admin', destination: 'Dashboard' };
   }
 
-  return '/doctor';
-}
-
-function formatDispensedTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return 'time unavailable';
-  }
-
-  return new Intl.DateTimeFormat('en-LK', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: CLINIC_TIME_ZONE,
-  }).format(date);
-}
-
-function formatPrescriptionDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return 'Date unavailable';
-  }
-
-  return new Intl.DateTimeFormat('en-LK', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: CLINIC_TIME_ZONE,
-  }).format(date);
+  return { to: '/doctor', destination: 'Dashboard' };
 }
 
 async function loadPrescriptionOrNull(queueId: string): Promise<Prescription | null> {
@@ -148,7 +130,7 @@ export function PrescriptionDetailsPage() {
       !prescription
       || prescription.status !== 'PENDING'
       || user?.role !== 'Receptionist'
-      || dispenseState !== 'idle'
+      || dispenseState === 'submitting'
     ) {
       return;
     }
@@ -159,173 +141,170 @@ export function PrescriptionDetailsPage() {
     try {
       const updated = await dispensePrescription(prescription.id);
       setPrescription(updated);
+      setDispenseState('idle');
     } catch (error) {
       setDispenseMessage(
         error instanceof ApiError && error.status >= 400 && error.status < 500
           ? error.message
           : 'Unable to dispense the prescription. Please try again.',
       );
-    } finally {
-      setDispenseState('idle');
+      // Back to the confirm step, so the reason is shown beside the action that failed.
+      setDispenseState('confirming');
     }
   }
 
+  // Without a signed-in role the load never starts, so say so instead of waiting forever.
+  const effectiveLoadState: LoadState = user?.role ? loadState : 'error';
+  const effectiveLoadMessage = user?.role
+    ? loadMessage
+    : 'Your session could not be confirmed. Please sign in again.';
+
   return (
-    <DashboardShell sectionLabel="Prescription Details">
-      <Link
-        to={dashboardRoute(user?.role)}
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        ← Back
-      </Link>
+    <DashboardShell sectionLabel="Prescription Details" backLink={backTarget(user?.role)}>
+      {effectiveLoadState === 'loading' && <LoadingText>Loading prescription…</LoadingText>}
 
-      {loadState === 'loading' && (
-        <p className="mt-6 text-sm text-slate-600">Loading prescription…</p>
+      {effectiveLoadState === 'error' && (
+        <div data-testid="prescription-load-error">
+          <Banner tone="error" title="Prescription Unavailable" role="alert">
+            {effectiveLoadMessage}
+          </Banner>
+        </div>
       )}
 
-      {loadState === 'error' && (
-        <p className="mt-6 border-l-4 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
-          {loadMessage}
-        </p>
-      )}
-
-      {loadState === 'loaded' && (
-        <section className="mt-6 space-y-6 border border-slate-300 bg-white px-6 py-6">
+      {effectiveLoadState === 'loaded' && (
+        <div className="space-y-6" data-testid="prescription-details">
           {counterContext && (
-            <dl className="grid gap-4 border-b border-slate-200 pb-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <dt className="font-semibold text-slate-600">Patient</dt>
-                <dd className="mt-1 text-slate-900">{counterContext.patientName}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-600">Queue number</dt>
-                <dd className="mt-1 text-slate-900">{counterContext.queueEntry.queueNumber}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-600">Doctor</dt>
-                <dd className="mt-1 text-slate-900">
-                  {prescription?.doctorName ?? counterContext.queueEntry.doctorName ?? 'Not assigned'}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-600">Room</dt>
-                <dd className="mt-1 text-slate-900">
-                  {counterContext.queueEntry.roomNumber ?? 'Not assigned'}
-                </dd>
-              </div>
-            </dl>
+            <SectionCard eyebrow="Medicines Counter" title="Patient at the Counter">
+              <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4" data-testid="counter-details">
+                <div>
+                  <dt className={DETAIL_TERM_CLASS_NAME}>Patient</dt>
+                  <dd className={DETAIL_VALUE_CLASS_NAME}>{counterContext.patientName}</dd>
+                </div>
+                <div>
+                  <dt className={DETAIL_TERM_CLASS_NAME}>Queue number</dt>
+                  <dd className={DETAIL_VALUE_CLASS_NAME}>{counterContext.queueEntry.queueNumber}</dd>
+                </div>
+                <div>
+                  <dt className={DETAIL_TERM_CLASS_NAME}>Doctor</dt>
+                  <dd className={DETAIL_VALUE_CLASS_NAME}>
+                    {prescription?.doctorName ?? counterContext.queueEntry.doctorName ?? 'Not assigned'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={DETAIL_TERM_CLASS_NAME}>Room</dt>
+                  <dd className={DETAIL_VALUE_CLASS_NAME}>
+                    {counterContext.queueEntry.roomNumber ?? 'Not assigned'}
+                  </dd>
+                </div>
+              </dl>
+            </SectionCard>
           )}
 
           {!prescription && (
-            <p
-              className="border-l-4 border-blue-700 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900"
-              role="status"
-            >
+            <Banner tone="info" role="status">
               No prescription recorded yet. Doctor may still be writing it.
-            </p>
+            </Banner>
           )}
 
           {prescription && (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                    Prescription date
-                  </p>
-                  <h2 className="mt-1 text-xl font-semibold text-slate-900">
-                    {formatPrescriptionDate(prescription.createdAt)}
-                  </h2>
-                  {!counterContext && (
-                    <p className="mt-1 text-sm text-slate-600">
-                      Prescribed by {prescription.doctorName}
-                    </p>
-                  )}
-                </div>
-                <span
-                  className={`border px-3 py-1 text-xs font-bold ${
-                    prescription.status === 'DISPENSED'
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                      : 'border-amber-300 bg-amber-50 text-amber-900'
-                  }`}
+            <SectionCard
+              eyebrow="Prescription date"
+              title={<span data-testid="prescription-date">{formatDateTime(prescription.createdAt)}</span>}
+              description={!counterContext ? `Prescribed by ${prescription.doctorName}` : undefined}
+              actions={
+                <StatusBadge
+                  tone={prescription.status === 'DISPENSED' ? 'success' : 'warning'}
+                  data-testid="prescription-status"
                 >
                   {prescription.status}
-                </span>
+                </StatusBadge>
+              }
+            >
+              <div className="space-y-5">
+                {!counterContext && (
+                  <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className={DETAIL_TERM_CLASS_NAME}>Queue reference</dt>
+                      <dd className="mt-0.5 break-all text-slate-900">{prescription.queueId}</dd>
+                    </div>
+                    <div>
+                      <dt className={DETAIL_TERM_CLASS_NAME}>Patient reference</dt>
+                      <dd className="mt-0.5 break-all text-slate-900">{prescription.patientId}</dd>
+                    </div>
+                  </dl>
+                )}
+
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">Medicines</h3>
+                  <ul className="mt-3 space-y-3">
+                    {prescription.medicines.map((medicine) => (
+                      <li key={medicine.id} className="border border-slate-300 px-4 py-3 text-sm">
+                        <p className="break-words font-semibold text-slate-900">{medicine.medicineName}</p>
+                        <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                          <div>
+                            <dt className={DETAIL_TERM_CLASS_NAME}>Dosage</dt>
+                            <dd className={DETAIL_VALUE_CLASS_NAME}>{medicine.dosage}</dd>
+                          </div>
+                          <div>
+                            <dt className={DETAIL_TERM_CLASS_NAME}>Frequency</dt>
+                            <dd className={DETAIL_VALUE_CLASS_NAME}>{medicine.frequency}</dd>
+                          </div>
+                          <div>
+                            <dt className={DETAIL_TERM_CLASS_NAME}>Duration</dt>
+                            <dd className={DETAIL_VALUE_CLASS_NAME}>{medicine.duration}</dd>
+                          </div>
+                          <div>
+                            <dt className={DETAIL_TERM_CLASS_NAME}>Instructions</dt>
+                            <dd className={DETAIL_VALUE_CLASS_NAME}>{medicine.instructions ?? '-'}</dd>
+                          </div>
+                        </dl>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {prescription.status === 'DISPENSED' && (
+                  <Banner tone="success" role="status">
+                    {prescription.dispensedBy && prescription.dispensedAt
+                      ? `Dispensed by ${prescription.dispensedBy} on ${formatDate(prescription.dispensedAt)} at ${formatTime(prescription.dispensedAt)}`
+                      : 'Prescription dispensed'}
+                  </Banner>
+                )}
+
+                {user?.role === 'Receptionist' && prescription.status === 'PENDING' && (
+                  dispenseState === 'idle' ? (
+                    <div>
+                      <p className="text-sm text-slate-600">
+                        Mark this once every medicine has been handed to the patient.
+                      </p>
+                      <Button className="mt-3" onClick={() => setDispenseState('confirming')}>
+                        Mark as Dispensed
+                      </Button>
+                    </div>
+                  ) : (
+                    <ConfirmPanel
+                      labelId="confirm-dispense-title"
+                      title="Mark as Dispensed?"
+                      tone="primary"
+                      confirmLabel="Confirm Dispense"
+                      busyLabel="Dispensing…"
+                      busy={dispenseState === 'submitting'}
+                      error={dispenseMessage}
+                      onConfirm={() => void handleDispense()}
+                      onCancel={() => {
+                        setDispenseState('idle');
+                        setDispenseMessage(null);
+                      }}
+                    >
+                      This records that every medicine was handed over. The prescription cannot be changed
+                      afterwards.
+                    </ConfirmPanel>
+                  )
+                )}
               </div>
-
-              {!counterContext && (
-                <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt className="font-semibold text-slate-600">Queue reference</dt>
-                    <dd className="mt-1 break-all text-slate-900">{prescription.queueId}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-slate-600">Patient reference</dt>
-                    <dd className="mt-1 break-all text-slate-900">{prescription.patientId}</dd>
-                  </div>
-                </dl>
-              )}
-
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">
-                  Medicines
-                </h3>
-                <ul className="mt-3 space-y-3">
-                  {prescription.medicines.map((medicine) => (
-                    <li key={medicine.id} className="border border-slate-300 px-4 py-3 text-sm">
-                      <p className="font-semibold text-slate-900">{medicine.medicineName}</p>
-                      <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                        <div>
-                          <dt className="font-semibold text-slate-600">Dosage</dt>
-                          <dd className="mt-1 text-slate-900">{medicine.dosage}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-semibold text-slate-600">Frequency</dt>
-                          <dd className="mt-1 text-slate-900">{medicine.frequency}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-semibold text-slate-600">Duration</dt>
-                          <dd className="mt-1 text-slate-900">{medicine.duration}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-semibold text-slate-600">Instructions</dt>
-                          <dd className="mt-1 text-slate-900">{medicine.instructions ?? '—'}</dd>
-                        </div>
-                      </dl>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {prescription.status === 'DISPENSED' && (
-                <p
-                  className="border-l-4 border-emerald-700 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900"
-                  role="status"
-                >
-                  {prescription.dispensedBy && prescription.dispensedAt
-                    ? `Dispensed by ${prescription.dispensedBy} at ${formatDispensedTime(prescription.dispensedAt)}`
-                    : 'Prescription dispensed'}
-                </p>
-              )}
-
-              {user?.role === 'Receptionist' && prescription.status === 'PENDING' && (
-                <button
-                  type="button"
-                  onClick={() => void handleDispense()}
-                  disabled={dispenseState !== 'idle'}
-                  className="bg-brand-blue px-5 py-3 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:bg-slate-400"
-                >
-                  {dispenseState === 'submitting' ? 'Dispensing…' : 'Mark as Dispensed'}
-                </button>
-              )}
-            </>
+            </SectionCard>
           )}
-
-          {dispenseMessage && (
-            <p className="border-l-4 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
-              {dispenseMessage}
-            </p>
-          )}
-        </section>
+        </div>
       )}
     </DashboardShell>
   );

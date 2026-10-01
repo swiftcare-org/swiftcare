@@ -23,26 +23,26 @@ public class PrescriptionDetailsPage
     public void WaitUntilLoaded() =>
         _wait.Until(d =>
             d.FindElements(By.XPath("//p[contains(normalize-space(), 'Loading prescription')]")).Count == 0
-            && d.FindElements(By.XPath("//section[.//p[@role='status'] or .//h3[normalize-space()='Medicines']] | //p[@role='alert']")).Count > 0);
+            && d.FindElements(By.CssSelector(
+                "[data-testid='prescription-details'], [data-testid='prescription-load-error']")).Count > 0);
 
     public bool HasLoadError =>
-        _driver.FindElements(By.XPath("//p[@role='alert']")).Count > 0;
+        _driver.FindElements(By.CssSelector("[data-testid='prescription-load-error']")).Count > 0;
 
     // Receptionist-only header: Patient, Queue number, Doctor, Room.
     public string CounterDetail(string label) =>
         _driver.FindElement(By.XPath(
-            $"//section/dl/div[dt[normalize-space()='{label}']]/dd")).Text.Trim();
+            $"//dl[@data-testid='counter-details']/div[dt[normalize-space()='{label}']]/dd")).Text.Trim();
 
     public bool ShowsNoPrescriptionYet =>
         _driver.FindElements(By.XPath(
-            "//p[@role='status'][normalize-space()='No prescription recorded yet. Doctor may still be writing it.']")).Count > 0;
+            "//*[@role='status'][normalize-space()='No prescription recorded yet. Doctor may still be writing it.']")).Count > 0;
 
     public string Status =>
-        _driver.FindElement(By.XPath(
-            "//p[normalize-space()='Prescription date']/ancestor::div[span][1]/span")).Text.Trim();
+        _driver.FindElement(By.CssSelector("[data-testid='prescription-status']")).Text.Trim();
 
     public string PrescriptionDate =>
-        _driver.FindElement(By.XPath("//p[normalize-space()='Prescription date']/following-sibling::h2")).Text.Trim();
+        _driver.FindElement(By.CssSelector("[data-testid='prescription-date']")).Text.Trim();
 
     // Doctor/Admin view only; the receptionist view shows the doctor in the header instead.
     public string? PrescribedByLine =>
@@ -64,11 +64,17 @@ public class PrescriptionDetailsPage
 
     public bool HasDispenseButton => _driver.FindElements(DispenseButton).Count > 0;
 
-    public void ClickMarkAsDispensed() => _driver.FindElement(DispenseButton).Click();
+    // Dispensing is irreversible, so the page asks for a second, explicit confirmation.
+    public void ClickMarkAsDispensed()
+    {
+        _driver.FindElement(DispenseButton).Click();
+        _wait.Until(d => d.FindElement(By.XPath(
+            "//*[@role='alertdialog']//button[normalize-space()='Confirm Dispense']"))).Click();
+    }
 
     // "Dispensed by <name> at <time>", shown in place of the dispense button.
     public string WaitForDispensedMessage() =>
-        _wait.Until(d => d.FindElements(By.XPath("//p[@role='status'][starts-with(normalize-space(), 'Dispensed by')]"))
+        _wait.Until(d => d.FindElements(By.XPath("//*[@role='status'][starts-with(normalize-space(), 'Dispensed by')]"))
             .FirstOrDefault()?.Text.Trim())
         ?? throw new InvalidOperationException("The dispensed message was not shown.");
 
