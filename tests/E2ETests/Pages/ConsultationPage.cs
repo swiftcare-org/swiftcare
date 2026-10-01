@@ -25,17 +25,20 @@ public class ConsultationPage
     // Waits on the current-patient panel rather than the symptoms field: a consultation
     // that was already saved (seeded through the API, or reopened) no longer renders its
     // form, only the steps that are still open.
-    // The URL check matters: the doctor dashboard shows a "Current Consultation" panel too,
-    // so without it this could pass on the dashboard before the navigation has happened.
+    // Matched by its own test id: the doctor dashboard shows a "Current Consultation" panel
+    // too, and during the route change the address can already read /doctor/consultation
+    // while the dashboard's panel is still on screen, so neither the heading text nor the
+    // URL identifies this page reliably.
+    private static readonly By CurrentPatientPanel =
+        By.CssSelector("[data-testid='consultation-current-patient']");
+
     public void WaitUntilLoaded()
     {
-        _wait.Until(d => d.Url.Contains("/doctor/consultation")
-            && d.FindElements(By.XPath(
-                "//section[.//p[normalize-space()='Current Consultation']]")).Count > 0);
+        _wait.Until(d => d.FindElements(CurrentPatientPanel).Count > 0);
     }
 
-    public string CurrentConsultationContext => _driver.FindElement(By.XPath(
-        "//section[.//p[normalize-space()='Current Consultation']]")).Text;
+    public string CurrentConsultationContext =>
+        _wait.Until(d => d.FindElement(CurrentPatientPanel)).Text;
 
     // The templates dropdown is populated from GET /api/templates after mount, so a
     // caller must wait for the real options (not just the "Loading templates..."

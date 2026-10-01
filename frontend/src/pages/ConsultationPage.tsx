@@ -328,7 +328,7 @@ export function ConsultationPage() {
         </Banner>
       ) : (
         <>
-          <section>
+          <section data-testid="consultation-current-patient">
             <Banner tone="info" title="Current Consultation">
               <p className="break-words text-lg font-semibold text-slate-900">
                 {currentPatient.queueNumber} {currentPatient.patientName}
