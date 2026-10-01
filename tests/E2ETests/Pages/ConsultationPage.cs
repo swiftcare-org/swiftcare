@@ -25,10 +25,13 @@ public class ConsultationPage
     // Waits on the current-patient panel rather than the symptoms field: a consultation
     // that was already saved (seeded through the API, or reopened) no longer renders its
     // form, only the steps that are still open.
+    // The URL check matters: the doctor dashboard shows a "Current Consultation" panel too,
+    // so without it this could pass on the dashboard before the navigation has happened.
     public void WaitUntilLoaded()
     {
-        _wait.Until(d => d.FindElements(By.XPath(
-            "//section[.//p[normalize-space()='Current Consultation']]")).Count > 0);
+        _wait.Until(d => d.Url.Contains("/doctor/consultation")
+            && d.FindElements(By.XPath(
+                "//section[.//p[normalize-space()='Current Consultation']]")).Count > 0);
     }
 
     public string CurrentConsultationContext => _driver.FindElement(By.XPath(
