@@ -18,7 +18,6 @@ import {
   findPendingPrescriptionContext,
   type PrescriptionContext,
 } from '../prescriptions/pendingPrescription';
-import { ActionTile, ActionTileGrid } from '../components/ui/ActionTile';
 import { Banner } from '../components/ui/Banner';
 import { Button, ButtonLink } from '../components/ui/Button';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
@@ -294,10 +293,6 @@ export function DoctorDashboard() {
 
   return (
     <DashboardShell sectionLabel="Doctor Dashboard">
-      <ActionTileGrid label="Doctor actions">
-        <ActionTile icon="search" to="/patients/search" title="Search Patients" description="Name, NIC or phone" />
-      </ActionTileGrid>
-
       {pendingPrescription && (
         <Banner tone="warning" title="Prescription Pending">
           <p>
