@@ -3,7 +3,7 @@ import {
   getWaitingRoomDisplay,
   type WaitingRoomDisplay,
 } from '../api/queue';
-import swiftcareLogo from '../assets/swiftcare-logo.svg';
+import swiftcareLogo from '../assets/swiftcare-logo.png';
 
 type DisplayLoadState = 'loading' | 'loaded' | 'error';
 
