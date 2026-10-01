@@ -6,8 +6,21 @@ import type { PatientSearchResult } from '../api/patients';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
+import { Banner } from '../components/ui/Banner';
+import { LoadingText } from '../components/ui/Feedback';
+import { Field } from '../components/ui/Field';
+import { SectionCard } from '../components/ui/SectionCard';
+import {
+  tableBodyClassName,
+  tableCellClassName,
+  tableClassName,
+  tableHeadClassName,
+  tableHeaderCellClassName,
+  tableWrapperClassName,
+  textLinkClassName,
+} from '../components/ui/table';
 
-type SearchStatus = 'idle' | 'searching' | 'results' | 'empty' | 'error';
+type SearchStatus = 'idle' | 'results' | 'empty' | 'error';
 
 // Matches PatientSearchService.MinimumTermLength on the server: below this, the server
 // itself returns an empty array, so the client simply never calls for a shorter term.
@@ -24,6 +37,8 @@ export function PatientSearchPage() {
   const [status, setStatus] = useState<SearchStatus>('idle');
   const [results, setResults] = useState<PatientSearchResult[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Separate from status so the previous results stay on screen while the next search runs.
+  const [isSearching, setIsSearching] = useState(false);
 
   // Guards against an older, slower request overwriting a newer one's results.
   const latestRequestId = useRef(0);
@@ -36,17 +51,19 @@ export function PatientSearchPage() {
       setStatus('idle');
       setResults([]);
       setErrorMessage(null);
+      setIsSearching(false);
       return;
     }
 
     const requestId = ++latestRequestId.current;
     const timeoutId = window.setTimeout(() => {
-      setStatus('searching');
+      setIsSearching(true);
       searchPatients(trimmedTerm)
         .then((found) => {
           if (latestRequestId.current !== requestId) {
             return;
           }
+          setIsSearching(false);
           setResults(found);
           setErrorMessage(null);
           setStatus(found.length > 0 ? 'results' : 'empty');
@@ -55,6 +72,7 @@ export function PatientSearchPage() {
           if (latestRequestId.current !== requestId) {
             return;
           }
+          setIsSearching(false);
           setResults([]);
           setStatus('error');
           if (error instanceof ApiError && error.status === 403) {
@@ -69,95 +87,85 @@ export function PatientSearchPage() {
   }, [term]);
 
   return (
-    <DashboardShell sectionLabel="Patient Search">
-      <Link
-        to={backRoute}
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        ← Back to Dashboard
-      </Link>
-
-      <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-        <label htmlFor="patientSearch" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-          Search by Name, NIC, or Phone Number
-        </label>
-        <input
+    <DashboardShell sectionLabel="Patient Search" backLink={{ to: backRoute, destination: 'Dashboard' }}>
+      <SectionCard>
+        <Field
           id="patientSearch"
-          name="patientSearch"
-          type="search"
-          autoComplete="off"
-          value={term}
-          onChange={(event) => setTerm(event.target.value)}
-          className="mt-1.5 block w-full border-2 border-slate-400 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        />
-      </div>
+          label="Search by Name, NIC, or Phone Number"
+          hint={`Type at least ${MINIMUM_TERM_LENGTH} characters. Results appear as you type.`}
+        >
+          {(control) => (
+            <input
+              {...control}
+              name="patientSearch"
+              type="search"
+              autoComplete="off"
+              value={term}
+              onChange={(event) => setTerm(event.target.value)}
+            />
+          )}
+        </Field>
+      </SectionCard>
 
-      <div aria-live="polite" className="mt-6">
-        {status === 'searching' && <p className="text-sm text-slate-500">Searching…</p>}
+      <div aria-live="polite" className="space-y-3">
+        {isSearching && <LoadingText>Searching…</LoadingText>}
 
         {status === 'error' && errorMessage && (
-          <div className="border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Search Failed</p>
-            <p className="mt-1 text-sm text-red-900">{errorMessage}</p>
-          </div>
+          <Banner tone="error" title="Search Failed">
+            {errorMessage}
+          </Banner>
         )}
 
         {status === 'empty' && (
-          <div className="border-t-4 border-b border-slate-400 bg-slate-50 px-6 py-3">
+          <Banner tone="neutral" title="No Results">
             {user?.role === 'Receptionist' ? (
               <>
-                <p className="text-sm text-slate-700">No patients found. Would you like to register?</p>
-                <Link
-                  to="/reception/patients/new"
-                  className="mt-2 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-                >
-                  Register a new patient
-                </Link>
+                <p>No patients found. Would you like to register?</p>
+                <p className="mt-1">
+                  <Link to="/reception/patients/new" className={textLinkClassName}>
+                    Register a new patient
+                  </Link>
+                </p>
               </>
             ) : (
-              <p className="text-sm text-slate-700">No patients found.</p>
+              <p>No patients found.</p>
             )}
-          </div>
+          </Banner>
         )}
 
         {status === 'results' && (
-          <div className="overflow-x-auto border border-slate-300">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Full Name
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    NIC
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Phone
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Blood Group
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {results.map((result) => (
-                  <tr key={result.patientId}>
-                    <td className="px-4 py-2">
-                      <Link
-                        to={`/patients/${result.patientId}`}
-                        className="text-brand-blue hover:text-brand-blue-dark hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                      >
-                        {result.fullName}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">{result.nic}</td>
-                    <td className="px-4 py-2 text-slate-700">{result.phoneNumber}</td>
-                    <td className="px-4 py-2 text-slate-700">{result.bloodGroup}</td>
+          <>
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+              {results.length} {results.length === 1 ? 'patient' : 'patients'} found
+            </p>
+            <div className={`${tableWrapperClassName} ${isSearching ? 'opacity-60' : ''}`}>
+              <table className={tableClassName}>
+                <thead className={tableHeadClassName}>
+                  <tr>
+                    {['Full Name', 'NIC', 'Phone', 'Blood Group'].map((heading) => (
+                      <th key={heading} scope="col" className={tableHeaderCellClassName}>
+                        {heading}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className={tableBodyClassName}>
+                  {results.map((result) => (
+                    <tr key={result.patientId}>
+                      <td className={tableCellClassName}>
+                        <Link to={`/patients/${result.patientId}`} className={textLinkClassName}>
+                          {result.fullName}
+                        </Link>
+                      </td>
+                      <td className={tableCellClassName}>{result.nic}</td>
+                      <td className={tableCellClassName}>{result.phoneNumber}</td>
+                      <td className={tableCellClassName}>{result.bloodGroup}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </DashboardShell>
