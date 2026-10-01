@@ -500,7 +500,7 @@ export function PrescriptionPage() {
           <section className="space-y-3 empty:hidden" aria-label="Allergy warnings">
             {allergies.map((allergy) => (
               <AlertBanner key={allergy.allergyId} tone="allergy" label="Allergy Warning">
-                ⚠️ WARNING: Patient is allergic to {allergy.allergyName} ({allergy.severity})
+                WARNING: Patient is allergic to {allergy.allergyName} ({allergy.severity})
               </AlertBanner>
             ))}
           </section>

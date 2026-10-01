@@ -239,7 +239,7 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
 
             {consultationsLoadState === 'loaded' && consultations.length === 0 && (
               <EmptyState>
-                <p>First visit — no previous consultations</p>
+                <p>First visit. No previous consultations.</p>
               </EmptyState>
             )}
 

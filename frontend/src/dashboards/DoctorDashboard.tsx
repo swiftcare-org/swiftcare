@@ -33,6 +33,7 @@ import {
   tableWrapperClassName,
   textLinkClassName,
 } from '../components/ui/table';
+import { formatTime } from '../lib/format';
 import { DashboardShell } from './DashboardShell';
 
 type WaitingPoolLoadState = 'loading' | 'loaded' | 'error';
@@ -44,20 +45,6 @@ interface WaitingPoolRow extends TodayQueueEntry {
 }
 
 const POLL_INTERVAL_MS = 5_000;
-const CLINIC_TIME_ZONE = 'Asia/Colombo';
-
-const checkInTimeFormatter = new Intl.DateTimeFormat('en-LK', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZone: CLINIC_TIME_ZONE,
-});
-
-function formatCheckInTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : checkInTimeFormatter.format(date);
-}
-
 async function addPatientNames(
   entries: TodayQueueEntry[],
   patientNameCache: Map<string, string>,
@@ -420,7 +407,7 @@ export function DoctorDashboard() {
                         )}
                       </td>
                       <td className={`whitespace-nowrap ${tableCellClassName}`}>
-                        {formatCheckInTime(row.checkedInAt)}
+                        {formatTime(row.checkedInAt)}
                       </td>
                     </tr>
                   ))}

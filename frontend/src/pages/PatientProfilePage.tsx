@@ -896,7 +896,7 @@ export function PatientProfilePage() {
             <div className="space-y-3" role="group" aria-label="Medical alerts">
               {allergies.map((allergy) => (
                 <AlertBanner key={allergy.allergyId} tone="allergy" label="Allergy Alert">
-                  ⚠️ ALLERGY: {allergy.allergyName} — {allergy.severity}
+                  ALLERGY: {allergy.allergyName} ({allergy.severity})
                 </AlertBanner>
               ))}
 
@@ -906,13 +906,13 @@ export function PatientProfilePage() {
                   tone="condition"
                   label="Chronic Condition Alert"
                 >
-                  ⚠️ CONDITION: {condition.conditionName} (since {formatMonthYear(condition.dateDiagnosed)})
+                  CONDITION: {condition.conditionName} (since {formatMonthYear(condition.dateDiagnosed)})
                 </AlertBanner>
               ))}
 
               {user?.role === 'Doctor' && overdueFollowUp && (
                 <AlertBanner tone="followUp" label="Follow-up Alert">
-                  📌 FOLLOW-UP: {overdueFollowUp.instructions} — overdue
+                  FOLLOW-UP: {overdueFollowUp.instructions} (overdue)
                 </AlertBanner>
               )}
             </div>
