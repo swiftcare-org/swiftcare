@@ -42,12 +42,12 @@ public class PrescriptionCounterTests : SeleniumTestBase
         Assert.Equal("Twice daily", details.MedicineDetail("Amoxicillin", "Frequency"));
         Assert.Equal("5 days", details.MedicineDetail("Amoxicillin", "Duration"));
         Assert.Equal("After meals", details.MedicineDetail("Amoxicillin", "Instructions"));
-        Assert.Equal("—", details.MedicineDetail("Cetirizine", "Instructions"));
+        Assert.Equal("-", details.MedicineDetail("Cetirizine", "Instructions"));
 
         Assert.True(details.HasDispenseButton);
         details.ClickMarkAsDispensed();
         var dispensedMessage = details.WaitForDispensedMessage();
-        Assert.StartsWith($"Dispensed by {receptionist.FullName} at ", dispensedMessage);
+        Assert.StartsWith($"Dispensed by {receptionist.FullName} on ", dispensedMessage);
         Assert.False(details.HasDispenseButton);
         Assert.Equal("DISPENSED", details.Status);
 

@@ -147,7 +147,7 @@ public class ClinicalJourneyTests : SeleniumTestBase
 
         // --- Receptionist dispenses the prescription ---
         counter.ClickMarkAsDispensed();
-        Assert.StartsWith($"Dispensed by {receptionist.FullName} at ", counter.WaitForDispensedMessage());
+        Assert.StartsWith($"Dispensed by {receptionist.FullName} on ", counter.WaitForDispensedMessage());
         Assert.False(counter.HasDispenseButton);
 
         AppSession.GoTo(Driver, QueueManagementPage.Path);

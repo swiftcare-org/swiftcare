@@ -86,7 +86,7 @@ export function WaitingRoomDisplayPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[100rem] gap-8 px-4 py-8 sm:px-8 lg:min-h-[calc(100vh-7rem)] lg:grid-cols-[3fr_2fr] lg:px-12 lg:py-12">
+      <div className="mx-auto grid max-w-[100rem] gap-8 px-4 py-8 sm:px-8 lg:min-h-[calc(100vh-7rem)] lg:grid-cols-[3fr_2fr] lg:grid-rows-[1fr_auto] lg:px-12 lg:py-12">
         <section aria-labelledby="current-rooms-heading">
           <p className="text-base font-semibold text-display-accent 2xl:text-lg">Now Serving</p>
           <h2 id="current-rooms-heading" className="mt-2 text-2xl font-semibold sm:text-3xl 2xl:text-4xl">
