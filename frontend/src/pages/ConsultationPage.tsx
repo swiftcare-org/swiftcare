@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   completeConsultation,
   createConsultation,
@@ -13,7 +13,14 @@ import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { loadCurrentPatient, type CurrentPatient } from '../consultations/currentPatient';
 import { VitalSignsForm } from '../consultations/VitalSignsForm';
+import { Banner } from '../components/ui/Banner';
+import { Button, ButtonLink } from '../components/ui/Button';
+import { ConfirmPanel } from '../components/ui/ConfirmPanel';
+import { LoadingText } from '../components/ui/Feedback';
+import { Field, OptionalMark, RequiredLegend } from '../components/ui/Field';
+import { SectionCard } from '../components/ui/SectionCard';
 import { DashboardShell } from '../dashboards/DashboardShell';
+import { clinicTodayForDateInput } from '../lib/format';
 
 type TemplateLoadState = 'loading' | 'loaded' | 'error';
 type CurrentPatientLoadState = 'loading' | 'loaded' | 'error';
@@ -54,25 +61,6 @@ const EMPTY_FIELD_ERRORS: FieldErrors = {
   followUpDate: null,
   followUpInstructions: null,
 };
-
-const CLINIC_TIME_ZONE = 'Asia/Colombo';
-
-function clinicTodayIsoDate(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: CLINIC_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-function inputClassName(hasError: boolean): string {
-  return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
-    hasError ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
-  }`;
-}
 
 function applyServerFieldErrors(
   previous: FieldErrors,
@@ -116,6 +104,10 @@ export function ConsultationPage() {
   const [createdConsultation, setCreatedConsultation] = useState<ConsultationProgress | null>(null);
   const [completionState, setCompletionState] = useState<'idle' | 'completing' | 'failed'>('idle');
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [isConfirmingCompletion, setIsConfirmingCompletion] = useState(false);
+  // True when the consultation was saved in an earlier visit to this page, so this
+  // session never held the values that were entered.
+  const [wasRecovered, setWasRecovered] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -134,6 +126,7 @@ export function ConsultationPage() {
             setCreatedConsultation(savedConsultation);
             if (savedConsultation) {
               setSubmissionState('created');
+              setWasRecovered(true);
             }
           }
           setCurrentPatientLoadState('loaded');
@@ -229,7 +222,7 @@ export function ConsultationPage() {
       followUpDate:
         followUpInstructions && !form.followUpDate
           ? 'Follow-up date is required when instructions are provided'
-          : form.followUpDate && form.followUpDate < clinicTodayIsoDate()
+          : form.followUpDate && form.followUpDate < clinicTodayForDateInput()
             ? 'Follow-up date cannot be in the past'
           : null,
       followUpInstructions:
@@ -312,286 +305,220 @@ export function ConsultationPage() {
     }
   }
 
-  return (
-    <DashboardShell sectionLabel="Create Consultation Record">
-      <Link
-        to="/doctor"
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        &larr; Back to Doctor Dashboard
-      </Link>
+  const isSaved = submissionState === 'created';
+  const fieldsLocked = isBusy || isSaved;
 
+  return (
+    <DashboardShell
+      sectionLabel="Create Consultation Record"
+      backLink={{ to: '/doctor', destination: 'Dashboard' }}
+    >
       {currentPatientLoadState === 'loading' ? (
-        <p className="mt-6 text-sm text-slate-500">Loading your current consultation…</p>
+        <LoadingText>Loading your current consultation…</LoadingText>
       ) : currentPatientLoadState === 'error' ? (
-        <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-4" role="alert">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
-            Current Consultation Unavailable
-          </p>
-          <p className="mt-1 text-sm text-red-900">
-            Unable to load your current patient. Please try again.
-          </p>
-        </div>
+        <Banner tone="error" title="Current Consultation Unavailable" role="alert">
+          Unable to load your current patient. Please try again.
+        </Banner>
       ) : !currentPatient ? (
-        <div className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-4" role="alert">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
-            No Current Patient
-          </p>
-          <p className="mt-1 text-sm text-amber-900">
-            Call a patient before recording a consultation.
-          </p>
-        </div>
+        <Banner tone="warning" title="No Current Patient" role="alert">
+          <p>Call a patient before recording a consultation.</p>
+          <ButtonLink to="/doctor" variant="secondary" size="sm" className="mt-3">
+            Go to Waiting Pool
+          </ButtonLink>
+        </Banner>
       ) : (
         <>
-          <section className="mt-6 border-t-4 border-b border-brand-blue bg-blue-50 px-6 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-brand-blue-dark">
-              Current Consultation
-            </p>
-            <p className="mt-1 text-lg font-semibold text-slate-900">
-              {currentPatient.queueNumber} {currentPatient.patientName}
-            </p>
-            <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
+          <section>
+            <Banner tone="info" title="Current Consultation">
+              <p className="break-words text-lg font-semibold text-slate-900">
+                {currentPatient.queueNumber} {currentPatient.patientName}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
+            </Banner>
           </section>
 
-          <div aria-live="polite">
-            {submissionState === 'created' && createdConsultation && (
-              <div className="mt-6 border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-emerald-800">
-                  Consultation Saved
-                </p>
-                <p className="mt-1 text-sm text-emerald-900">
-                  Consultation record saved successfully for {currentPatient.queueNumber}.
-                </p>
-              </div>
+          <div aria-live="polite" className="space-y-3 empty:hidden">
+            {isSaved && createdConsultation && (
+              <Banner tone="success" title="Consultation Saved">
+                {wasRecovered
+                  ? `The consultation record for ${currentPatient.queueNumber} was saved earlier and can no longer be edited here. Continue with the steps below.`
+                  : `Consultation record saved successfully for ${currentPatient.queueNumber}.`}
+              </Banner>
             )}
 
             {submissionState === 'failed' && message && (
-              <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
-                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
-                  Consultation Not Saved
-                </p>
-                <p className="mt-1 text-sm text-red-900">{message}</p>
-              </div>
+              <Banner tone="error" title="Consultation Not Saved" role="alert">
+                {message}
+              </Banner>
             )}
 
-            {templateLoadState === 'error' && (
-              <div className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3" role="alert">
-                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
-                  Templates Unavailable
-                </p>
-                <p className="mt-1 text-sm text-amber-900">
-                  Templates could not be loaded. You can still complete the form manually.
-                </p>
-              </div>
+            {templateLoadState === 'error' && !isSaved && (
+              <Banner tone="warning" title="Templates Unavailable" role="alert">
+                Templates could not be loaded. You can still complete the form manually.
+              </Banner>
             )}
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            noValidate
-            className="mt-6 space-y-5 border border-slate-300 bg-white px-6 py-6"
-          >
-            <div>
-              <label htmlFor="templateId" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                Consultation Template
-              </label>
-              <select
-                id="templateId"
-                name="templateId"
-                value={form.templateId}
-                onChange={(event) => handleTemplateChange(event.target.value)}
-                disabled={isBusy || submissionState === 'created' || templateLoadState !== 'loaded'}
-                aria-invalid={fieldErrors.templateId ? true : undefined}
-                aria-describedby={fieldErrors.templateId ? 'templateId-error' : undefined}
-                className={inputClassName(!!fieldErrors.templateId)}
-              >
-                <option value="">
-                  {templateLoadState === 'loading' ? 'Loading templates...' : 'No template'}
-                </option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.templateId && (
-                <p id="templateId-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                  {fieldErrors.templateId}
-                </p>
-              )}
-              <p className="mt-1 text-xs text-slate-500">
-                Selecting a template pre-fills editable clinical notes.
-              </p>
-            </div>
+          {/* A recovered consultation has no values to show, so its form is left out
+              rather than rendered as empty, locked fields. */}
+          {!wasRecovered && (
+            <SectionCard eyebrow="Step 1" title="Consultation Record">
+              <form onSubmit={handleSubmit} noValidate className="space-y-5">
+                <RequiredLegend />
 
-            <div>
-              <label htmlFor="symptoms" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                Symptoms
-              </label>
-              <textarea
-                id="symptoms"
-                name="symptoms"
-                rows={4}
-                value={form.symptoms}
-                onChange={(event) => {
-                  setForm((previous) => ({ ...previous, symptoms: event.target.value }));
-                  clearFieldError('symptoms');
-                }}
-                disabled={isBusy || submissionState === 'created'}
-                aria-required="true"
-                aria-invalid={fieldErrors.symptoms ? true : undefined}
-                aria-describedby={fieldErrors.symptoms ? 'symptoms-error' : undefined}
-                className={inputClassName(!!fieldErrors.symptoms)}
-              />
-              {fieldErrors.symptoms && (
-                <p id="symptoms-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                  {fieldErrors.symptoms}
-                </p>
-              )}
-            </div>
+                <Field
+                  id="templateId"
+                  label="Consultation Template"
+                  optional
+                  hint="Selecting a template pre-fills editable clinical notes."
+                  error={fieldErrors.templateId}
+                >
+                  {(control) => (
+                    <select
+                      {...control}
+                      name="templateId"
+                      value={form.templateId}
+                      onChange={(event) => handleTemplateChange(event.target.value)}
+                      disabled={fieldsLocked || templateLoadState !== 'loaded'}
+                    >
+                      <option value="">
+                        {templateLoadState === 'loading' ? 'Loading templates…' : 'No template'}
+                      </option>
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
 
-            <div>
-              <label htmlFor="examinationFindings" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                Examination Findings
-              </label>
-              <textarea
-                id="examinationFindings"
-                name="examinationFindings"
-                rows={4}
-                value={form.examinationFindings}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    examinationFindings: event.target.value,
-                  }))
-                }
-                disabled={isBusy || submissionState === 'created'}
-                className={inputClassName(false)}
-              />
-            </div>
+                <Field id="symptoms" label="Symptoms" required error={fieldErrors.symptoms}>
+                  {(control) => (
+                    <textarea
+                      {...control}
+                      name="symptoms"
+                      rows={4}
+                      value={form.symptoms}
+                      onChange={(event) => {
+                        setForm((previous) => ({ ...previous, symptoms: event.target.value }));
+                        clearFieldError('symptoms');
+                      }}
+                      disabled={fieldsLocked}
+                    />
+                  )}
+                </Field>
 
-            <div>
-              <label htmlFor="diagnosis" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                Diagnosis
-              </label>
-              <textarea
-                id="diagnosis"
-                name="diagnosis"
-                rows={3}
-                value={form.diagnosis}
-                onChange={(event) => {
-                  setForm((previous) => ({ ...previous, diagnosis: event.target.value }));
-                  clearFieldError('diagnosis');
-                }}
-                disabled={isBusy || submissionState === 'created'}
-                aria-required="true"
-                aria-invalid={fieldErrors.diagnosis ? true : undefined}
-                aria-describedby={fieldErrors.diagnosis ? 'diagnosis-error' : undefined}
-                className={inputClassName(!!fieldErrors.diagnosis)}
-              />
-              {fieldErrors.diagnosis && (
-                <p id="diagnosis-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                  {fieldErrors.diagnosis}
-                </p>
-              )}
-            </div>
+                <Field id="examinationFindings" label="Examination Findings" optional>
+                  {(control) => (
+                    <textarea
+                      {...control}
+                      name="examinationFindings"
+                      rows={4}
+                      value={form.examinationFindings}
+                      onChange={(event) =>
+                        setForm((previous) => ({
+                          ...previous,
+                          examinationFindings: event.target.value,
+                        }))
+                      }
+                      disabled={fieldsLocked}
+                    />
+                  )}
+                </Field>
 
-            <div>
-              <label htmlFor="notes" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                Notes
-              </label>
-              <textarea
-                id="notes"
-                name="notes"
-                rows={4}
-                value={form.notes}
-                onChange={(event) =>
-                  setForm((previous) => ({ ...previous, notes: event.target.value }))
-                }
-                disabled={isBusy || submissionState === 'created'}
-                className={inputClassName(false)}
-              />
-            </div>
+                <Field id="diagnosis" label="Diagnosis" required error={fieldErrors.diagnosis}>
+                  {(control) => (
+                    <textarea
+                      {...control}
+                      name="diagnosis"
+                      rows={3}
+                      value={form.diagnosis}
+                      onChange={(event) => {
+                        setForm((previous) => ({ ...previous, diagnosis: event.target.value }));
+                        clearFieldError('diagnosis');
+                      }}
+                      disabled={fieldsLocked}
+                    />
+                  )}
+                </Field>
 
-            <fieldset className="border border-slate-300 bg-slate-50 px-4 py-4">
-              <legend className="px-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                Follow-up (Optional)
-              </legend>
-              <p className="mb-4 text-xs text-slate-500">
-                Provide both fields when this patient needs a follow-up.
-              </p>
+                <Field id="notes" label="Notes" optional>
+                  {(control) => (
+                    <textarea
+                      {...control}
+                      name="notes"
+                      rows={4}
+                      value={form.notes}
+                      onChange={(event) =>
+                        setForm((previous) => ({ ...previous, notes: event.target.value }))
+                      }
+                      disabled={fieldsLocked}
+                    />
+                  )}
+                </Field>
 
-              <div>
-                <label htmlFor="followUpDate" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                  Follow-up Date
-                </label>
-                <input
-                  id="followUpDate"
-                  name="followUpDate"
-                  type="date"
-                  min={clinicTodayIsoDate()}
-                  value={form.followUpDate}
-                  onChange={(event) => {
-                    setForm((previous) => ({ ...previous, followUpDate: event.target.value }));
-                    clearFieldError('followUpDate');
-                  }}
-                  disabled={isBusy || submissionState === 'created'}
-                  aria-invalid={fieldErrors.followUpDate ? true : undefined}
-                  aria-describedby={fieldErrors.followUpDate ? 'followUpDate-error' : undefined}
-                  className={inputClassName(!!fieldErrors.followUpDate)}
-                />
-                {fieldErrors.followUpDate && (
-                  <p id="followUpDate-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                    {fieldErrors.followUpDate}
+                <fieldset className="border border-slate-300 bg-slate-50 px-4 py-4">
+                  <legend className="px-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                    Follow-up <OptionalMark />
+                  </legend>
+                  <p className="text-xs text-slate-500">
+                    Fill in both fields if this patient needs a follow-up, or leave both empty.
                   </p>
-                )}
-              </div>
 
-              <div className="mt-4">
-                <label htmlFor="followUpInstructions" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                  Follow-up Instructions
-                </label>
-                <textarea
-                  id="followUpInstructions"
-                  name="followUpInstructions"
-                  rows={2}
-                  maxLength={500}
-                  value={form.followUpInstructions}
-                  onChange={(event) => {
-                    setForm((previous) => ({
-                      ...previous,
-                      followUpInstructions: event.target.value,
-                    }));
-                    clearFieldError('followUpInstructions');
-                  }}
-                  disabled={isBusy || submissionState === 'created'}
-                  aria-invalid={fieldErrors.followUpInstructions ? true : undefined}
-                  aria-describedby={fieldErrors.followUpInstructions ? 'followUpInstructions-error' : undefined}
-                  className={inputClassName(!!fieldErrors.followUpInstructions)}
-                />
-                {fieldErrors.followUpInstructions && (
-                  <p id="followUpInstructions-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                    {fieldErrors.followUpInstructions}
-                  </p>
-                )}
-              </div>
-            </fieldset>
+                  <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+                    <Field id="followUpDate" label="Follow-up Date" hint="Today or later." error={fieldErrors.followUpDate}>
+                      {(control) => (
+                        <input
+                          {...control}
+                          name="followUpDate"
+                          type="date"
+                          min={clinicTodayForDateInput()}
+                          value={form.followUpDate}
+                          onChange={(event) => {
+                            setForm((previous) => ({ ...previous, followUpDate: event.target.value }));
+                            clearFieldError('followUpDate');
+                          }}
+                          disabled={fieldsLocked}
+                        />
+                      )}
+                    </Field>
 
-            <button
-              type="submit"
-              disabled={isBusy || submissionState === 'created'}
-              className="relative w-full overflow-hidden bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isBusy ? 'Saving...' : submissionState === 'created' ? 'Consultation Saved' : 'Save Consultation'}
-              {isBusy && (
-                <span className="absolute inset-x-0 bottom-0 block h-0.5 overflow-hidden bg-white/20" aria-hidden="true">
-                  <span className="block h-full w-1/3 animate-[loading-sweep_1.1s_ease-in-out_infinite] bg-white" />
-                </span>
-              )}
-            </button>
-          </form>
+                    <Field
+                      id="followUpInstructions"
+                      label="Follow-up Instructions"
+                      hint="Up to 500 characters."
+                      error={fieldErrors.followUpInstructions}
+                    >
+                      {(control) => (
+                        <textarea
+                          {...control}
+                          name="followUpInstructions"
+                          rows={2}
+                          maxLength={500}
+                          value={form.followUpInstructions}
+                          onChange={(event) => {
+                            setForm((previous) => ({
+                              ...previous,
+                              followUpInstructions: event.target.value,
+                            }));
+                            clearFieldError('followUpInstructions');
+                          }}
+                          disabled={fieldsLocked}
+                        />
+                      )}
+                    </Field>
+                  </div>
+                </fieldset>
 
-          {submissionState === 'created' && createdConsultation && (
+                <Button type="submit" fullWidth loading={isBusy} disabled={isSaved}>
+                  {isBusy ? 'Saving…' : isSaved ? 'Consultation Saved' : 'Save Consultation'}
+                </Button>
+              </form>
+            </SectionCard>
+          )}
+
+          {isSaved && createdConsultation && (
             <>
               <VitalSignsForm
                 consultationId={createdConsultation.id}
@@ -601,27 +528,46 @@ export function ConsultationPage() {
                   : previous)}
               />
 
-              <section className="mt-6 border border-slate-300 bg-white px-6 py-6" aria-labelledby="complete-consultation-heading">
-                <h2 id="complete-consultation-heading" className="text-xl font-semibold text-slate-900">
-                  Complete Consultation
-                </h2>
+              <SectionCard
+                eyebrow="Step 3"
+                title="Complete Consultation"
+                titleId="complete-consultation-heading"
+                description="Ends this visit and takes you to the prescription."
+              >
                 {!createdConsultation.hasVitalSigns && (
-                  <p className="mt-2 text-sm text-amber-800">Please save vital signs first</p>
-                )}
-                {completionError && (
-                  <p className="mt-3 border-l-2 border-red-700 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
-                    {completionError}
+                  <p className="border-l-2 border-amber-600 pl-2 text-sm font-medium text-amber-800">
+                    Please save vital signs first
                   </p>
                 )}
-                <button
-                  type="button"
-                  disabled={!createdConsultation.hasVitalSigns || completionState === 'completing'}
-                  onClick={() => void handleComplete()}
-                  className="mt-4 bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {completionState === 'completing' ? 'Completing...' : 'Complete Consultation'}
-                </button>
-              </section>
+
+                {isConfirmingCompletion ? (
+                  <ConfirmPanel
+                    labelId="confirm-completion-title"
+                    title="Complete This Consultation?"
+                    tone="primary"
+                    confirmLabel="Confirm Completion"
+                    busyLabel="Completing…"
+                    busy={completionState === 'completing'}
+                    error={completionError}
+                    onConfirm={() => void handleComplete()}
+                    onCancel={() => {
+                      setIsConfirmingCompletion(false);
+                      setCompletionError(null);
+                    }}
+                  >
+                    The consultation record and vital signs for {currentPatient.queueNumber} can no longer be
+                    changed after this, and the patient leaves your room.
+                  </ConfirmPanel>
+                ) : (
+                  <Button
+                    className={createdConsultation.hasVitalSigns ? '' : 'mt-4'}
+                    disabled={!createdConsultation.hasVitalSigns}
+                    onClick={() => setIsConfirmingCompletion(true)}
+                  >
+                    Complete Consultation
+                  </Button>
+                )}
+              </SectionCard>
             </>
           )}
         </>

@@ -22,9 +22,13 @@ public class ConsultationPage
     private IWebElement NotesInput => _driver.FindElement(By.Id("notes"));
     private IWebElement SaveButton => _driver.FindElement(By.CssSelector("button[type='submit']"));
 
+    // Waits on the current-patient panel rather than the symptoms field: a consultation
+    // that was already saved (seeded through the API, or reopened) no longer renders its
+    // form, only the steps that are still open.
     public void WaitUntilLoaded()
     {
-        _wait.Until(d => d.FindElements(By.Id("symptoms")).Count > 0);
+        _wait.Until(d => d.FindElements(By.XPath(
+            "//section[.//p[normalize-space()='Current Consultation']]")).Count > 0);
     }
 
     public string CurrentConsultationContext => _driver.FindElement(By.XPath(
@@ -156,13 +160,21 @@ public class ConsultationPage
         "//section[.//h2[normalize-space()='Complete Consultation']]"));
 
     private IWebElement CompleteConsultationButton => CompleteConsultationSection.FindElement(
-        By.XPath(".//button[normalize-space()='Complete Consultation' or normalize-space()='Completing...']"));
+        By.XPath(".//button[normalize-space()='Complete Consultation']"));
 
     public bool IsCompleteConsultationEnabled => CompleteConsultationButton.Enabled;
 
     public void WaitUntilCompleteConsultationIsEnabled() => _wait.Until(_ => CompleteConsultationButton.Enabled);
 
-    public void ClickCompleteConsultation() => CompleteConsultationButton.Click();
+    // Completing is irreversible, so the page asks for a second, explicit confirmation
+    // inside the same section before it calls the API.
+    public void ClickCompleteConsultation()
+    {
+        CompleteConsultationButton.Click();
+        _wait.Until(_ => CompleteConsultationSection.FindElements(
+                By.XPath(".//*[@role='alertdialog']//button[normalize-space()='Confirm Completion']"))
+            .FirstOrDefault())!.Click();
+    }
 
     public string? CompleteConsultationBlockedMessage => TryGetText(
         CompleteConsultationSection, By.XPath(".//p[normalize-space()='Please save vital signs first']"));
