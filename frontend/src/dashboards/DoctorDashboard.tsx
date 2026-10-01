@@ -18,6 +18,21 @@ import {
   findPendingPrescriptionContext,
   type PrescriptionContext,
 } from '../prescriptions/pendingPrescription';
+import { ActionTile, ActionTileGrid } from '../components/ui/ActionTile';
+import { Banner } from '../components/ui/Banner';
+import { Button, ButtonLink } from '../components/ui/Button';
+import { EmptyState, LoadingText } from '../components/ui/Feedback';
+import { SectionCard } from '../components/ui/SectionCard';
+import {
+  tableBodyClassName,
+  tableCellClassName,
+  tableClassName,
+  tableHeadClassName,
+  tableHeaderCellClassName,
+  tableKeyCellClassName,
+  tableWrapperClassName,
+  textLinkClassName,
+} from '../components/ui/table';
 import { DashboardShell } from './DashboardShell';
 
 type WaitingPoolLoadState = 'loading' | 'loaded' | 'error';
@@ -282,166 +297,129 @@ export function DoctorDashboard() {
     }
   }
 
+  // Constraint made visible: when the button is off, say why and what unlocks it.
+  const callNextDisabledReason =
+    currentPatient !== null
+      ? 'Complete the current consultation before calling the next patient.'
+      : loadState === 'loaded' && currentPatientLoadState === 'loaded' && rows.length === 0
+        ? 'There is no one to call until a patient checks in.'
+        : null;
+
   return (
     <DashboardShell sectionLabel="Doctor Dashboard">
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Link
-          to="/patients/search"
-          className="inline-block border-2 border-slate-400 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        >
-          Search Patients
-        </Link>
-      </div>
+      <ActionTileGrid label="Doctor actions">
+        <ActionTile to="/patients/search" title="Search Patients" description="Find a patient by name, NIC or phone number." />
+      </ActionTileGrid>
 
       {pendingPrescription && (
-        <section className="mt-6 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
-            Prescription Pending
-          </p>
-          <p className="mt-1 text-sm text-amber-950">
+        <Banner tone="warning" title="Prescription Pending">
+          <p>
             Finish the prescription for{' '}
             {pendingPrescription.patientName ?? 'your latest completed consultation'}.
           </p>
-          <Link
-            to="/doctor/prescription"
-            state={pendingPrescription}
-            className="mt-3 inline-block bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-          >
+          <ButtonLink to="/doctor/prescription" state={pendingPrescription} size="sm" className="mt-3">
             Continue Prescription
-          </Link>
-        </section>
+          </ButtonLink>
+        </Banner>
       )}
 
-      <section className="mt-8" aria-labelledby="waiting-pool-heading">
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-300 pb-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-              Shared Queue
+      <SectionCard
+        eyebrow="Shared Queue"
+        title="Waiting Pool"
+        titleId="waiting-pool-heading"
+        description="Refreshes every 5 seconds."
+        actions={
+          <Button
+            disabled={callNextDisabled && callNextState !== 'calling'}
+            loading={callNextState === 'calling'}
+            onClick={() => void handleCallNext()}
+            aria-describedby={callNextDisabledReason ? 'call-next-reason' : undefined}
+          >
+            {callNextState === 'calling' ? 'Calling…' : 'Call Next Patient'}
+          </Button>
+        }
+      >
+        <div aria-live="polite" className="space-y-4">
+          {callNextDisabledReason && (
+            <p id="call-next-reason" className="text-xs text-slate-500">
+              {callNextDisabledReason}
             </p>
-            <h2 id="waiting-pool-heading" className="mt-1 text-xl font-semibold text-slate-900">
-              Waiting Pool
-            </h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-xs text-slate-500">Refreshes every 5 seconds</p>
-            <button
-              type="button"
-              disabled={callNextDisabled}
-              onClick={() => void handleCallNext()}
-              className="bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {callNextState === 'calling' ? 'Calling…' : 'Call Next Patient'}
-            </button>
-          </div>
-        </div>
+          )}
 
-        <div aria-live="polite" className="mt-6">
           {currentPatientLoadState === 'loading' && !currentPatient && (
-            <p className="mb-4 text-sm text-slate-500">Loading your current consultation…</p>
+            <LoadingText>Loading your current consultation…</LoadingText>
           )}
 
           {currentPatientError && (
-            <div className="mb-4 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
-                Current Consultation Unavailable
-              </p>
-              <p className="mt-1 text-sm text-red-900">{currentPatientError}</p>
-            </div>
+            <Banner tone="error" title="Current Consultation Unavailable" role="alert">
+              {currentPatientError}
+            </Banner>
           )}
 
           {currentPatient && (
-            <div className="mb-4 border-t-4 border-b border-brand-blue bg-blue-50 px-6 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-brand-blue-dark">
-                Current Consultation
-              </p>
-              <p className="mt-1 text-base font-semibold text-slate-900">
+            <Banner tone="info" title="Current Consultation">
+              <p className="break-words text-base font-semibold text-slate-900">
                 Currently with you:{' '}
-                <Link
-                  to={`/patients/${currentPatient.patientId}`}
-                  className="rounded-sm text-brand-blue-dark underline underline-offset-2 hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                >
+                <Link to={`/patients/${currentPatient.patientId}`} className={textLinkClassName}>
                   {currentPatient.queueNumber}
                 </Link>{' '}
-                <Link
-                  to={`/patients/${currentPatient.patientId}`}
-                  className="rounded-sm text-brand-blue-dark underline underline-offset-2 hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                >
+                <Link to={`/patients/${currentPatient.patientId}`} className={textLinkClassName}>
                   {currentPatient.patientName}
                 </Link>
               </p>
               <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
-              <Link
-                to="/doctor/consultation"
-                className="mt-3 inline-block bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-              >
+              <ButtonLink to="/doctor/consultation" size="sm" className="mt-3">
                 Record Consultation
-              </Link>
-            </div>
+              </ButtonLink>
+            </Banner>
           )}
 
           {callNextError && (
-            <div className="mb-4 border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3" role="alert">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
-                Unable to Call Patient
-              </p>
-              <p className="mt-1 text-sm text-amber-900">{callNextError}</p>
-            </div>
+            <Banner tone="warning" title="Unable to Call Patient" role="alert">
+              {callNextError}
+            </Banner>
           )}
 
           {errorMessage && (
-            <div className="mb-4 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
-                Waiting Pool Refresh Failed
-              </p>
-              <p className="mt-1 text-sm text-red-900">{errorMessage}</p>
-            </div>
+            <Banner tone="error" title="Waiting Pool Refresh Failed" role="alert">
+              {errorMessage}
+            </Banner>
           )}
 
-          {loadState === 'loading' && (
-            <p className="text-sm text-slate-500">Loading shared waiting pool…</p>
-          )}
+          {loadState === 'loading' && <LoadingText>Loading shared waiting pool…</LoadingText>}
 
           {loadState === 'loaded' && rows.length === 0 && (
-            <div className="border-t-4 border-b border-slate-400 bg-slate-50 px-6 py-3">
-              <p className="text-sm text-slate-700">No patients currently waiting</p>
-            </div>
+            <EmptyState>
+              <p>No patients currently waiting</p>
+            </EmptyState>
           )}
 
           {loadState === 'loaded' && rows.length > 0 && (
-            <div className="overflow-x-auto border border-slate-300">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
+            <div className={tableWrapperClassName}>
+              <table className={tableClassName}>
+                <thead className={tableHeadClassName}>
                   <tr>
                     {['Queue Number', 'Patient', 'Check-in Time'].map((heading) => (
-                      <th
-                        key={heading}
-                        scope="col"
-                        className="whitespace-nowrap px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600"
-                      >
+                      <th key={heading} scope="col" className={tableHeaderCellClassName}>
                         {heading}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className={tableBodyClassName}>
                   {rows.map((row) => (
                     <tr key={row.queueId}>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
-                        {row.queueNumber}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
+                      <td className={`whitespace-nowrap ${tableKeyCellClassName}`}>{row.queueNumber}</td>
+                      <td className={tableCellClassName}>
                         {row.patientName === PATIENT_UNAVAILABLE ? (
                           <span className="text-slate-500">{row.patientName}</span>
                         ) : (
-                          <Link
-                            to={`/patients/${row.patientId}`}
-                            className="text-brand-blue hover:text-brand-blue-dark hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                          >
+                          <Link to={`/patients/${row.patientId}`} className={textLinkClassName}>
                             {row.patientName}
                           </Link>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                      <td className={`whitespace-nowrap ${tableCellClassName}`}>
                         {formatCheckInTime(row.checkedInAt)}
                       </td>
                     </tr>
@@ -451,7 +429,7 @@ export function DoctorDashboard() {
             </div>
           )}
         </div>
-      </section>
+      </SectionCard>
     </DashboardShell>
   );
 }

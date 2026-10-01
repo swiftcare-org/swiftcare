@@ -1,29 +1,14 @@
-import { Link } from 'react-router-dom';
+import { ActionTile, ActionTileGrid } from '../components/ui/ActionTile';
 import { DashboardShell } from './DashboardShell';
 
 export function ReceptionistDashboard() {
   return (
     <DashboardShell sectionLabel="Receptionist Dashboard">
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Link
-          to="/reception/patients/new"
-          className="inline-block border-2 border-slate-400 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        >
-          Register Patient
-        </Link>
-        <Link
-          to="/patients/search"
-          className="inline-block border-2 border-slate-400 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        >
-          Search Patients
-        </Link>
-        <Link
-          to="/reception/queue"
-          className="inline-block border-2 border-slate-400 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        >
-          View Today's Queue
-        </Link>
-      </div>
+      <ActionTileGrid label="Reception actions">
+        <ActionTile to="/reception/patients/new" title="Register Patient" description="Add a new patient and check them in." />
+        <ActionTile to="/patients/search" title="Search Patients" description="Find a patient by name, NIC or phone number." />
+        <ActionTile to="/reception/queue" title="View Today's Queue" description="See every patient's status and pending prescriptions." />
+      </ActionTileGrid>
     </DashboardShell>
   );
 }
