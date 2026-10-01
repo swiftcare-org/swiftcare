@@ -6,7 +6,9 @@ COPY services/MedicalRecordService/ services/MedicalRecordService/
 RUN dotnet publish services/MedicalRecordService/MedicalRecordService.csproj --no-restore --configuration Release --output /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# The upgrade applies OS security fixes the base image has not picked up yet.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
