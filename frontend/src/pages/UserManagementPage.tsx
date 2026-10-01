@@ -187,7 +187,7 @@ export function UserManagementPage() {
       </div>
 
       <SectionCard title="Create Account" description="Add a doctor, receptionist or administrator.">
-        <form onSubmit={handleSubmit} noValidate className="grid gap-5 sm:grid-cols-2">
+        <form onSubmit={handleSubmit} noValidate className="grid max-w-3xl gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <RequiredLegend />
           </div>

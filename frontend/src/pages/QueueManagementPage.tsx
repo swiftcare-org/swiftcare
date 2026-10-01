@@ -236,8 +236,7 @@ export function QueueManagementPage() {
 
   return (
     <DashboardShell
-      sectionLabel="Queue Management"
-      width="wide"
+      sectionLabel="Queue"
     >
       <div aria-live="polite" className="space-y-6">
         {errorMessage && (

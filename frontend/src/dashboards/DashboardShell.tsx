@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
@@ -11,8 +11,6 @@ import swiftcareLogo from '../assets/swiftcare-logo.png';
 interface DashboardShellProps {
   /** The page's name: shown as the page heading and in the browser tab. */
   sectionLabel: string;
-  /** "wide" gives table-heavy pages the room to avoid sideways scrolling. */
-  width?: 'default' | 'wide';
   /** Where "back" goes from this page. Omit on pages reachable from the sidebar. */
   backLink?: { to: string; destination: string };
   children?: ReactNode;
@@ -23,11 +21,6 @@ interface NavItem {
   label: string;
   icon: IconName;
 }
-
-const WIDTHS = {
-  default: 'max-w-4xl',
-  wide: 'max-w-6xl',
-};
 
 // One list per role, so every signed-in screen offers the same way to move around.
 const NAVIGATION: Record<UserRole, NavItem[]> = {
@@ -58,11 +51,13 @@ function initialsOf(fullName: string): string {
   return (first + last).toUpperCase();
 }
 
-export function DashboardShell({ sectionLabel, width = 'default', backLink, children }: DashboardShellProps) {
+export function DashboardShell({ sectionLabel, backLink, children }: DashboardShellProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpenAt, setMenuOpenAt] = useState<string | null>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const menuPanel = useRef<HTMLDivElement>(null);
 
   // The phone menu is open only for the page it was opened on, so following a link closes it.
   const menuOpen = menuOpenAt === location.pathname;
@@ -70,6 +65,38 @@ export function DashboardShell({ sectionLabel, width = 'default', backLink, chil
   useEffect(() => {
     document.title = `${sectionLabel} · SwiftCare`;
   }, [sectionLabel]);
+
+  // Opening the phone menu moves focus into it, so keyboard users land on the links.
+  useEffect(() => {
+    if (menuOpen) {
+      menuPanel.current?.querySelector<HTMLElement>('a, button')?.focus();
+    }
+  }, [menuOpen]);
+
+  // Escape closes the phone menu; Tab cycles inside it instead of reaching the page behind.
+  function handleMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      setMenuOpenAt(null);
+      menuButton.current?.focus();
+      return;
+    }
+
+    if (event.key !== 'Tab' || !menuPanel.current) {
+      return;
+    }
+
+    const focusable = menuPanel.current.querySelectorAll<HTMLElement>('a, button');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   function handleSignOut() {
     // logout() is fired before the token is cleared, since it needs the still-present
@@ -166,6 +193,7 @@ export function DashboardShell({ sectionLabel, width = 'default', backLink, chil
       <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden">
         {logo}
         <button
+          ref={menuButton}
           type="button"
           onClick={() => setMenuOpenAt(menuOpen ? null : location.pathname)}
           aria-expanded={menuOpen}
@@ -178,14 +206,21 @@ export function DashboardShell({ sectionLabel, width = 'default', backLink, chil
       </header>
 
       {menuOpen && (
-        <div id="mobile-navigation" className="fixed inset-x-0 bottom-0 top-14 z-10 flex flex-col bg-white lg:hidden">
+        <div
+          id="mobile-navigation"
+          ref={menuPanel}
+          role="dialog"
+          aria-label="Menu"
+          onKeyDown={handleMenuKeyDown}
+          className="fixed inset-x-0 bottom-0 top-14 z-10 flex flex-col bg-white lg:hidden"
+        >
           {navigation}
           {account}
         </div>
       )}
 
       <div className="lg:pl-64">
-        <main className={`mx-auto ${WIDTHS[width]} space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8`}>
+        <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div>
             {backLink && (
               <nav aria-label="Breadcrumb" className="mb-3">

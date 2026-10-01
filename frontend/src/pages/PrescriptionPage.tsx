@@ -545,7 +545,7 @@ export function PrescriptionPage() {
             }
           >
             {submissionState !== 'saved' && (
-              <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+              <form className="max-w-3xl space-y-5" noValidate onSubmit={handleSubmit}>
                 {medicines.length === 0 ? (
                   <EmptyState>
                     <p>No medicines added. Select Add Medicine to start.</p>
@@ -646,7 +646,7 @@ export function PrescriptionPage() {
                 </ul>
 
                 {additionDraft && savedPrescription.status === 'PENDING' && (
-                  <form className="rounded-md border border-slate-200 bg-slate-50 p-4" noValidate onSubmit={handleAddSavedMedicine}>
+                  <form className="max-w-3xl rounded-md border border-slate-200 bg-slate-50 p-4" noValidate onSubmit={handleAddSavedMedicine}>
                     <h3 className="text-base font-semibold text-slate-900">
                       Add another medicine
                     </h3>

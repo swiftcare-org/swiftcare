@@ -204,7 +204,6 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
   return (
     <DashboardShell
       sectionLabel="Patient History"
-      width="wide"
       backLink={{ to: `/patients/${patientId}`, destination: 'Patient Profile' }}
     >
       {patientLoadState === 'loading' && <LoadingText>Loading patient…</LoadingText>}

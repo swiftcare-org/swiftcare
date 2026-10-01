@@ -289,7 +289,7 @@ export function VitalSignsForm({ consultationId, alreadySaved = false, onSaved }
       </div>
 
       {!savedEarlier && (
-        <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-5">
+        <form onSubmit={handleSubmit} noValidate className="mt-5 max-w-3xl space-y-5">
           {formError && (
             <Banner tone="error" role="alert">
               {formError}
