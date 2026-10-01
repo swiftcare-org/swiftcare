@@ -100,7 +100,7 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgb(15_23_42/0.04),0_8px_24px_rgb(15_23_42/0.06)]">
         <div className="px-6 pt-8 text-center sm:px-8">
           <img src={swiftcareLogo} alt="SwiftCare" width={603} height={176} className="mx-auto h-14 w-auto" />
           <h1 className="mt-6 text-xl font-semibold tracking-tight text-slate-900">Staff Sign-In</h1>

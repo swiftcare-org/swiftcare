@@ -174,7 +174,7 @@ export function PrescriptionDetailsPage() {
       {effectiveLoadState === 'loaded' && (
         <div className="space-y-6" data-testid="prescription-details">
           {counterContext && (
-            <SectionCard eyebrow="Medicines Counter" title="Patient at the Counter">
+            <SectionCard title="Patient at the Counter">
               <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4" data-testid="counter-details">
                 <div>
                   <dt className={DETAIL_TERM_CLASS_NAME}>Patient</dt>
@@ -238,7 +238,7 @@ export function PrescriptionDetailsPage() {
                   <h3 className="text-base font-semibold text-slate-900">Medicines</h3>
                   <ul className="mt-3 space-y-3">
                     {prescription.medicines.map((medicine) => (
-                      <li key={medicine.id} className="rounded-lg border border-slate-200 px-4 py-3 text-sm">
+                      <li key={medicine.id} className="rounded-md border border-slate-200 px-4 py-3 text-sm">
                         <p className="break-words font-semibold text-slate-900">{medicine.medicineName}</p>
                         <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                           <div>

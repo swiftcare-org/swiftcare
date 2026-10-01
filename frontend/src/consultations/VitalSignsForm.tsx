@@ -261,7 +261,7 @@ export function VitalSignsForm({ consultationId, alreadySaved = false, onSaved }
 
   return (
     <SectionCard
-      eyebrow="Step 2"
+      eyebrow="Step 2 of 3"
       title="Record Vital Signs"
       description="Every measurement is optional, but at least one is needed. Unusual values can still be saved after you verify them."
     >
@@ -396,7 +396,7 @@ export function VitalSignsForm({ consultationId, alreadySaved = false, onSaved }
                 <output
                   id="bmi"
                   htmlFor="heightCentimeters weightKilograms"
-                  className="mt-1.5 block min-h-[2.375rem] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900"
+                  className="mt-1.5 block min-h-[2.375rem] w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900"
                 >
                   {bmi}
                 </output>

@@ -5,20 +5,20 @@ export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 export type ButtonSize = 'md' | 'sm';
 
 const BASE =
-  'inline-flex items-center justify-center gap-2 rounded-lg border text-center font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
+  'inline-flex items-center justify-center gap-2 rounded-md border text-center font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
 
 const SIZES: Record<ButtonSize, string> = {
-  md: 'px-4 py-2.5 text-sm',
+  md: 'px-4 py-2 text-sm',
   sm: 'px-3 py-1.5 text-sm',
 };
 
 const ENABLED: Record<ButtonVariant, string> = {
   primary:
-    'border-brand-blue bg-brand-blue text-white shadow-sm hover:border-brand-blue-dark hover:bg-brand-blue-dark focus-visible:ring-brand-blue/40',
+    'border-brand-blue bg-brand-blue text-white hover:border-brand-blue-dark hover:bg-brand-blue-dark focus-visible:ring-brand-blue/40',
   secondary:
-    'border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-brand-blue/40',
+    'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-brand-blue/40',
   danger:
-    'border-red-600 bg-red-600 text-white shadow-sm hover:border-red-700 hover:bg-red-700 focus-visible:ring-red-600/40',
+    'border-red-600 bg-red-600 text-white hover:border-red-700 hover:bg-red-700 focus-visible:ring-red-600/40',
 };
 
 const DISABLED: Record<ButtonVariant, string> = {

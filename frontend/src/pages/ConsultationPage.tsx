@@ -362,7 +362,7 @@ export function ConsultationPage() {
           {/* A recovered consultation has no values to show, so its form is left out
               rather than rendered as empty, locked fields. */}
           {!wasRecovered && (
-            <SectionCard eyebrow="Step 1" title="Consultation Record">
+            <SectionCard eyebrow="Step 1 of 3" title="Consultation Record">
               <form onSubmit={handleSubmit} noValidate className="space-y-5">
                 <RequiredLegend />
 
@@ -458,7 +458,7 @@ export function ConsultationPage() {
                   )}
                 </Field>
 
-                <fieldset className="rounded-lg border border-slate-200 bg-slate-50 px-4 pb-4 pt-2">
+                <fieldset className="rounded-md border border-slate-200 bg-slate-50 px-4 pb-4 pt-2">
                   <legend className="px-1.5 text-sm font-semibold text-slate-700">
                     Follow-up <OptionalMark />
                   </legend>
@@ -529,7 +529,7 @@ export function ConsultationPage() {
               />
 
               <SectionCard
-                eyebrow="Step 3"
+                eyebrow="Step 3 of 3"
                 title="Complete Consultation"
                 titleId="complete-consultation-heading"
                 description="Ends this visit and takes you to the prescription."

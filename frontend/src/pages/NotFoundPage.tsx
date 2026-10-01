@@ -16,7 +16,6 @@ export function NotFoundPage() {
   return (
     <DashboardShell sectionLabel="Page Not Found">
       <SectionCard
-        eyebrow="Error 404"
         title="This page does not exist."
         description="The address may be mistyped, or the page may have been moved."
       >

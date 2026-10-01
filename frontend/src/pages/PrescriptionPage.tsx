@@ -555,7 +555,7 @@ export function PrescriptionPage() {
                 )}
 
                 {medicines.map((medicine, index) => (
-                  <fieldset key={medicine.clientId} className="rounded-lg border border-slate-200 px-4 pb-4 pt-2">
+                  <fieldset key={medicine.clientId} className="rounded-md border border-slate-200 px-4 pb-4 pt-2">
                     <legend className="px-1.5 text-sm font-semibold text-slate-700">
                       Medicine {index + 1}
                     </legend>
@@ -611,7 +611,7 @@ export function PrescriptionPage() {
                       removalTarget?.source === 'saved' && removalTarget.id === medicine.id;
 
                     return (
-                      <li key={medicine.id} className="rounded-lg border border-slate-200 p-4">
+                      <li key={medicine.id} className="rounded-md border border-slate-200 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0 break-words text-sm text-slate-700">
                             <p className="font-semibold text-slate-900" data-testid="medicine-name">
@@ -646,7 +646,7 @@ export function PrescriptionPage() {
                 </ul>
 
                 {additionDraft && savedPrescription.status === 'PENDING' && (
-                  <form className="rounded-lg border border-slate-200 bg-slate-50 p-4" noValidate onSubmit={handleAddSavedMedicine}>
+                  <form className="rounded-md border border-slate-200 bg-slate-50 p-4" noValidate onSubmit={handleAddSavedMedicine}>
                     <h3 className="text-base font-semibold text-slate-900">
                       Add another medicine
                     </h3>
@@ -706,7 +706,7 @@ export function PrescriptionPage() {
             ) : (
               <div className="space-y-4">
                 {history.map((prescription) => (
-                  <article key={prescription.id} className="rounded-lg border border-slate-200 p-4">
+                  <article key={prescription.id} className="rounded-md border border-slate-200 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                       <p className="font-semibold text-slate-900">
                         {formatDateTime(prescription.createdAt)}

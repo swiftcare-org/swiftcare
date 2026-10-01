@@ -17,7 +17,7 @@ const toneClassNames: Record<AlertBannerTone, string> = {
 export function AlertBanner({ tone, label, children }: AlertBannerProps) {
   return (
     <div
-      className={`rounded-lg border-l-4 px-4 py-3 ${toneClassNames[tone]}`}
+      className={`rounded-md border-l-4 px-4 py-3 ${toneClassNames[tone]}`}
       role="alert"
     >
       <p className="sr-only">{label}</p>

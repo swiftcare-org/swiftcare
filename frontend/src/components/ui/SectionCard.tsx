@@ -14,6 +14,7 @@ interface SectionCardProps {
   children?: ReactNode;
 }
 
+// A panel with a header bar: the title and its actions sit above a rule, the content below.
 export function SectionCard({
   eyebrow,
   title,
@@ -30,26 +31,27 @@ export function SectionCard({
   return (
     <section
       aria-labelledby={title && titleId ? titleId : undefined}
-      className={`rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 ${className}`}
+      className={`rounded-lg border border-slate-200 bg-white ${className}`}
     >
       {hasHeader && (
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div
+          className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 sm:px-6 ${
+            children ? 'border-b border-slate-200' : ''
+          }`}
+        >
           <div className="min-w-0">
             {eyebrow && <p className={eyebrowClassName}>{eyebrow}</p>}
             {title && (
-              <Heading
-                id={titleId}
-                className={`break-words text-lg font-semibold tracking-tight text-slate-900 ${eyebrow ? 'mt-0.5' : ''}`}
-              >
+              <Heading id={titleId} className="break-words text-base font-semibold text-slate-900">
                 {title}
               </Heading>
             )}
-            {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+            {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
-      {children && <div className={hasHeader ? 'mt-5' : ''}>{children}</div>}
+      {children && <div className="px-5 py-5 sm:px-6">{children}</div>}
     </section>
   );
 }

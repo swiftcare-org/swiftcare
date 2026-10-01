@@ -23,7 +23,7 @@ export function Banner({ tone, title, role, className = '', children }: BannerPr
   const style = TONES[tone];
 
   return (
-    <div role={role} className={`rounded-lg border px-4 py-3 ${style.box} ${className}`}>
+    <div role={role} className={`rounded-md border px-4 py-3 ${style.box} ${className}`}>
       {title && <p className={`text-sm font-semibold ${style.title}`}>{title}</p>}
       {children && <div className={`text-sm ${title ? 'mt-0.5' : ''} ${style.body}`}>{children}</div>}
     </div>

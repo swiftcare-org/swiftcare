@@ -12,6 +12,7 @@ import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
 import { Banner } from '../components/ui/Banner';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
+import { Icon } from '../components/ui/Icon';
 import { SectionCard } from '../components/ui/SectionCard';
 import {
   tableBodyClassName,
@@ -218,7 +219,7 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
 
       {patientLoadState === 'loaded' && patient && (
         <>
-          <SectionCard eyebrow="Patient" title={patient.fullName} />
+          <SectionCard title={patient.fullName} description="Visit history" />
 
           <SectionCard
             title="Consultation History"
@@ -250,7 +251,7 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                   const detailsId = `consultation-details-${consultation.id}`;
 
                   return (
-                    <li key={consultation.id} className="overflow-hidden rounded-lg border border-slate-200">
+                    <li key={consultation.id} className="overflow-hidden rounded-md border border-slate-200">
                       <button
                         type="button"
                         onClick={() => toggleExpanded(consultation.id)}
@@ -274,7 +275,7 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-brand-blue">
                           {expanded ? 'Hide' : 'Details'}
-                          <span aria-hidden="true">{expanded ? '▲' : '▼'}</span>
+                          <Icon name="chevronDown" className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                         </span>
                       </button>
 
