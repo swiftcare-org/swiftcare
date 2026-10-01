@@ -99,20 +99,16 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="w-full max-w-md border border-slate-300 bg-white shadow-[4px_4px_0_rgba(15,23,42,0.06)]">
-        {/* Identifier plate */}
-        <div className="flex justify-center border-b border-slate-200 px-6 py-6">
-          <img src={swiftcareLogo} alt="SwiftCare" width={603} height={176} className="h-12 w-auto" />
-        </div>
-
-        {/* Directional band */}
-        <div className="bg-slate-900 px-6 py-2.5">
-          <h1 className="text-center text-sm font-bold uppercase tracking-[0.18em] text-white">Staff Sign-In</h1>
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="px-6 pt-8 text-center sm:px-8">
+          <img src={swiftcareLogo} alt="SwiftCare" width={603} height={176} className="mx-auto h-14 w-auto" />
+          <h1 className="mt-6 text-xl font-semibold tracking-tight text-slate-900">Staff Sign-In</h1>
+          <p className="mt-1 text-sm text-slate-500">Use your clinic account to continue.</p>
         </div>
 
         {/* Status region - one persistent aria-live container, content swapped by status */}
-        <div aria-live="polite">
+        <div aria-live="polite" className="px-6 pt-5 empty:hidden sm:px-8">
           {status === 'rejected' && (
             <Banner tone="error" title="Access Denied">
               {serverMessage}
@@ -130,7 +126,7 @@ export function LoginPage() {
           )}
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-5 px-4 py-6 sm:px-6">
+        <form onSubmit={handleSubmit} noValidate className="space-y-5 px-6 py-6 sm:px-8">
           <RequiredLegend />
 
           <Field id="username" label="Username" required error={fieldErrors.username}>
@@ -167,7 +163,7 @@ export function LoginPage() {
           </Button>
         </form>
 
-        <div className="border-t border-slate-200 px-6 py-4">
+        <div className="border-t border-slate-100 px-6 py-4 sm:px-8">
           <p className="text-center text-xs leading-relaxed text-slate-500">
             Forgot your password? Contact your clinic administrator to have it reset.
           </p>

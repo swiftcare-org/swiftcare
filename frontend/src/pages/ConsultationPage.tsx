@@ -458,8 +458,8 @@ export function ConsultationPage() {
                   )}
                 </Field>
 
-                <fieldset className="border border-slate-300 bg-slate-50 px-4 py-4">
-                  <legend className="px-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                <fieldset className="rounded-lg border border-slate-200 bg-slate-50 px-4 pb-4 pt-2">
+                  <legend className="px-1.5 text-sm font-semibold text-slate-700">
                     Follow-up <OptionalMark />
                   </legend>
                   <p className="text-xs text-slate-500">
@@ -535,7 +535,7 @@ export function ConsultationPage() {
                 description="Ends this visit and takes you to the prescription."
               >
                 {!createdConsultation.hasVitalSigns && (
-                  <p className="border-l-2 border-amber-600 pl-2 text-sm font-medium text-amber-800">
+                  <p className="text-sm font-medium text-amber-700">
                     Please save vital signs first
                   </p>
                 )}

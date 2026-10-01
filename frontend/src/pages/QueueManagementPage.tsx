@@ -263,7 +263,7 @@ export function QueueManagementPage() {
                 <p className="font-semibold">All prescriptions dispensed today</p>
               </Banner>
             ) : (
-              <ul className="divide-y divide-slate-200 border border-slate-300 bg-white">
+              <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
                 {pendingRows.map(({ prescription, queueEntry }) => (
                   <li
                     key={prescription.id}

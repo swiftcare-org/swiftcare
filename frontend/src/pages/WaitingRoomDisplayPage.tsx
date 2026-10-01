@@ -72,11 +72,11 @@ export function WaitingRoomDisplayPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      <header className="border-b border-slate-700 bg-white px-4 py-4 sm:px-8 lg:px-12">
+      <header className="bg-white px-4 py-4 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-[100rem] flex-wrap items-center justify-between gap-4">
           <img src={swiftcareLogo} alt="SwiftCare" width={603} height={176} className="h-10 w-auto sm:h-12 2xl:h-16" />
           <div className="text-right">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-blue 2xl:text-sm">
+            <p className="text-sm font-semibold text-brand-blue 2xl:text-base">
               Live Queue
             </p>
             <h1 className="mt-1 text-lg font-semibold text-slate-900 sm:text-2xl 2xl:text-3xl">
@@ -88,7 +88,7 @@ export function WaitingRoomDisplayPage() {
 
       <div className="mx-auto grid max-w-[100rem] gap-8 px-4 py-8 sm:px-8 lg:min-h-[calc(100vh-7rem)] lg:grid-cols-[3fr_2fr] lg:px-12 lg:py-12">
         <section aria-labelledby="current-rooms-heading">
-          <p className="text-sm font-bold uppercase tracking-[0.18em] text-display-accent 2xl:text-base">Now Serving</p>
+          <p className="text-base font-semibold text-display-accent 2xl:text-lg">Now Serving</p>
           <h2 id="current-rooms-heading" className="mt-2 text-2xl font-semibold sm:text-3xl 2xl:text-4xl">
             Current Rooms
           </h2>
@@ -103,7 +103,7 @@ export function WaitingRoomDisplayPage() {
             )}
 
             {loadState === 'loaded' && display.currentRooms.length === 0 && (
-              <div className="col-span-full border border-slate-700 bg-slate-900 px-6 py-8">
+              <div className="col-span-full rounded-2xl border border-slate-800 bg-slate-900 px-6 py-8">
                 <p className="text-xl text-slate-300">No rooms are serving a patient right now.</p>
               </div>
             )}
@@ -111,9 +111,9 @@ export function WaitingRoomDisplayPage() {
             {display.currentRooms.map((room) => (
               <article
                 key={room.roomNumber}
-                className="border-t-8 border-brand-blue bg-white px-6 py-7 text-slate-950"
+                className="rounded-2xl bg-white px-6 py-7 text-slate-950 shadow-lg"
               >
-                <p className="text-sm font-bold uppercase tracking-[0.12em] text-slate-600 2xl:text-lg">
+                <p className="text-base font-semibold text-slate-500 2xl:text-xl">
                   Room {room.roomNumber}
                 </p>
                 <p className="mt-4 text-5xl font-black tracking-tight sm:text-6xl xl:text-7xl 2xl:text-8xl">
@@ -127,9 +127,9 @@ export function WaitingRoomDisplayPage() {
 
         <section
           aria-labelledby="next-queue-heading"
-          className="border border-slate-700 bg-slate-900 px-6 py-7 sm:px-8 lg:self-start"
+          className="rounded-2xl border border-slate-800 bg-slate-900 px-6 py-7 sm:px-8 lg:self-start"
         >
-          <p className="text-sm font-bold uppercase tracking-[0.18em] text-amber-300 2xl:text-base">Coming Up</p>
+          <p className="text-base font-semibold text-amber-300 2xl:text-lg">Coming Up</p>
           <h2 id="next-queue-heading" className="mt-2 text-2xl font-semibold sm:text-3xl 2xl:text-4xl">
             Next in Queue
           </h2>
@@ -149,7 +149,7 @@ export function WaitingRoomDisplayPage() {
                   {display.nextQueueNumbers.map((queueNumber, index) => (
                     <li
                       key={queueNumber}
-                      className="flex items-center gap-4 border-l-4 border-amber-400 bg-slate-800 px-5 py-4"
+                      className="flex items-center gap-4 rounded-xl bg-slate-800 px-5 py-4"
                     >
                       <span className="text-base font-bold text-amber-300">{index + 1}</span>
                       <span className="text-4xl font-black tracking-tight sm:text-5xl 2xl:text-6xl">
@@ -163,7 +163,7 @@ export function WaitingRoomDisplayPage() {
           </div>
         </section>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-5 text-sm text-slate-400 lg:col-span-2">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-5 text-sm text-slate-400 lg:col-span-2">
           <p>
             Updates automatically every 5 seconds.
             {lastUpdatedAt && ` Last updated ${formatTime(lastUpdatedAt)}.`}
@@ -174,7 +174,7 @@ export function WaitingRoomDisplayPage() {
             </p>
           ) : (
             <p className="flex items-center gap-2 font-semibold text-emerald-300">
-              <span className="inline-block h-2.5 w-2.5 bg-emerald-300" aria-hidden="true" />
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-300" aria-hidden="true" />
               Live
             </p>
           )}

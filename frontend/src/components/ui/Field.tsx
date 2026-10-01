@@ -4,7 +4,7 @@ import { inputClassName, labelClassName } from './fieldStyles';
 export function RequiredMark() {
   return (
     <>
-      <span className="ml-0.5 text-red-700" aria-hidden="true">
+      <span className="ml-0.5 text-red-600" aria-hidden="true">
         *
       </span>
       <span className="sr-only"> (required)</span>
@@ -13,13 +13,13 @@ export function RequiredMark() {
 }
 
 export function OptionalMark() {
-  return <span className="ml-1 font-normal normal-case tracking-normal text-slate-500">(optional)</span>;
+  return <span className="ml-1 font-normal text-slate-400">(optional)</span>;
 }
 
 export function RequiredLegend() {
   return (
     <p className="text-xs text-slate-500">
-      Fields marked <span className="font-bold text-red-700">*</span> are required.
+      Fields marked <span className="font-semibold text-red-600">*</span> are required.
     </p>
   );
 }
@@ -72,12 +72,12 @@ export function Field({ id, label, required, optional, hint, error, warning, cla
         </p>
       )}
       {error && (
-        <p id={errorId} className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+        <p id={errorId} className="mt-1 text-xs font-medium text-red-600">
           {error}
         </p>
       )}
       {!error && warning && (
-        <p id={warningId} className="mt-1 border-l-2 border-amber-600 pl-2 text-xs font-medium text-amber-800">
+        <p id={warningId} className="mt-1 text-xs font-medium text-amber-700">
           {warning}
         </p>
       )}

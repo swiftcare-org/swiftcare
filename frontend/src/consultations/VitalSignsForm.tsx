@@ -164,7 +164,7 @@ function MeasurementField({
       id={field}
       label={
         <>
-          {label} <span className="font-normal normal-case tracking-normal text-slate-500">({unit})</span>
+          {label} <span className="font-normal text-slate-400">({unit})</span>
         </>
       }
       error={error}
@@ -391,12 +391,12 @@ export function VitalSignsForm({ consultationId, alreadySaved = false, onSaved }
               />
               <div>
                 <label htmlFor="bmi" className={labelClassName}>
-                  BMI <span className="font-normal normal-case tracking-normal text-slate-500">(kg/m²)</span>
+                  BMI <span className="font-normal text-slate-400">(kg/m²)</span>
                 </label>
                 <output
                   id="bmi"
                   htmlFor="heightCentimeters weightKilograms"
-                  className="mt-1.5 block min-h-[2.75rem] w-full border-2 border-slate-300 bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-900"
+                  className="mt-1.5 block min-h-[2.375rem] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900"
                 >
                   {bmi}
                 </output>

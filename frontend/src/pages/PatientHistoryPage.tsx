@@ -90,7 +90,7 @@ function TrendIndicator({
 function DetailField({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</dt>
+      <dt className="text-xs font-medium text-slate-500">{label}</dt>
       <dd className="mt-0.5 whitespace-pre-wrap break-words text-slate-900">{value ?? EMPTY_VALUE}</dd>
     </div>
   );
@@ -250,13 +250,13 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                   const detailsId = `consultation-details-${consultation.id}`;
 
                   return (
-                    <li key={consultation.id} className="border border-slate-300">
+                    <li key={consultation.id} className="overflow-hidden rounded-lg border border-slate-200">
                       <button
                         type="button"
                         onClick={() => toggleExpanded(consultation.id)}
                         aria-expanded={expanded}
                         aria-controls={detailsId}
-                        className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+                        className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-blue/40"
                       >
                         <span className="block min-w-0">
                           <span className="block text-sm font-semibold text-slate-900">
@@ -272,7 +272,7 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                             <span className="font-bold">Notes:</span> {summarize(consultation.notes)}
                           </span>
                         </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue">
+                        <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-brand-blue">
                           {expanded ? 'Hide' : 'Details'}
                           <span aria-hidden="true">{expanded ? '▲' : '▼'}</span>
                         </span>
@@ -281,7 +281,7 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                       {expanded && (
                         <dl
                           id={detailsId}
-                          className="grid gap-x-6 gap-y-4 border-t border-slate-300 bg-slate-50 px-4 py-4 text-sm sm:grid-cols-2"
+                          className="grid gap-x-6 gap-y-4 border-t border-slate-200 bg-slate-50 px-4 py-4 text-sm sm:grid-cols-2"
                         >
                           <DetailField label="Room" value={consultation.roomNumber} />
                           <DetailField label="Template" value={consultation.templateName} />

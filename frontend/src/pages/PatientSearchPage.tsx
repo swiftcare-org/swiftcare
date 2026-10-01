@@ -135,7 +135,7 @@ export function PatientSearchPage() {
 
         {status === 'results' && (
           <>
-            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+            <p className="text-sm text-slate-500">
               {results.length} {results.length === 1 ? 'patient' : 'patients'} found
             </p>
             <div className={`${tableWrapperClassName} ${isSearching ? 'opacity-60' : ''}`}>

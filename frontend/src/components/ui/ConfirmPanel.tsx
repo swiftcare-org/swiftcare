@@ -37,16 +37,16 @@ export function ConfirmPanel({
     <div
       role="alertdialog"
       aria-labelledby={labelId}
-      className={`border-t-4 border-b border-amber-600 bg-amber-50 px-4 py-3 ${className}`}
+      className={`rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 ${className}`}
     >
-      <p id={labelId} className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">
+      <p id={labelId} className="text-sm font-semibold text-amber-900">
         {title}
       </p>
-      <div className="mt-1 break-words text-sm text-amber-900" data-testid="confirm-message">
+      <div className="mt-0.5 break-words text-sm text-amber-800" data-testid="confirm-message">
         {children}
       </div>
       {error && (
-        <p role="alert" className="mt-2 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
+        <p role="alert" className="mt-2 text-sm font-medium text-red-700">
           {error}
         </p>
       )}

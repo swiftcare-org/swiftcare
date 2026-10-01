@@ -106,8 +106,8 @@ const SEVERITY_TONES: Record<AllergySeverity, StatusBadgeTone> = {
   Mild: 'neutral',
 };
 
-const SUB_HEADING_CLASS_NAME = 'text-sm font-bold uppercase tracking-[0.12em] text-slate-700';
-const DETAIL_TERM_CLASS_NAME = 'text-xs font-bold uppercase tracking-[0.12em] text-slate-500';
+const SUB_HEADING_CLASS_NAME = 'text-base font-semibold text-slate-900';
+const DETAIL_TERM_CLASS_NAME = 'text-xs font-medium text-slate-500';
 
 function formatMonthYear(value: string): string {
   const [year, month] = value.slice(0, 10).split('-').map(Number);
@@ -1137,7 +1137,7 @@ export function PatientProfilePage() {
                             </tr>
                             {canManage && confirmingRemovalId === allergy.allergyId && (
                               <tr>
-                                <td colSpan={allergyColumnCount} className="p-0">
+                                <td colSpan={allergyColumnCount} className="bg-slate-50 px-4 py-3">
                                   <ConfirmPanel
                                     labelId={`remove-allergy-${allergy.allergyId}`}
                                     title="Remove Allergy"
@@ -1291,7 +1291,7 @@ export function PatientProfilePage() {
                         </tr>
                         {isReceptionist && confirmingConditionRemovalId === condition.conditionId && (
                           <tr>
-                            <td colSpan={conditionColumnCount} className="p-0">
+                            <td colSpan={conditionColumnCount} className="bg-slate-50 px-4 py-3">
                               <ConfirmPanel
                                 labelId={`remove-condition-${condition.conditionId}`}
                                 title="Remove Condition"
