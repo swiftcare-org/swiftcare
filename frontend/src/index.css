@@ -4,6 +4,8 @@
   --color-brand-blue: #0066ff;
   --color-brand-blue-dark: #0052cc;
   --color-brand-blue-tint: #eef4ff;
+  /* The public waiting-room display is dark, so its accent is a light tint of the brand. */
+  --color-display-accent: #7cc4ff;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
