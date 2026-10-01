@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Field, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { textLinkClassName } from '../components/ui/table';
+import { formatDate } from '../lib/format';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'created' | 'failed';
 
@@ -198,7 +199,7 @@ export function PatientRegistrationPage() {
       </div>
 
       <SectionCard title="Patient Details">
-        <form onSubmit={handleSubmit} noValidate className="grid gap-5 sm:grid-cols-2">
+        <form onSubmit={handleSubmit} noValidate className="grid max-w-3xl gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <RequiredLegend />
           </div>
@@ -237,7 +238,13 @@ export function PatientRegistrationPage() {
             )}
           </Field>
 
-          <Field id="dateOfBirth" label="Date of Birth" required error={fieldErrors.dateofbirth}>
+          <Field
+            id="dateOfBirth"
+            label="Date of Birth"
+            required
+            hint={dateOfBirth ? `Selected: ${formatDate(dateOfBirth)}` : undefined}
+            error={fieldErrors.dateofbirth}
+          >
             {(control) => (
               <input
                 {...control}

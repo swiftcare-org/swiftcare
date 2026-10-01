@@ -791,7 +791,7 @@ export function PatientProfilePage() {
             </dl>
 
             {isReceptionist && isEditingProfile && profileForm && (
-              <form onSubmit={handleProfileUpdate} noValidate className="mt-6 border-t border-slate-200 pt-5">
+              <form onSubmit={handleProfileUpdate} noValidate className="mt-6 max-w-3xl border-t border-slate-200 pt-5">
                 <h3 className={SUB_HEADING_CLASS_NAME}>Edit Contact Details</h3>
                 <p className="mt-1 text-xs text-slate-500">
                   Name, NIC and date of birth cannot be changed here.
@@ -1178,7 +1178,7 @@ export function PatientProfilePage() {
                   )}
                 </div>
 
-                <form onSubmit={handleAddSubmit} noValidate className="mt-4 grid gap-5 sm:grid-cols-2">
+                <form onSubmit={handleAddSubmit} noValidate className="mt-4 grid max-w-3xl gap-5 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <RequiredLegend />
                   </div>
@@ -1333,7 +1333,7 @@ export function PatientProfilePage() {
                   )}
                 </div>
 
-                <form onSubmit={handleConditionAddSubmit} noValidate className="mt-4 grid gap-5 sm:grid-cols-2">
+                <form onSubmit={handleConditionAddSubmit} noValidate className="mt-4 grid max-w-3xl gap-5 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <RequiredLegend />
                   </div>
@@ -1364,7 +1364,7 @@ export function PatientProfilePage() {
                     id="condition-date-diagnosed"
                     label="Date Diagnosed"
                     required
-                    hint="Today or earlier."
+                    hint={conditionForm.dateDiagnosed ? `Selected: ${formatDate(conditionForm.dateDiagnosed)}` : 'Today or earlier.'}
                     error={conditionFieldErrors.dateDiagnosed}
                   >
                     {(control) => (

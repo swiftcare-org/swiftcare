@@ -24,6 +24,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* A dropdown that is still on its "Select ..." prompt is shown muted, like a placeholder. */
+select:has(option[value='']:checked) {
+  color: #94a3b8;
+}
+
+select option {
+  color: #0f172a;
+}
+
 /* Dropdown lists. A browser normally draws the open list itself, square and unstyled.
    Where the browser allows it (current Chrome and Edge), opt the list into styling so it
    matches the rounded cards and inputs. Other browsers keep their native list. */

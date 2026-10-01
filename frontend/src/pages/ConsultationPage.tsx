@@ -20,7 +20,7 @@ import { LoadingText } from '../components/ui/Feedback';
 import { Field, OptionalMark, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { clinicTodayForDateInput } from '../lib/format';
+import { clinicTodayForDateInput, formatDate } from '../lib/format';
 
 type TemplateLoadState = 'loading' | 'loaded' | 'error';
 type CurrentPatientLoadState = 'loading' | 'loaded' | 'error';
@@ -363,7 +363,7 @@ export function ConsultationPage() {
               rather than rendered as empty, locked fields. */}
           {!wasRecovered && (
             <SectionCard eyebrow="Step 1 of 3" title="Consultation Record">
-              <form onSubmit={handleSubmit} noValidate className="space-y-5">
+              <form onSubmit={handleSubmit} noValidate className="max-w-3xl space-y-5">
                 <RequiredLegend />
 
                 <Field
@@ -467,7 +467,12 @@ export function ConsultationPage() {
                   </p>
 
                   <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
-                    <Field id="followUpDate" label="Follow-up Date" hint="Today or later." error={fieldErrors.followUpDate}>
+                    <Field
+                      id="followUpDate"
+                      label="Follow-up Date"
+                      hint={form.followUpDate ? `Selected: ${formatDate(form.followUpDate)}` : 'Today or later.'}
+                      error={fieldErrors.followUpDate}
+                    >
                       {(control) => (
                         <input
                           {...control}
