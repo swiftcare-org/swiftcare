@@ -185,3 +185,62 @@ variable "additional_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "availability_enabled" {
+  description = "Enable both tests and alerts during the agreed uptime window; disabling retains resources."
+  type        = bool
+  default     = true
+}
+
+variable "availability_frontend_url" {
+  description = "Public frontend target; override only for a reviewed environment or authorized failure drill."
+  type        = string
+  default     = "https://swiftcare.me"
+  validation {
+    condition     = can(regex("^https://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.availability_frontend_url))
+    error_message = "Use an HTTPS URL without credentials, query strings or fragments."
+  }
+}
+
+variable "availability_gateway_url" {
+  description = "Public gateway liveness target; override only for a reviewed environment or authorized failure drill."
+  type        = string
+  default     = "https://api.swiftcare.me/health"
+  validation {
+    condition     = can(regex("^https://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.availability_gateway_url))
+    error_message = "Use an HTTPS URL without credentials, query strings or fragments."
+  }
+}
+
+variable "availability_locations" {
+  description = "Azure availability population IDs, independent of the resource deployment region."
+  type        = list(string)
+  default     = ["apac-sg-sin-azr", "apac-jp-kaw-edge", "emea-au-syd-edge", "emea-nl-ams-azr", "us-va-ash-azr"]
+  validation {
+    condition = length(var.availability_locations) >= 5 && length(var.availability_locations) <= 16 && length(distinct(var.availability_locations)) == length(var.availability_locations) && alltrue([
+      for location in var.availability_locations : contains(["emea-au-syd-edge", "latam-br-gru-edge", "us-fl-mia-edge", "apac-hk-hkn-azr", "us-va-ash-azr", "emea-ch-zrh-edge", "emea-fr-pra-edge", "apac-jp-kaw-edge", "emea-gb-db3-azr", "us-il-ch1-azr", "us-tx-sn1-azr", "apac-sg-sin-azr", "emea-se-sto-edge", "emea-nl-ams-azr", "us-ca-sjc-azr", "emea-ru-msa-edge"], location)
+    ])
+    error_message = "Choose 5 to 16 distinct supported AzureCloud availability population IDs."
+  }
+}
+
+variable "availability_failed_location_count" {
+  description = "Number of failed locations required for each target alert; default is three of five."
+  type        = number
+  default     = 3
+  validation {
+    condition     = var.availability_failed_location_count >= 2 && var.availability_failed_location_count <= length(var.availability_locations) && floor(var.availability_failed_location_count) == var.availability_failed_location_count
+    error_message = "The failure threshold must be an integer from 2 to the configured location count."
+  }
+}
+
+variable "availability_alert_emails" {
+  description = "Team email recipients supplied only in gitignored terraform.tfvars; never commit actual addresses."
+  type        = list(string)
+  sensitive   = true
+  default     = []
+  validation {
+    condition     = length(var.availability_alert_emails) <= 100 && length(distinct(var.availability_alert_emails)) == length(var.availability_alert_emails) && alltrue([for email in var.availability_alert_emails : can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", email))])
+    error_message = "Supply distinct valid email addresses, at most 100."
+  }
+}
