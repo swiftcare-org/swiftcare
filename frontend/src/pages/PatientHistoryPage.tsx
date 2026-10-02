@@ -6,6 +6,8 @@ import { getPatient } from '../api/patients';
 import type { PatientProfile } from '../api/patients';
 import { getPatientConsultationHistory, getPatientVitalsHistory } from '../api/consultations';
 import type { Consultation, VitalSigns } from '../api/consultations';
+import { getPatientPrescriptions } from '../api/prescriptions';
+import type { Prescription } from '../api/prescriptions';
 import { trendFor } from '../consultations/vitalsTrend';
 import type { TrendMetric } from '../consultations/vitalsTrend';
 import { useAuth } from '../auth/useAuth';
@@ -24,6 +26,10 @@ import {
   tableWrapperClassName,
 } from '../components/ui/table';
 import { formatDate, formatDateTime } from '../lib/format';
+import {
+  NO_PRESCRIPTIONS_MESSAGE,
+  PrescriptionHistoryList,
+} from '../prescriptions/PrescriptionHistoryList';
 
 type PatientLoadState = 'loading' | 'loaded' | 'notFound' | 'error';
 type SectionLoadState = 'loading' | 'loaded' | 'error';
@@ -132,6 +138,9 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
     useState<SectionLoadState>('loading');
   const [vitals, setVitals] = useState<VitalSigns[]>([]);
   const [vitalsLoadState, setVitalsLoadState] = useState<SectionLoadState>('loading');
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [prescriptionsLoadState, setPrescriptionsLoadState] =
+    useState<SectionLoadState>('loading');
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
@@ -182,6 +191,21 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
           return;
         }
         setVitalsLoadState('error');
+      });
+
+    getPatientPrescriptions(patientId)
+      .then((items) => {
+        if (disposed) {
+          return;
+        }
+        setPrescriptions(items);
+        setPrescriptionsLoadState('loaded');
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        setPrescriptionsLoadState('error');
       });
 
     return () => {
@@ -310,6 +334,34 @@ function PatientHistoryContent({ patientId }: { patientId: string }) {
                   );
                 })}
               </ol>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Prescription History"
+            titleId="prescription-history-heading"
+            description={
+              prescriptionsLoadState === 'loaded' && prescriptions.length > 0
+                ? 'Newest first. Check past medicines before prescribing.'
+                : undefined
+            }
+          >
+            {prescriptionsLoadState === 'loading' && <LoadingText>Loading prescriptions…</LoadingText>}
+
+            {prescriptionsLoadState === 'error' && (
+              <Banner tone="error" role="alert">
+                Unable to load prescription history.
+              </Banner>
+            )}
+
+            {prescriptionsLoadState === 'loaded' && prescriptions.length === 0 && (
+              <EmptyState>
+                <p>{NO_PRESCRIPTIONS_MESSAGE}</p>
+              </EmptyState>
+            )}
+
+            {prescriptionsLoadState === 'loaded' && prescriptions.length > 0 && (
+              <PrescriptionHistoryList prescriptions={prescriptions} />
             )}
           </SectionCard>
 
