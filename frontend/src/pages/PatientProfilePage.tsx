@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useParams } from 'react-router-dom';
 import { DashboardShell } from '../dashboards/DashboardShell';
 import { checkInPatient, getPatient, updatePatient } from '../api/patients';
 import type { BloodGroup, PatientProfile, UpdatePatientRequestBody } from '../api/patients';
@@ -13,8 +13,24 @@ import { ApiError } from '../api/client';
 import { getLatestOverdueFollowUp } from '../api/consultations';
 import type { OverdueFollowUp } from '../api/consultations';
 import { useAuth } from '../auth/useAuth';
-import { roleRoutes } from '../auth/roleRoutes';
 import { AlertBanner } from '../components/AlertBanner';
+import { Banner } from '../components/ui/Banner';
+import { Button, ButtonLink } from '../components/ui/Button';
+import { ConfirmPanel } from '../components/ui/ConfirmPanel';
+import { EmptyState, LoadingText } from '../components/ui/Feedback';
+import { Field, RequiredLegend } from '../components/ui/Field';
+import { SectionCard } from '../components/ui/SectionCard';
+import { StatusBadge, type StatusBadgeTone } from '../components/ui/StatusBadge';
+import {
+  tableBodyClassName,
+  tableCellClassName,
+  tableClassName,
+  tableHeadClassName,
+  tableHeaderCellClassName,
+  tableKeyCellClassName,
+  tableWrapperClassName,
+} from '../components/ui/table';
+import { clinicTodayForDateInput, formatDate } from '../lib/format';
 
 type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
@@ -38,7 +54,7 @@ interface ProfileFieldErrors {
 
 interface AllergyFormState {
   allergyName: string;
-  severity: AllergySeverity;
+  severity: AllergySeverity | '';
   notes: string;
 }
 
@@ -59,7 +75,7 @@ interface ConditionFieldErrors {
 }
 
 const EMPTY_FIELD_ERRORS: AllergyFieldErrors = { allergyName: null, severity: null };
-const EMPTY_FORM: AllergyFormState = { allergyName: '', severity: 'Severe', notes: '' };
+const EMPTY_FORM: AllergyFormState = { allergyName: '', severity: '', notes: '' };
 const SEVERITY_OPTIONS: AllergySeverity[] = ['Severe', 'Moderate', 'Mild'];
 const EMPTY_CONDITION_FORM: ConditionFormState = {
   conditionName: '',
@@ -79,26 +95,18 @@ const BLOOD_GROUP_OPTIONS: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', '
 const PHONE_PATTERN = /^(0[0-9]{9}|\+94[0-9]{9})$/;
 const QUEUE_ASSIGNMENT_MAX_ATTEMPTS = 20;
 const QUEUE_ASSIGNMENT_RETRY_DELAY_MS = 500;
-const CLINIC_TIME_ZONE = 'Asia/Colombo';
 
 const GENERIC_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 const FORBIDDEN_MANAGE_MESSAGE = 'You are not authorized to manage allergies.';
 
-function inputClassName(hasError: boolean): string {
-  return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 read-only:bg-slate-100 read-only:text-slate-600 disabled:bg-slate-100 disabled:text-slate-400 ${
-    hasError ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
-  }`;
-}
+const SEVERITY_TONES: Record<AllergySeverity, StatusBadgeTone> = {
+  Severe: 'danger',
+  Moderate: 'warning',
+  Mild: 'neutral',
+};
 
-function severityBadgeClassName(severity: AllergySeverity): string {
-  return severity === 'Severe'
-    ? 'inline-block border border-red-700 bg-red-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-red-800'
-    : 'inline-block border border-slate-400 bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-700';
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString();
-}
+const SUB_HEADING_CLASS_NAME = 'text-base font-semibold text-slate-900';
+const DETAIL_TERM_CLASS_NAME = 'text-xs font-medium text-slate-500';
 
 function formatMonthYear(value: string): string {
   const [year, month] = value.slice(0, 10).split('-').map(Number);
@@ -121,18 +129,6 @@ function calculateAge(dateOfBirth: string): number {
   }
 
   return age;
-}
-
-function todayForDateInput(): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CLINIC_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function wait(delayMilliseconds: number): Promise<void> {
@@ -205,7 +201,7 @@ function validateConditionForm(form: ConditionFormState): ConditionFieldErrors {
     conditionName: form.conditionName.trim() ? null : 'Condition name is required',
     dateDiagnosed: !form.dateDiagnosed
       ? 'Diagnosed date is required.'
-      : form.dateDiagnosed > todayForDateInput()
+      : form.dateDiagnosed > clinicTodayForDateInput()
         ? 'Diagnosed date cannot be in the future'
         : null,
   };
@@ -214,7 +210,6 @@ function validateConditionForm(form: ConditionFormState): ConditionFieldErrors {
 export function PatientProfilePage() {
   const { patientId } = useParams<{ patientId: string }>();
   const { user } = useAuth();
-  const backRoute = user ? roleRoutes[user.role] : '/login';
   const canManage = user?.role === 'Doctor' || user?.role === 'Receptionist';
   const isReceptionist = user?.role === 'Receptionist';
 
@@ -250,6 +245,10 @@ export function PatientProfilePage() {
 
   const [confirmingRemovalId, setConfirmingRemovalId] = useState<string | null>(null);
   const [removeServerMessage, setRemoveServerMessage] = useState<string | null>(null);
+  const [isRemovingAllergy, setIsRemovingAllergy] = useState(false);
+  // A save that worked but whose follow-up reload failed is not a failed save, so it
+  // gets its own message instead of being reported through the form's error.
+  const [allergiesRefreshFailed, setAllergiesRefreshFailed] = useState(false);
 
   const [conditionForm, setConditionForm] = useState<ConditionFormState>(EMPTY_CONDITION_FORM);
   const [conditionFieldErrors, setConditionFieldErrors] = useState<ConditionFieldErrors>(
@@ -259,6 +258,7 @@ export function PatientProfilePage() {
   const [conditionAddServerMessage, setConditionAddServerMessage] = useState<string | null>(null);
   const [confirmingConditionRemovalId, setConfirmingConditionRemovalId] = useState<string | null>(null);
   const [conditionRemoveServerMessage, setConditionRemoveServerMessage] = useState<string | null>(null);
+  const [isRemovingCondition, setIsRemovingCondition] = useState(false);
 
   const latestRequestId = useRef(0);
 
@@ -492,12 +492,18 @@ export function PatientProfilePage() {
     }
   }
 
+  // Never throws: the caller has already saved successfully by the time this runs.
   async function refetchAllergies() {
     if (!patientId) {
       return;
     }
-    const refreshed = await getAllergies(patientId);
-    setAllergies(refreshed);
+    try {
+      const refreshed = await getAllergies(patientId);
+      setAllergies(refreshed);
+      setAllergiesRefreshFailed(false);
+    } catch {
+      setAllergiesRefreshFailed(true);
+    }
   }
 
   async function handleAddSubmit(event: FormEvent) {
@@ -517,7 +523,7 @@ export function PatientProfilePage() {
 
     const request: AllergyRequestBody = {
       allergyName: addForm.allergyName.trim(),
-      severity: addForm.severity,
+      severity: addForm.severity as AllergySeverity,
       notes: addForm.notes.trim() || null,
     };
 
@@ -572,7 +578,7 @@ export function PatientProfilePage() {
 
     const request: AllergyRequestBody = {
       allergyName: editForm.allergyName.trim(),
-      severity: editForm.severity,
+      severity: editForm.severity as AllergySeverity,
       notes: editForm.notes.trim() || null,
     };
 
@@ -602,17 +608,20 @@ export function PatientProfilePage() {
     }
 
     setRemoveServerMessage(null);
+    setIsRemovingAllergy(true);
     try {
       await removeAllergy(patientId, allergyId);
       await refetchAllergies();
       setConfirmingRemovalId(null);
     } catch (error) {
-      setConfirmingRemovalId(null);
+      // The confirm step stays open so the reason is shown next to the allergy it is about.
       if (error instanceof ApiError && error.status === 403) {
         setRemoveServerMessage(FORBIDDEN_MANAGE_MESSAGE);
       } else {
         setRemoveServerMessage(GENERIC_ERROR_MESSAGE);
       }
+    } finally {
+      setIsRemovingAllergy(false);
     }
   }
 
@@ -670,6 +679,7 @@ export function PatientProfilePage() {
     }
 
     setConditionRemoveServerMessage(null);
+    setIsRemovingCondition(true);
     try {
       await removeCondition(patientId, conditionId);
       setConditions((previous) =>
@@ -677,309 +687,214 @@ export function PatientProfilePage() {
       );
       setConfirmingConditionRemovalId(null);
     } catch (error) {
-      setConfirmingConditionRemovalId(null);
       setConditionRemoveServerMessage(
         error instanceof ApiError && error.status === 403
           ? 'You are not authorized to manage chronic conditions.'
           : GENERIC_ERROR_MESSAGE,
       );
+    } finally {
+      setIsRemovingCondition(false);
     }
   }
 
-  return (
-    <DashboardShell sectionLabel="Patient Profile">
-      <Link
-        to={backRoute}
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        ← Back to Dashboard
-      </Link>
+  const isSavingProfile = profileUpdateStatus === 'submitting';
+  const isCheckingIn = checkInStatus === 'submitting' || checkInStatus === 'awaitingQueue';
+  const allergyColumnCount = canManage ? 5 : 4;
+  const conditionColumnCount = isReceptionist ? 4 : 3;
 
-      {loadStatus === 'loading' && <p className="mt-6 text-sm text-slate-500">Loading patient…</p>}
+  return (
+    <DashboardShell sectionLabel="Patient Profile" backLink={{ to: '/patients/search', destination: 'Patients' }}>
+      {loadStatus === 'loading' && <LoadingText>Loading patient…</LoadingText>}
 
       {loadStatus === 'notFound' && (
-        <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Patient Not Found</p>
-          <p className="mt-1 text-sm text-red-900">No patient exists with this ID.</p>
-        </div>
+        <Banner tone="error" title="Patient Not Found">
+          No patient exists with this ID.
+        </Banner>
       )}
 
       {loadStatus === 'error' && (
-        <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Unable to Load Patient</p>
-          <p className="mt-1 text-sm text-red-900">{GENERIC_ERROR_MESSAGE}</p>
-        </div>
+        <Banner tone="error" title="Unable to Load Patient">
+          {GENERIC_ERROR_MESSAGE}
+        </Banner>
       )}
 
       {loadStatus === 'loaded' && patient && (
         <>
-          {isReceptionist && (
-            <div className="mt-6" aria-live="polite">
-              {queueStatusLoadState === 'loading' && (
-                <p className="text-sm text-slate-500">Checking today&apos;s queue…</p>
-              )}
-              {checkInStatus === 'succeeded' && queueStatus?.isCheckedIn && (
-                <div className="border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
-                  <p className="text-sm font-semibold text-emerald-900">
-                    {patient.fullName} checked in. Queue: {queueStatus.queueNumber}
-                  </p>
-                </div>
-              )}
-              {checkInStatus !== 'succeeded' && queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && (
-                <div className="border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3">
-                  <p className="text-sm font-semibold text-amber-900">
-                    Already checked in — Queue: {queueStatus.queueNumber}
-                  </p>
-                </div>
-              )}
-              {checkInMessage && checkInStatus === 'failed' && (
-                <p className="mb-3 border-l-2 border-red-600 pl-2 text-sm text-red-700">
-                  {checkInMessage}
-                </p>
-              )}
-              {checkInMessage && checkInStatus === 'accepted' && (
-                <p className="border-l-2 border-amber-600 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  {checkInMessage}
-                </p>
-              )}
-              {queueStatusLoadState === 'loaded' &&
-                queueStatus &&
-                !queueStatus.isCheckedIn &&
-                checkInStatus !== 'accepted' && (
-                <button
-                  type="button"
-                  onClick={handleCheckIn}
-                  disabled={checkInStatus === 'submitting' || checkInStatus === 'awaitingQueue'}
-                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {checkInStatus === 'submitting'
-                    ? 'Checking In…'
-                    : checkInStatus === 'awaitingQueue'
-                      ? 'Assigning Queue…'
-                      : 'Check In'}
-                </button>
-              )}
-              {queueStatusLoadState === 'error' && (
-                <p className="border-l-2 border-red-600 pl-2 text-sm text-red-700">
-                  Unable to check today&apos;s queue status.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div aria-live="polite">
+          <div aria-live="polite" className="empty:hidden">
             {profileUpdateStatus === 'saved' && (
-              <div className="mt-6 border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-emerald-800">
-                  Profile Updated
-                </p>
-                <p className="mt-1 text-sm text-emerald-900">Patient profile updated successfully.</p>
-              </div>
+              <Banner tone="success" title="Profile Updated">
+                Patient profile updated successfully.
+              </Banner>
             )}
           </div>
 
-          <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+          <SectionCard
+            title={patient.fullName}
+            description="Patient record"
+            actions={
+              <>
+                {user?.role === 'Doctor' && (
+                  <ButtonLink to={`/patients/${patient.patientId}/history`} variant="secondary" size="sm">
+                    View History
+                  </ButtonLink>
+                )}
+                {isReceptionist && !isEditingProfile && (
+                  <Button variant="secondary" size="sm" onClick={startProfileEdit}>
+                    Edit Profile
+                  </Button>
+                )}
+              </>
+            }
+          >
+            <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Patient</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-900">{patient.fullName}</p>
+                <dt className={DETAIL_TERM_CLASS_NAME}>Patient ID</dt>
+                <dd className="mt-0.5 break-all text-slate-900">{patient.patientId}</dd>
               </div>
-              {user?.role === 'Doctor' && (
-                <Link
-                  to={`/patients/${patient.patientId}/history`}
-                  className="border-2 border-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:bg-brand-blue hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                >
-                  View History
-                </Link>
+              <div>
+                <dt className={DETAIL_TERM_CLASS_NAME}>NIC</dt>
+                <dd className="mt-0.5 text-slate-900">{patient.nic}</dd>
+              </div>
+              <div>
+                <dt className={DETAIL_TERM_CLASS_NAME}>Date of Birth</dt>
+                <dd className="mt-0.5 text-slate-900">{formatDate(patient.dateOfBirth.slice(0, 10))}</dd>
+              </div>
+              <div>
+                <dt className={DETAIL_TERM_CLASS_NAME}>Age</dt>
+                <dd className="mt-0.5 text-slate-900">{calculateAge(patient.dateOfBirth)}</dd>
+              </div>
+              <div>
+                <dt className={DETAIL_TERM_CLASS_NAME}>Gender</dt>
+                <dd className="mt-0.5 text-slate-900">{patient.gender}</dd>
+              </div>
+              <div>
+                <dt className={DETAIL_TERM_CLASS_NAME}>Registration Date</dt>
+                <dd className="mt-0.5 text-slate-900">{formatDate(patient.registeredAt)}</dd>
+              </div>
+              {/* While editing, the form below stands in for these three values. */}
+              {!isEditingProfile && (
+                <>
+                  <div>
+                    <dt className={DETAIL_TERM_CLASS_NAME}>Phone</dt>
+                    <dd className="mt-0.5 text-slate-900">{patient.phoneNumber}</dd>
+                  </div>
+                  <div>
+                    <dt className={DETAIL_TERM_CLASS_NAME}>Blood Group</dt>
+                    <dd className="mt-0.5 text-slate-900">{patient.bloodGroup}</dd>
+                  </div>
+                  <div>
+                    <dt className={DETAIL_TERM_CLASS_NAME}>Address</dt>
+                    <dd className="mt-0.5 whitespace-pre-wrap break-words text-slate-900">{patient.address}</dd>
+                  </div>
+                </>
               )}
-              {isReceptionist && !isEditingProfile && (
-                <button
-                  type="button"
-                  onClick={startProfileEdit}
-                  className="border-2 border-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:bg-brand-blue hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                >
-                  Edit Profile
-                </button>
-              )}
-            </div>
-
-            <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Patient ID</dt>
-                <dd className="break-all text-slate-800">{patient.patientId}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">NIC</dt>
-                <dd className="text-slate-800">{patient.nic}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Date of Birth</dt>
-                <dd className="text-slate-800">{formatDate(patient.dateOfBirth)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Age</dt>
-                <dd className="text-slate-800">{calculateAge(patient.dateOfBirth)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Gender</dt>
-                <dd className="text-slate-800">{patient.gender}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Phone</dt>
-                <dd className="text-slate-800">{patient.phoneNumber}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Blood Group</dt>
-                <dd className="text-slate-800">{patient.bloodGroup}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Address</dt>
-                <dd className="whitespace-pre-wrap text-slate-800">{patient.address}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-bold uppercase tracking-widest text-slate-500">Registration Date</dt>
-                <dd className="text-slate-800">{formatDate(patient.registeredAt)}</dd>
-              </div>
             </dl>
 
             {isReceptionist && isEditingProfile && profileForm && (
-              <form onSubmit={handleProfileUpdate} noValidate className="mt-6 border-t border-slate-300 pt-6">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Edit Profile</p>
+              <form onSubmit={handleProfileUpdate} noValidate className="mt-6 max-w-3xl border-t border-slate-200 pt-5">
+                <h3 className={SUB_HEADING_CLASS_NAME}>Edit Contact Details</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Name, NIC and date of birth cannot be changed here.
+                </p>
 
                 {profileUpdateStatus === 'failed' && profileServerMessage && (
-                  <p className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700">
+                  <Banner tone="error" title="Profile Not Updated" role="alert" className="mt-4">
                     {profileServerMessage}
-                  </p>
+                  </Banner>
                 )}
 
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="profile-nic" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      NIC
-                    </label>
-                    <input
-                      id="profile-nic"
-                      type="text"
-                      value={patient.nic}
-                      readOnly
-                      aria-readonly="true"
-                      className={inputClassName(false)}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="profile-date-of-birth" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      Date of Birth
-                    </label>
-                    <input
-                      id="profile-date-of-birth"
-                      type="date"
-                      value={patient.dateOfBirth.slice(0, 10)}
-                      readOnly
-                      aria-readonly="true"
-                      className={inputClassName(false)}
-                    />
-                  </div>
+                <div className="mt-4 grid gap-5 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <label htmlFor="profile-address" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      Address
-                    </label>
-                    <textarea
-                      id="profile-address"
-                      rows={3}
-                      value={profileForm.address}
-                      onChange={(event) => {
-                        setProfileForm((previous) => previous ? { ...previous, address: event.target.value } : previous);
-                        clearProfileFieldError('address');
-                      }}
-                      disabled={profileUpdateStatus === 'submitting'}
-                      aria-invalid={profileFieldErrors.address ? true : undefined}
-                      aria-describedby={profileFieldErrors.address ? 'profile-address-error' : undefined}
-                      className={inputClassName(!!profileFieldErrors.address)}
-                    />
-                    {profileFieldErrors.address && (
-                      <p id="profile-address-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                        {profileFieldErrors.address}
-                      </p>
-                    )}
+                    <RequiredLegend />
                   </div>
-                  <div>
-                    <label htmlFor="profile-phone-number" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      Phone Number
-                    </label>
-                    <input
-                      id="profile-phone-number"
-                      type="tel"
-                      value={profileForm.phoneNumber}
-                      onChange={(event) => {
-                        setProfileForm((previous) => previous ? { ...previous, phoneNumber: event.target.value } : previous);
-                        clearProfileFieldError('phoneNumber');
-                      }}
-                      disabled={profileUpdateStatus === 'submitting'}
-                      aria-invalid={profileFieldErrors.phoneNumber ? true : undefined}
-                      aria-describedby={profileFieldErrors.phoneNumber ? 'profile-phone-number-error' : undefined}
-                      className={inputClassName(!!profileFieldErrors.phoneNumber)}
-                    />
-                    {profileFieldErrors.phoneNumber && (
-                      <p id="profile-phone-number-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                        {profileFieldErrors.phoneNumber}
-                      </p>
+
+                  <Field
+                    id="profile-phone-number"
+                    label="Phone Number"
+                    required
+                    hint="For example 0771234567 or +94771234567."
+                    error={profileFieldErrors.phoneNumber}
+                  >
+                    {(control) => (
+                      <input
+                        {...control}
+                        type="tel"
+                        value={profileForm.phoneNumber}
+                        onChange={(event) => {
+                          setProfileForm((previous) =>
+                            previous ? { ...previous, phoneNumber: event.target.value } : previous,
+                          );
+                          clearProfileFieldError('phoneNumber');
+                        }}
+                        disabled={isSavingProfile}
+                      />
                     )}
-                  </div>
-                  <div>
-                    <label htmlFor="profile-blood-group" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      Blood Group
-                    </label>
-                    <select
-                      id="profile-blood-group"
-                      value={profileForm.bloodGroup}
-                      onChange={(event) => {
-                        setProfileForm((previous) => previous ? { ...previous, bloodGroup: event.target.value as BloodGroup } : previous);
-                        clearProfileFieldError('bloodGroup');
-                      }}
-                      disabled={profileUpdateStatus === 'submitting'}
-                      aria-invalid={profileFieldErrors.bloodGroup ? true : undefined}
-                      aria-describedby={profileFieldErrors.bloodGroup ? 'profile-blood-group-error' : undefined}
-                      className={inputClassName(!!profileFieldErrors.bloodGroup)}
-                    >
-                      {BLOOD_GROUP_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                    {profileFieldErrors.bloodGroup && (
-                      <p id="profile-blood-group-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                        {profileFieldErrors.bloodGroup}
-                      </p>
+                  </Field>
+
+                  <Field id="profile-blood-group" label="Blood Group" required error={profileFieldErrors.bloodGroup}>
+                    {(control) => (
+                      <select
+                        {...control}
+                        value={profileForm.bloodGroup}
+                        onChange={(event) => {
+                          setProfileForm((previous) =>
+                            previous ? { ...previous, bloodGroup: event.target.value as BloodGroup } : previous,
+                          );
+                          clearProfileFieldError('bloodGroup');
+                        }}
+                        disabled={isSavingProfile}
+                      >
+                        {BLOOD_GROUP_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
                     )}
-                  </div>
+                  </Field>
+
+                  <Field
+                    id="profile-address"
+                    label="Address"
+                    required
+                    error={profileFieldErrors.address}
+                    className="sm:col-span-2"
+                  >
+                    {(control) => (
+                      <textarea
+                        {...control}
+                        rows={3}
+                        value={profileForm.address}
+                        onChange={(event) => {
+                          setProfileForm((previous) =>
+                            previous ? { ...previous, address: event.target.value } : previous,
+                          );
+                          clearProfileFieldError('address');
+                        }}
+                        disabled={isSavingProfile}
+                      />
+                    )}
+                  </Field>
                 </div>
 
-                <div className="mt-5 flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={profileUpdateStatus === 'submitting'}
-                    className="bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {profileUpdateStatus === 'submitting' ? 'Saving…' : 'Save Changes'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelProfileEdit}
-                    disabled={profileUpdateStatus === 'submitting'}
-                    className="border-2 border-slate-400 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                  >
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Button type="submit" loading={isSavingProfile}>
+                    {isSavingProfile ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                  <Button variant="secondary" onClick={cancelProfileEdit} disabled={isSavingProfile}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </form>
             )}
-          </div>
+          </SectionCard>
 
           {(allergies.length > 0 ||
             (user?.role === 'Doctor' && (conditions.length > 0 || overdueFollowUp))) && (
-            <div className="mt-6 space-y-3" aria-label="Medical alerts">
+            <div className="space-y-3" role="group" aria-label="Medical alerts">
               {allergies.map((allergy) => (
                 <AlertBanner key={allergy.allergyId} tone="allergy" label="Allergy Alert">
-                  ⚠️ ALLERGY: {allergy.allergyName} — {allergy.severity}
+                  ALLERGY: {allergy.allergyName} ({allergy.severity})
                 </AlertBanner>
               ))}
 
@@ -989,494 +904,506 @@ export function PatientProfilePage() {
                   tone="condition"
                   label="Chronic Condition Alert"
                 >
-                  ⚠️ CONDITION: {condition.conditionName} (since {formatMonthYear(condition.dateDiagnosed)})
+                  CONDITION: {condition.conditionName} (since {formatMonthYear(condition.dateDiagnosed)})
                 </AlertBanner>
               ))}
 
               {user?.role === 'Doctor' && overdueFollowUp && (
                 <AlertBanner tone="followUp" label="Follow-up Alert">
-                  📌 FOLLOW-UP: {overdueFollowUp.instructions} — overdue
+                  FOLLOW-UP: {overdueFollowUp.instructions} (overdue)
                 </AlertBanner>
               )}
             </div>
           )}
 
           {user?.role === 'Doctor' && followUpLoadFailed && (
-            <p className="mt-3 border-l-4 border-slate-500 bg-slate-100 px-4 py-2 text-sm text-slate-700" role="status">
+            <Banner tone="neutral" role="status">
               Unable to load follow-up alerts.
-            </p>
+            </Banner>
           )}
 
-          <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Allergies</p>
+          {isReceptionist && (
+            <SectionCard title="Check-In" description="Today's queue">
+              <div aria-live="polite" className="space-y-3">
+                {queueStatusLoadState === 'loading' && <LoadingText>Checking today&apos;s queue…</LoadingText>}
 
-            {allergiesLoadState === 'error' ? (
-              <p
-                className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700"
-                role="alert"
-              >
-                Unable to load allergies.
-              </p>
-            ) : allergies.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">No allergies recorded</p>
+                {checkInStatus === 'succeeded' && queueStatus?.isCheckedIn && (
+                  <Banner tone="success" title="Checked In">
+                    <p className="font-semibold">
+                      {patient.fullName} checked in. Queue: {queueStatus.queueNumber}
+                    </p>
+                  </Banner>
+                )}
+
+                {checkInStatus !== 'succeeded' && queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && (
+                  <Banner tone="warning" title="In Today's Queue">
+                    <p className="font-semibold">Already checked in. Queue: {queueStatus.queueNumber}</p>
+                  </Banner>
+                )}
+
+                {checkInMessage && checkInStatus === 'failed' && (
+                  <Banner tone="error" title="Check-In Failed">
+                    {checkInMessage}
+                  </Banner>
+                )}
+
+                {checkInMessage && checkInStatus === 'accepted' && (
+                  <Banner tone="warning" title="Check-In Accepted">
+                    {checkInMessage}
+                  </Banner>
+                )}
+
+                {queueStatusLoadState === 'loaded' &&
+                  queueStatus &&
+                  !queueStatus.isCheckedIn &&
+                  checkInStatus !== 'accepted' && (
+                    <div>
+                      <p className="text-sm text-slate-600">
+                        Adds this patient to today&apos;s waiting queue and gives them a queue number.
+                      </p>
+                      <Button className="mt-3" loading={isCheckingIn} onClick={handleCheckIn}>
+                        {checkInStatus === 'submitting'
+                          ? 'Checking In…'
+                          : checkInStatus === 'awaitingQueue'
+                            ? 'Assigning Queue…'
+                            : 'Check In'}
+                      </Button>
+                    </div>
+                  )}
+
+                {queueStatusLoadState === 'error' && checkInStatus !== 'accepted' && (
+                  <Banner tone="error" title="Queue Status Unavailable">
+                    Unable to check today&apos;s queue status.
+                  </Banner>
+                )}
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard title="Allergies" titleId="allergies-heading">
+            <div className="space-y-4">
+              {allergiesRefreshFailed && (
+                <Banner tone="warning" title="List May Be Out of Date" role="status">
+                  Your change was saved, but the list could not be refreshed. Reload the page to see it.
+                </Banner>
+              )}
+
+              {allergiesLoadState === 'error' ? (
+                <Banner tone="error" role="alert">
+                  Unable to load allergies.
+                </Banner>
+              ) : allergies.length === 0 ? (
+                <EmptyState>
+                  <p>No allergies recorded</p>
+                </EmptyState>
+              ) : (
+                <div className={tableWrapperClassName}>
+                  <table className={tableClassName}>
+                    <thead className={tableHeadClassName}>
+                      <tr>
+                        {['Allergy', 'Severity', 'Notes', 'Date Recorded', ...(canManage ? ['Actions'] : [])].map(
+                          (heading) => (
+                            <th key={heading} scope="col" className={tableHeaderCellClassName}>
+                              {heading}
+                            </th>
+                          ),
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className={tableBodyClassName}>
+                      {allergies.map((allergy) =>
+                        editingAllergyId === allergy.allergyId ? (
+                          <tr key={allergy.allergyId}>
+                            <td colSpan={allergyColumnCount} className="bg-slate-50 px-4 py-4">
+                              <form
+                                onSubmit={(event) => handleEditSubmit(event, allergy.allergyId)}
+                                noValidate
+                                className="grid gap-4 sm:grid-cols-2"
+                              >
+                                {editServerMessage && (
+                                  <Banner tone="error" title="Allergy Not Saved" role="alert" className="sm:col-span-2">
+                                    {editServerMessage}
+                                  </Banner>
+                                )}
+                                <Field
+                                  id={`edit-name-${allergy.allergyId}`}
+                                  label="Allergy Name"
+                                  required
+                                  error={editFieldErrors.allergyName}
+                                >
+                                  {(control) => (
+                                    <input
+                                      {...control}
+                                      type="text"
+                                      value={editForm.allergyName}
+                                      onChange={(event) => {
+                                        setEditForm((prev) => ({ ...prev, allergyName: event.target.value }));
+                                        setEditFieldErrors((prev) => ({ ...prev, allergyName: null }));
+                                      }}
+                                      disabled={editStatus === 'submitting'}
+                                    />
+                                  )}
+                                </Field>
+                                <Field
+                                  id={`edit-severity-${allergy.allergyId}`}
+                                  label="Severity"
+                                  required
+                                  error={editFieldErrors.severity}
+                                >
+                                  {(control) => (
+                                    <select
+                                      {...control}
+                                      value={editForm.severity}
+                                      onChange={(event) => {
+                                        setEditForm((prev) => ({ ...prev, severity: event.target.value as AllergySeverity }));
+                                        setEditFieldErrors((prev) => ({ ...prev, severity: null }));
+                                      }}
+                                      disabled={editStatus === 'submitting'}
+                                    >
+                                      <option value="" disabled>
+                                        Select severity
+                                      </option>
+                                      {SEVERITY_OPTIONS.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </Field>
+                                <Field
+                                  id={`edit-notes-${allergy.allergyId}`}
+                                  label="Notes"
+                                  optional
+                                  className="sm:col-span-2"
+                                >
+                                  {(control) => (
+                                    <textarea
+                                      {...control}
+                                      rows={2}
+                                      value={editForm.notes}
+                                      onChange={(event) => setEditForm((prev) => ({ ...prev, notes: event.target.value }))}
+                                      disabled={editStatus === 'submitting'}
+                                    />
+                                  )}
+                                </Field>
+                                <div className="flex flex-wrap gap-2 sm:col-span-2">
+                                  <Button type="submit" size="sm" loading={editStatus === 'submitting'}>
+                                    {editStatus === 'submitting' ? 'Saving…' : 'Save'}
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={cancelEdit}
+                                    disabled={editStatus === 'submitting'}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </form>
+                            </td>
+                          </tr>
+                        ) : (
+                          <Fragment key={allergy.allergyId}>
+                            <tr>
+                              <td className={tableKeyCellClassName}>{allergy.allergyName}</td>
+                              <td className={tableCellClassName}>
+                                <StatusBadge tone={SEVERITY_TONES[allergy.severity]}>{allergy.severity}</StatusBadge>
+                              </td>
+                              <td className={`break-words ${tableCellClassName}`}>{allergy.notes ?? '-'}</td>
+                              <td className={`whitespace-nowrap ${tableCellClassName}`}>
+                                {formatDate(allergy.recordedAt)}
+                              </td>
+                              {canManage && (
+                                <td className={tableCellClassName}>
+                                  {confirmingRemovalId !== allergy.allergyId && (
+                                    <div className="flex gap-2">
+                                      <Button variant="secondary" size="sm" onClick={() => startEdit(allergy)}>
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => {
+                                          setRemoveServerMessage(null);
+                                          setConfirmingRemovalId(allergy.allergyId);
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                            {canManage && confirmingRemovalId === allergy.allergyId && (
+                              <tr>
+                                <td colSpan={allergyColumnCount} className="bg-slate-50 px-4 py-3">
+                                  <ConfirmPanel
+                                    labelId={`remove-allergy-${allergy.allergyId}`}
+                                    title="Remove Allergy"
+                                    confirmLabel="Confirm"
+                                    busyLabel="Removing…"
+                                    busy={isRemovingAllergy}
+                                    error={removeServerMessage}
+                                    onConfirm={() => handleConfirmRemove(allergy.allergyId)}
+                                    onCancel={() => {
+                                      setRemoveServerMessage(null);
+                                      setConfirmingRemovalId(null);
+                                    }}
+                                  >
+                                    Are you sure you want to remove this allergy? This cannot be undone.
+                                  </ConfirmPanel>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {canManage && (
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                <h3 className={SUB_HEADING_CLASS_NAME}>Add Allergy</h3>
+
+                <div aria-live="polite">
+                  {addStatus === 'failed' && addServerMessage && (
+                    <Banner tone="error" title="Allergy Not Added" className="mt-3">
+                      {addServerMessage}
+                    </Banner>
+                  )}
+                </div>
+
+                <form onSubmit={handleAddSubmit} noValidate className="mt-4 grid max-w-3xl gap-5 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <RequiredLegend />
+                  </div>
+
+                  <Field id="add-allergy-name" label="Allergy Name" required error={addFieldErrors.allergyName}>
+                    {(control) => (
+                      <input
+                        {...control}
+                        type="text"
+                        autoComplete="off"
+                        value={addForm.allergyName}
+                        onChange={(event) => {
+                          setAddForm((prev) => ({ ...prev, allergyName: event.target.value }));
+                          setAddFieldErrors((prev) => ({ ...prev, allergyName: null }));
+                        }}
+                        disabled={addStatus === 'submitting'}
+                      />
+                    )}
+                  </Field>
+
+                  <Field id="add-severity" label="Severity" required error={addFieldErrors.severity}>
+                    {(control) => (
+                      <select
+                        {...control}
+                        value={addForm.severity}
+                        onChange={(event) => {
+                          setAddForm((prev) => ({ ...prev, severity: event.target.value as AllergySeverity }));
+                          setAddFieldErrors((prev) => ({ ...prev, severity: null }));
+                        }}
+                        disabled={addStatus === 'submitting'}
+                      >
+                        <option value="" disabled>
+                          Select severity
+                        </option>
+                        {SEVERITY_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+
+                  <Field id="add-notes" label="Notes" optional className="sm:col-span-2">
+                    {(control) => (
+                      <textarea
+                        {...control}
+                        rows={2}
+                        value={addForm.notes}
+                        onChange={(event) => setAddForm((prev) => ({ ...prev, notes: event.target.value }))}
+                        disabled={addStatus === 'submitting'}
+                      />
+                    )}
+                  </Field>
+
+                  <div className="sm:col-span-2">
+                    <Button type="submit" loading={addStatus === 'submitting'}>
+                      {addStatus === 'submitting' ? 'Saving…' : 'Add Allergy'}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Chronic Conditions" titleId="conditions-heading">
+            {conditionsLoadState === 'error' ? (
+              <Banner tone="error" role="alert">
+                Unable to load chronic conditions.
+              </Banner>
+            ) : conditions.length === 0 ? (
+              <EmptyState>
+                <p>No chronic conditions recorded</p>
+              </EmptyState>
             ) : (
-              <div className="mt-3 overflow-x-auto border border-slate-300">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
+              <div className={tableWrapperClassName}>
+                <table className={tableClassName}>
+                  <thead className={tableHeadClassName}>
                     <tr>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Allergy
-                      </th>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Severity
-                      </th>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Notes
-                      </th>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Date Recorded
-                      </th>
-                      {canManage && (
-                        <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                          Actions
-                        </th>
+                      {['Condition', 'Date Diagnosed', 'Notes', ...(isReceptionist ? ['Actions'] : [])].map(
+                        (heading) => (
+                          <th key={heading} scope="col" className={tableHeaderCellClassName}>
+                            {heading}
+                          </th>
+                        ),
                       )}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {allergies.map((allergy) =>
-                      editingAllergyId === allergy.allergyId ? (
-                        <tr key={allergy.allergyId}>
-                          <td colSpan={canManage ? 5 : 4} className="px-4 py-3">
-                            <form
-                              onSubmit={(event) => handleEditSubmit(event, allergy.allergyId)}
-                              noValidate
-                              className="space-y-3"
-                            >
-                              {editServerMessage && (
-                                <p className="border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                                  {editServerMessage}
-                                </p>
-                              )}
-                              <div>
-                                <label
-                                  htmlFor={`edit-name-${allergy.allergyId}`}
-                                  className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600"
-                                >
-                                  Allergy Name
-                                </label>
-                                <input
-                                  id={`edit-name-${allergy.allergyId}`}
-                                  type="text"
-                                  value={editForm.allergyName}
-                                  onChange={(event) => {
-                                    setEditForm((prev) => ({ ...prev, allergyName: event.target.value }));
-                                    setEditFieldErrors((prev) => ({ ...prev, allergyName: null }));
+                  <tbody className={tableBodyClassName}>
+                    {conditions.map((condition) => (
+                      <Fragment key={condition.conditionId}>
+                        <tr>
+                          <td className={tableKeyCellClassName}>{condition.conditionName}</td>
+                          <td className={`whitespace-nowrap ${tableCellClassName}`}>
+                            {formatDate(condition.dateDiagnosed.slice(0, 10))}
+                          </td>
+                          <td className={`break-words ${tableCellClassName}`}>{condition.notes ?? '-'}</td>
+                          {isReceptionist && (
+                            <td className={tableCellClassName}>
+                              {confirmingConditionRemovalId !== condition.conditionId && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setConditionRemoveServerMessage(null);
+                                    setConfirmingConditionRemovalId(condition.conditionId);
                                   }}
-                                  disabled={editStatus === 'submitting'}
-                                  aria-invalid={editFieldErrors.allergyName ? true : undefined}
-                                  aria-describedby={editFieldErrors.allergyName ? `edit-name-error-${allergy.allergyId}` : undefined}
-                                  className={inputClassName(!!editFieldErrors.allergyName)}
-                                />
-                                {editFieldErrors.allergyName && (
-                                  <p
-                                    id={`edit-name-error-${allergy.allergyId}`}
-                                    className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700"
-                                  >
-                                    {editFieldErrors.allergyName}
-                                  </p>
-                                )}
-                              </div>
-                              <div>
-                                <label
-                                  htmlFor={`edit-severity-${allergy.allergyId}`}
-                                  className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600"
                                 >
-                                  Severity
-                                </label>
-                                <select
-                                  id={`edit-severity-${allergy.allergyId}`}
-                                  value={editForm.severity}
-                                  onChange={(event) =>
-                                    setEditForm((prev) => ({ ...prev, severity: event.target.value as AllergySeverity }))
-                                  }
-                                  disabled={editStatus === 'submitting'}
-                                  className={inputClassName(false)}
-                                >
-                                  {SEVERITY_OPTIONS.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label
-                                  htmlFor={`edit-notes-${allergy.allergyId}`}
-                                  className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600"
-                                >
-                                  Notes
-                                </label>
-                                <textarea
-                                  id={`edit-notes-${allergy.allergyId}`}
-                                  rows={2}
-                                  value={editForm.notes}
-                                  onChange={(event) => setEditForm((prev) => ({ ...prev, notes: event.target.value }))}
-                                  disabled={editStatus === 'submitting'}
-                                  className={inputClassName(false)}
-                                />
-                              </div>
-                              <div className="flex gap-3">
-                                <button
-                                  type="submit"
-                                  disabled={editStatus === 'submitting'}
-                                  className="bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                                >
-                                  {editStatus === 'submitting' ? 'Saving…' : 'Save'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelEdit}
-                                  disabled={editStatus === 'submitting'}
-                                  className="border-2 border-slate-400 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </form>
-                          </td>
-                        </tr>
-                      ) : (
-                        <tr key={allergy.allergyId}>
-                          <td className="px-4 py-2 text-slate-900">{allergy.allergyName}</td>
-                          <td className="px-4 py-2">
-                            <span className={severityBadgeClassName(allergy.severity)}>{allergy.severity}</span>
-                          </td>
-                          <td className="px-4 py-2 text-slate-700">{allergy.notes ?? '—'}</td>
-                          <td className="px-4 py-2 text-slate-700">{formatDate(allergy.recordedAt)}</td>
-                          {canManage && (
-                            <td className="px-4 py-2">
-                              {confirmingRemovalId === allergy.allergyId ? (
-                                <div className="flex flex-col gap-2">
-                                  <p className="text-xs font-medium text-red-700">
-                                    Are you sure you want to remove this allergy?
-                                  </p>
-                                  {removeServerMessage && (
-                                    <p className="text-xs font-medium text-red-700">{removeServerMessage}</p>
-                                  )}
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleConfirmRemove(allergy.allergyId)}
-                                      className="border-2 border-red-700 bg-red-700 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-white hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
-                                    >
-                                      Confirm
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setConfirmingRemovalId(null)}
-                                      className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => startEdit(allergy)}
-                                    className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setRemoveServerMessage(null);
-                                      setConfirmingRemovalId(allergy.allergyId);
-                                    }}
-                                    className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-red-700 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
+                                  Remove
+                                </Button>
                               )}
                             </td>
                           )}
                         </tr>
-                      ),
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-              Chronic Conditions
-            </p>
-
-            {conditionRemoveServerMessage && (
-              <p className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700">
-                {conditionRemoveServerMessage}
-              </p>
-            )}
-
-            {conditionsLoadState === 'error' ? (
-              <p
-                className="mt-3 border-l-2 border-red-600 pl-2 text-sm text-red-700"
-                role="alert"
-              >
-                Unable to load chronic conditions.
-              </p>
-            ) : conditions.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">No chronic conditions recorded</p>
-            ) : (
-              <div className="mt-3 overflow-x-auto border border-slate-300">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Condition
-                      </th>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Date Diagnosed
-                      </th>
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                        Notes
-                      </th>
-                      {isReceptionist && (
-                        <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                          Actions
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {conditions.map((condition) => (
-                      <tr key={condition.conditionId}>
-                        <td className="px-4 py-2 font-medium text-slate-900">{condition.conditionName}</td>
-                        <td className="px-4 py-2 text-slate-700">{formatDate(condition.dateDiagnosed)}</td>
-                        <td className="px-4 py-2 text-slate-700">{condition.notes ?? '—'}</td>
-                        {isReceptionist && (
-                          <td className="px-4 py-2">
-                            {confirmingConditionRemovalId === condition.conditionId ? (
-                              <div className="flex flex-col gap-2">
-                                <p className="text-xs font-medium text-red-700">
-                                  Are you sure you want to remove this condition?
-                                </p>
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConfirmConditionRemove(condition.conditionId)}
-                                    className="border-2 border-red-700 bg-red-700 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-white hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
-                                  >
-                                    Confirm
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmingConditionRemovalId(null)}
-                                    className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-brand-blue hover:text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
+                        {isReceptionist && confirmingConditionRemovalId === condition.conditionId && (
+                          <tr>
+                            <td colSpan={conditionColumnCount} className="bg-slate-50 px-4 py-3">
+                              <ConfirmPanel
+                                labelId={`remove-condition-${condition.conditionId}`}
+                                title="Remove Condition"
+                                confirmLabel="Confirm"
+                                busyLabel="Removing…"
+                                busy={isRemovingCondition}
+                                error={conditionRemoveServerMessage}
+                                onConfirm={() => handleConfirmConditionRemove(condition.conditionId)}
+                                onCancel={() => {
                                   setConditionRemoveServerMessage(null);
-                                  setConfirmingConditionRemovalId(condition.conditionId);
+                                  setConfirmingConditionRemovalId(null);
                                 }}
-                                className="border-2 border-slate-400 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700 hover:border-red-700 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
                               >
-                                Remove
-                              </button>
-                            )}
-                          </td>
+                                Are you sure you want to remove this condition? This cannot be undone.
+                              </ConfirmPanel>
+                            </td>
+                          </tr>
                         )}
-                      </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-          </div>
 
-          {isReceptionist && conditionsLoadState !== 'error' && (
-            <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                Add Condition
-              </p>
+            {isReceptionist && conditionsLoadState !== 'error' && (
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                <h3 className={SUB_HEADING_CLASS_NAME}>Add Condition</h3>
 
-              {conditionAddStatus === 'failed' && conditionAddServerMessage && (
-                <div className="mt-3 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-                  <p className="text-sm text-red-900">{conditionAddServerMessage}</p>
-                </div>
-              )}
-
-              <form onSubmit={handleConditionAddSubmit} noValidate className="mt-3 space-y-4">
-                <div>
-                  <label htmlFor="condition-name" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                    Condition Name
-                  </label>
-                  <input
-                    id="condition-name"
-                    type="text"
-                    autoComplete="off"
-                    maxLength={128}
-                    value={conditionForm.conditionName}
-                    onChange={(event) => {
-                      setConditionForm((previous) => ({ ...previous, conditionName: event.target.value }));
-                      setConditionFieldErrors((previous) => ({ ...previous, conditionName: null }));
-                    }}
-                    disabled={conditionAddStatus === 'submitting'}
-                    aria-invalid={conditionFieldErrors.conditionName ? true : undefined}
-                    aria-describedby={conditionFieldErrors.conditionName ? 'condition-name-error' : undefined}
-                    className={inputClassName(!!conditionFieldErrors.conditionName)}
-                  />
-                  {conditionFieldErrors.conditionName && (
-                    <p id="condition-name-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                      {conditionFieldErrors.conditionName}
-                    </p>
+                <div aria-live="polite">
+                  {conditionAddStatus === 'failed' && conditionAddServerMessage && (
+                    <Banner tone="error" title="Condition Not Added" className="mt-3">
+                      {conditionAddServerMessage}
+                    </Banner>
                   )}
                 </div>
 
-                <div>
-                  <label htmlFor="condition-date-diagnosed" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                    Date Diagnosed
-                  </label>
-                  <input
-                    id="condition-date-diagnosed"
-                    type="date"
-                    max={todayForDateInput()}
-                    value={conditionForm.dateDiagnosed}
-                    onChange={(event) => {
-                      setConditionForm((previous) => ({ ...previous, dateDiagnosed: event.target.value }));
-                      setConditionFieldErrors((previous) => ({ ...previous, dateDiagnosed: null }));
-                    }}
-                    disabled={conditionAddStatus === 'submitting'}
-                    aria-invalid={conditionFieldErrors.dateDiagnosed ? true : undefined}
-                    aria-describedby={conditionFieldErrors.dateDiagnosed ? 'condition-date-error' : undefined}
-                    className={inputClassName(!!conditionFieldErrors.dateDiagnosed)}
-                  />
-                  {conditionFieldErrors.dateDiagnosed && (
-                    <p id="condition-date-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                      {conditionFieldErrors.dateDiagnosed}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="condition-notes" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                    Notes
-                  </label>
-                  <textarea
-                    id="condition-notes"
-                    rows={3}
-                    maxLength={512}
-                    value={conditionForm.notes}
-                    onChange={(event) => setConditionForm((previous) => ({ ...previous, notes: event.target.value }))}
-                    disabled={conditionAddStatus === 'submitting'}
-                    className={inputClassName(false)}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={conditionAddStatus === 'submitting'}
-                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {conditionAddStatus === 'submitting' ? 'Saving…' : 'Add Condition'}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {canManage && (
-            <div className="mt-6 border border-slate-300 bg-white px-6 py-6">
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Add Allergy</p>
-
-              <div aria-live="polite">
-                {addStatus === 'failed' && addServerMessage && (
-                  <div className="mt-3 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-                    <p className="text-sm text-red-900">{addServerMessage}</p>
+                <form onSubmit={handleConditionAddSubmit} noValidate className="mt-4 grid max-w-3xl gap-5 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <RequiredLegend />
                   </div>
-                )}
-              </div>
 
-              <form onSubmit={handleAddSubmit} noValidate className="mt-3 space-y-4">
-                <div>
-                  <label htmlFor="add-allergy-name" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                    Allergy Name
-                  </label>
-                  <input
-                    id="add-allergy-name"
-                    type="text"
-                    autoComplete="off"
-                    value={addForm.allergyName}
-                    onChange={(event) => {
-                      setAddForm((prev) => ({ ...prev, allergyName: event.target.value }));
-                      setAddFieldErrors((prev) => ({ ...prev, allergyName: null }));
-                    }}
-                    disabled={addStatus === 'submitting'}
-                    aria-invalid={addFieldErrors.allergyName ? true : undefined}
-                    aria-describedby={addFieldErrors.allergyName ? 'add-allergy-name-error' : undefined}
-                    className={inputClassName(!!addFieldErrors.allergyName)}
-                  />
-                  {addFieldErrors.allergyName && (
-                    <p id="add-allergy-name-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                      {addFieldErrors.allergyName}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="add-severity" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                    Severity
-                  </label>
-                  <select
-                    id="add-severity"
-                    value={addForm.severity}
-                    onChange={(event) => setAddForm((prev) => ({ ...prev, severity: event.target.value as AllergySeverity }))}
-                    disabled={addStatus === 'submitting'}
-                    className={inputClassName(false)}
+                  <Field
+                    id="condition-name"
+                    label="Condition Name"
+                    required
+                    error={conditionFieldErrors.conditionName}
                   >
-                    {SEVERITY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    {(control) => (
+                      <input
+                        {...control}
+                        type="text"
+                        autoComplete="off"
+                        maxLength={128}
+                        value={conditionForm.conditionName}
+                        onChange={(event) => {
+                          setConditionForm((previous) => ({ ...previous, conditionName: event.target.value }));
+                          setConditionFieldErrors((previous) => ({ ...previous, conditionName: null }));
+                        }}
+                        disabled={conditionAddStatus === 'submitting'}
+                      />
+                    )}
+                  </Field>
 
-                <div>
-                  <label htmlFor="add-notes" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                    Notes
-                  </label>
-                  <textarea
-                    id="add-notes"
-                    rows={2}
-                    value={addForm.notes}
-                    onChange={(event) => setAddForm((prev) => ({ ...prev, notes: event.target.value }))}
-                    disabled={addStatus === 'submitting'}
-                    className={inputClassName(false)}
-                  />
-                </div>
+                  <Field
+                    id="condition-date-diagnosed"
+                    label="Date Diagnosed"
+                    required
+                    hint={conditionForm.dateDiagnosed ? `Selected: ${formatDate(conditionForm.dateDiagnosed)}` : 'Today or earlier.'}
+                    error={conditionFieldErrors.dateDiagnosed}
+                  >
+                    {(control) => (
+                      <input
+                        {...control}
+                        type="date"
+                        max={clinicTodayForDateInput()}
+                        value={conditionForm.dateDiagnosed}
+                        onChange={(event) => {
+                          setConditionForm((previous) => ({ ...previous, dateDiagnosed: event.target.value }));
+                          setConditionFieldErrors((previous) => ({ ...previous, dateDiagnosed: null }));
+                        }}
+                        disabled={conditionAddStatus === 'submitting'}
+                      />
+                    )}
+                  </Field>
 
-                <button
-                  type="submit"
-                  disabled={addStatus === 'submitting'}
-                  className="bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                >
-                  {addStatus === 'submitting' ? 'Saving…' : 'Add Allergy'}
-                </button>
-              </form>
-            </div>
-          )}
+                  <Field id="condition-notes" label="Notes" optional className="sm:col-span-2">
+                    {(control) => (
+                      <textarea
+                        {...control}
+                        rows={3}
+                        maxLength={512}
+                        value={conditionForm.notes}
+                        onChange={(event) => setConditionForm((previous) => ({ ...previous, notes: event.target.value }))}
+                        disabled={conditionAddStatus === 'submitting'}
+                      />
+                    )}
+                  </Field>
+
+                  <div className="sm:col-span-2">
+                    <Button type="submit" loading={conditionAddStatus === 'submitting'}>
+                      {conditionAddStatus === 'submitting' ? 'Saving…' : 'Add Condition'}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </SectionCard>
         </>
       )}
     </DashboardShell>

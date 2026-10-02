@@ -29,10 +29,21 @@ public static class AppSession
     // Clicks a dashboard navigation link by its target path. Matching on href
     // rather than link text, because the dashboard links are upper-cased by CSS
     // and Selenium's By.LinkText matches the rendered (transformed) text.
+    //
+    // Finding and clicking happen inside one retried step: every page renders its own
+    // sidebar, so a link found just before a route change is replaced by the time it is
+    // clicked. Waiting for the address afterwards keeps two clicks in a row from overlapping.
     public static void ClickNavLink(IWebDriver driver, string href)
     {
         var selector = By.CssSelector($"a[href='{href}']");
-        new WebDriverWait(driver, TimeSpan.FromSeconds(10)).Until(d => d.FindElements(selector).Count > 0);
-        driver.FindElement(selector).Click();
+        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException), typeof(NoSuchElementException));
+
+        wait.Until(d =>
+        {
+            d.FindElement(selector).Click();
+            return true;
+        });
+        wait.Until(d => new Uri(d.Url).AbsolutePath == href);
     }
 }

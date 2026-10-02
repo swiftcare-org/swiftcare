@@ -8,7 +8,23 @@ import {
   type Prescription,
 } from '../api/prescriptions';
 import { getTodayQueue, type TodayQueueEntry, type TodayQueueStatus } from '../api/queue';
+import { Banner } from '../components/ui/Banner';
+import { ButtonLink } from '../components/ui/Button';
+import { EmptyState, LoadingText } from '../components/ui/Feedback';
+import { SectionCard } from '../components/ui/SectionCard';
+import { StatusBadge, type StatusBadgeTone } from '../components/ui/StatusBadge';
+import {
+  tableBodyClassName,
+  tableCellClassName,
+  tableClassName,
+  tableHeadClassName,
+  tableHeaderCellClassName,
+  tableKeyCellClassName,
+  tableWrapperClassName,
+  textLinkClassName,
+} from '../components/ui/table';
 import { DashboardShell } from '../dashboards/DashboardShell';
+import { formatDateTime, formatTime } from '../lib/format';
 
 type QueueLoadState = 'loading' | 'loaded' | 'error';
 type PrescriptionDisplayState = Prescription['status'] | 'NOT_CREATED' | 'UNAVAILABLE';
@@ -25,50 +41,17 @@ interface PendingPrescriptionRow {
 
 interface StatusPresentation {
   label: string;
-  className: string;
+  tone: StatusBadgeTone;
 }
 
 const POLL_INTERVAL_MS = 5_000;
-const CLINIC_TIME_ZONE = 'Asia/Colombo';
 const PATIENT_UNAVAILABLE = 'Patient unavailable';
 
 const STATUS_PRESENTATIONS: Record<TodayQueueStatus, StatusPresentation> = {
-  WAITING: {
-    label: '⏳ WAITING',
-    className: 'border-amber-300 bg-amber-50 text-amber-900',
-  },
-  IN_CONSULTATION: {
-    label: '🔵 IN CONSULTATION',
-    className: 'border-blue-300 bg-blue-50 text-blue-900',
-  },
-  COMPLETED: {
-    label: '✅ COMPLETED',
-    className: 'border-emerald-300 bg-emerald-50 text-emerald-900',
-  },
+  WAITING: { label: 'WAITING', tone: 'warning' },
+  IN_CONSULTATION: { label: 'IN CONSULTATION', tone: 'info' },
+  COMPLETED: { label: 'COMPLETED', tone: 'success' },
 };
-
-const checkInTimeFormatter = new Intl.DateTimeFormat('en-LK', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZone: CLINIC_TIME_ZONE,
-});
-
-const prescriptionTimeFormatter = new Intl.DateTimeFormat('en-LK', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: CLINIC_TIME_ZONE,
-});
-
-function formatCheckInTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : checkInTimeFormatter.format(date);
-}
-
-function formatPrescriptionTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'Time unavailable' : prescriptionTimeFormatter.format(date);
-}
 
 async function addPatientNames(
   entries: TodayQueueEntry[],
@@ -143,19 +126,17 @@ function prescriptionCell(row: QueueDisplayRow) {
   if (row.status !== 'COMPLETED') {
     return (
       <span className="text-slate-500" title="Available after the consultation is completed">
-        —
+        <span aria-hidden="true">-</span>
+        <span className="sr-only">Available after the consultation is completed</span>
       </span>
     );
   }
 
-  if (row.prescriptionState === 'PENDING') {
+  if (row.prescriptionState === 'PENDING' || row.prescriptionState === 'NOT_CREATED') {
     return (
-      <Link
-        to={`/prescriptions/queue/${row.queueId}`}
-        className="inline-block border-2 border-brand-blue px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-brand-blue hover:bg-blue-50"
-      >
+      <ButtonLink to={`/prescriptions/queue/${row.queueId}`} variant="secondary" size="sm">
         View Prescription
-      </Link>
+      </ButtonLink>
     );
   }
 
@@ -163,20 +144,12 @@ function prescriptionCell(row: QueueDisplayRow) {
     return (
       <Link
         to={`/prescriptions/queue/${row.queueId}`}
-        className="inline-block border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
+        title="View the dispensed prescription"
+        className="inline-flex focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
       >
-        ✅ DISPENSED
-      </Link>
-    );
-  }
-
-  if (row.prescriptionState === 'NOT_CREATED') {
-    return (
-      <Link
-        to={`/prescriptions/queue/${row.queueId}`}
-        className="inline-block border-2 border-brand-blue px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-brand-blue hover:bg-blue-50"
-      >
-        View Prescription
+        <StatusBadge tone="success" className="underline underline-offset-2">
+          DISPENSED
+        </StatusBadge>
       </Link>
     );
   }
@@ -262,155 +235,117 @@ export function QueueManagementPage() {
   }, []);
 
   return (
-    <DashboardShell sectionLabel="Queue Management">
-      <Link
-        to="/reception"
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        ← Back to Dashboard
-      </Link>
-
-      <div className="mt-6 flex items-end justify-between gap-4 border-b border-slate-300 pb-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Today</p>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">Full Patient Queue</h2>
-        </div>
-        <p className="text-xs text-slate-500">Refreshes every 5 seconds</p>
-      </div>
-
-      <div aria-live="polite" className="mt-6">
+    <DashboardShell
+      sectionLabel="Queue"
+    >
+      <div aria-live="polite" className="space-y-6">
         {errorMessage && (
-          <div className="mb-4 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3" role="alert">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">
-              Queue Refresh Failed
-            </p>
-            <p className="mt-1 text-sm text-red-900">{errorMessage}</p>
-          </div>
+          <Banner tone="error" title="Queue Refresh Failed" role="alert">
+            {errorMessage}
+          </Banner>
         )}
 
-        {loadState === 'loading' && <p className="text-sm text-slate-500">Loading today’s queue…</p>}
-
         {loadState === 'loaded' && (
-          <section className="mb-8" aria-labelledby="pending-prescriptions-heading">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                  Medicines Counter
-                </p>
-                <h3 id="pending-prescriptions-heading" className="mt-1 text-lg font-semibold text-slate-900">
-                  Pending Prescriptions
-                </h3>
-              </div>
-              <p className="text-xs text-slate-500">Oldest prescription first</p>
-            </div>
-
+          <SectionCard
+            title="Pending Prescriptions"
+            titleId="pending-prescriptions-heading"
+            description="Medicines counter. Oldest prescription first."
+          >
             {pendingLoadFailed ? (
-              <p className="border-l-4 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
+              <Banner tone="error" role="alert">
                 Unable to load pending prescriptions. Please try again.
-              </p>
+              </Banner>
             ) : pendingRows.length === 0 ? (
-              <p className="border-l-4 border-emerald-700 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
-                All prescriptions dispensed today
-              </p>
+              <Banner tone="success">
+                <p className="font-semibold">All prescriptions dispensed today</p>
+              </Banner>
             ) : (
-              <ul className="divide-y divide-slate-200 border border-slate-300 bg-white">
+              <ul className="divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200 bg-white">
                 {pendingRows.map(({ prescription, queueEntry }) => (
                   <li
                     key={prescription.id}
-                    className="flex flex-wrap items-center justify-between gap-4 px-4 py-3"
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                   >
-                    <div>
-                      <p className="font-semibold text-slate-900">
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold text-slate-900">
                         {queueEntry.queueNumber} · {queueEntry.patientName}
                       </p>
                       <p className="mt-1 text-xs text-slate-600">
-                        Prescribed {formatPrescriptionTime(prescription.createdAt)} by {prescription.doctorName}
+                        Prescribed {formatDateTime(prescription.createdAt)} by {prescription.doctorName}
                       </p>
                     </div>
-                    <Link
-                      to={`/prescriptions/queue/${queueEntry.queueId}`}
-                      className="border-2 border-brand-blue px-3 py-2 text-xs font-bold uppercase tracking-[0.1em] text-brand-blue hover:bg-blue-50"
-                    >
+                    <ButtonLink to={`/prescriptions/queue/${queueEntry.queueId}`} variant="secondary" size="sm">
                       View Prescription
-                    </Link>
+                    </ButtonLink>
                   </li>
                 ))}
               </ul>
             )}
-          </section>
+          </SectionCard>
         )}
 
-        {loadState === 'loaded' && rows.length === 0 && (
-          <div className="border-t-4 border-b border-slate-400 bg-slate-50 px-6 py-3">
-            <p className="text-sm text-slate-700">No patients in today's queue yet</p>
-          </div>
-        )}
+        <SectionCard title="Full Patient Queue" description="Today. Refreshes every 5 seconds.">
+          {loadState === 'loading' && <LoadingText>Loading today’s queue…</LoadingText>}
 
-        {loadState === 'loaded' && rows.length > 0 && (
-          <div className="overflow-x-auto border border-slate-300">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  {['Queue Number', 'Patient', 'Check-in Time', 'Status', 'Room', 'Doctor', 'Prescription'].map(
-                    (heading) => (
-                      <th
-                        key={heading}
-                        scope="col"
-                        className="whitespace-nowrap px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600"
-                      >
-                        {heading}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {rows.map((row) => {
-                  const status = STATUS_PRESENTATIONS[row.status];
+          {loadState === 'error' && (
+            <EmptyState>
+              <p>Today’s queue could not be loaded. It will be retried automatically.</p>
+            </EmptyState>
+          )}
 
-                  return (
-                    <tr key={row.queueId}>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
-                        {row.queueNumber}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        {row.patientName === PATIENT_UNAVAILABLE ? (
-                          <span className="text-slate-500">{row.patientName}</span>
-                        ) : (
-                          <Link
-                            to={`/patients/${row.patientId}`}
-                            className="text-brand-blue hover:text-brand-blue-dark hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-                          >
-                            {row.patientName}
-                          </Link>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                        {formatCheckInTime(row.checkedInAt)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <span
-                          className={`inline-flex border px-2 py-1 text-xs font-bold ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                        {row.roomNumber ?? '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                        {row.doctorName ?? '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        {prescriptionCell(row)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+          {loadState === 'loaded' && rows.length === 0 && (
+            <EmptyState>
+              <p>No patients in today's queue yet</p>
+            </EmptyState>
+          )}
+
+          {loadState === 'loaded' && rows.length > 0 && (
+            <div className={tableWrapperClassName}>
+              <table className={tableClassName}>
+                <thead className={tableHeadClassName}>
+                  <tr>
+                    {['Queue Number', 'Patient', 'Check-in Time', 'Status', 'Room', 'Doctor', 'Prescription'].map(
+                      (heading) => (
+                        <th key={heading} scope="col" className={tableHeaderCellClassName}>
+                          {heading}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody className={tableBodyClassName}>
+                  {rows.map((row) => {
+                    const status = STATUS_PRESENTATIONS[row.status];
+
+                    return (
+                      <tr key={row.queueId}>
+                        <td className={`whitespace-nowrap ${tableKeyCellClassName}`}>{row.queueNumber}</td>
+                        <td className={tableCellClassName}>
+                          {row.patientName === PATIENT_UNAVAILABLE ? (
+                            <span className="text-slate-500">{row.patientName}</span>
+                          ) : (
+                            <Link to={`/patients/${row.patientId}`} className={textLinkClassName}>
+                              {row.patientName}
+                            </Link>
+                          )}
+                        </td>
+                        <td className={`whitespace-nowrap ${tableCellClassName}`}>
+                          {formatTime(row.checkedInAt)}
+                        </td>
+                        <td className={`whitespace-nowrap ${tableCellClassName}`}>
+                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                        </td>
+                        <td className={`whitespace-nowrap ${tableCellClassName}`}>{row.roomNumber ?? '-'}</td>
+                        <td className={tableCellClassName}>{row.doctorName ?? '-'}</td>
+                        <td className={`whitespace-nowrap ${tableCellClassName}`}>{prescriptionCell(row)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
       </div>
     </DashboardShell>
   );

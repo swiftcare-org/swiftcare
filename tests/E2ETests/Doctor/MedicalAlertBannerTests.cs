@@ -53,16 +53,16 @@ public class MedicalAlertBannerTests : SeleniumTestBase
             profile.MedicalAlertLabelsInOrder);
 
         var messages = profile.MedicalAlertMessagesInOrder;
-        Assert.Contains(messages, message => message.Contains("ALLERGY: Penicillin — Severe"));
-        Assert.Contains(messages, message => message.Contains("ALLERGY: Latex — Mild"));
-        Assert.Equal("⚠️ CONDITION: Type 2 Diabetes (since Jan 2022)", messages[2]);
-        Assert.Equal($"📌 FOLLOW-UP: {followUpInstructions} — overdue", messages[3]);
+        Assert.Contains(messages, message => message.Contains("ALLERGY: Penicillin (Severe)"));
+        Assert.Contains(messages, message => message.Contains("ALLERGY: Latex (Mild)"));
+        Assert.Equal("CONDITION: Type 2 Diabetes (since Jan 2022)", messages[2]);
+        Assert.Equal($"FOLLOW-UP: {followUpInstructions} (overdue)", messages[3]);
 
         var classes = profile.MedicalAlertClassNamesInOrder;
         Assert.Contains("border-red-700", classes[0]);
         Assert.Contains("border-red-700", classes[1]);
         Assert.Contains("border-amber-600", classes[2]);
-        Assert.Contains("border-blue-700", classes[3]);
+        Assert.Contains("border-brand-blue", classes[3]);
     }
 
     [Fact]

@@ -10,6 +10,7 @@ import { WaitingRoomDisplayPage } from './pages/WaitingRoomDisplayPage';
 import { ConsultationPage } from './pages/ConsultationPage';
 import { PrescriptionPage } from './pages/PrescriptionPage';
 import { PrescriptionDetailsPage } from './pages/PrescriptionDetailsPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -116,7 +117,8 @@ function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

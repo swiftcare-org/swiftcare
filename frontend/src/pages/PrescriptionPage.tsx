@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { getAllergies, type Allergy } from '../api/allergies';
 import { ApiError } from '../api/client';
 import {
@@ -11,7 +11,15 @@ import {
   type PrescriptionMedicineInput,
 } from '../api/prescriptions';
 import { AlertBanner } from '../components/AlertBanner';
+import { Banner } from '../components/ui/Banner';
+import { Button, ButtonLink } from '../components/ui/Button';
+import { ConfirmPanel } from '../components/ui/ConfirmPanel';
+import { EmptyState, LoadingText } from '../components/ui/Feedback';
+import { Field, RequiredLegend } from '../components/ui/Field';
+import { SectionCard } from '../components/ui/SectionCard';
+import { StatusBadge } from '../components/ui/StatusBadge';
 import { DashboardShell } from '../dashboards/DashboardShell';
+import { formatDateTime } from '../lib/format';
 import { useAuth } from '../auth/useAuth';
 import {
   findPendingPrescriptionContext,
@@ -35,8 +43,19 @@ interface RemovalTarget {
   medicineName: string;
 }
 
-const inputClassName =
-  'mt-1.5 block w-full border-2 border-slate-400 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2';
+type RequiredMedicineField = 'medicineName' | 'dosage' | 'frequency' | 'duration';
+
+const REQUIRED_MEDICINE_FIELDS: {
+  field: RequiredMedicineField;
+  label: string;
+  maxLength: number;
+  hint?: string;
+}[] = [
+  { field: 'medicineName', label: 'Medicine name', maxLength: 200 },
+  { field: 'dosage', label: 'Dosage', maxLength: 100, hint: 'For example 500 mg.' },
+  { field: 'frequency', label: 'Frequency', maxLength: 100, hint: 'For example twice a day.' },
+  { field: 'duration', label: 'Duration', maxLength: 100, hint: 'For example 5 days.' },
+];
 
 function newMedicine(): MedicineDraft {
   return {
@@ -47,13 +66,6 @@ function newMedicine(): MedicineDraft {
     duration: '',
     instructions: '',
   };
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('en-LK', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
 }
 
 export function PrescriptionPage() {
@@ -78,6 +90,9 @@ export function PrescriptionPage() {
   const [itemChangeState, setItemChangeState] = useState<ItemChangeState>('idle');
   const [itemMessage, setItemMessage] = useState<string | null>(null);
   const [itemMessageTone, setItemMessageTone] = useState<'success' | 'error'>('success');
+  // Set once a submit finds gaps, so the empty required fields are pointed out one by one.
+  const [draftValidated, setDraftValidated] = useState(false);
+  const [additionValidated, setAdditionValidated] = useState(false);
 
   const hasPrescriptionContext = isPrescriptionContext(context);
 
@@ -229,6 +244,7 @@ export function PrescriptionPage() {
       || !additionDraft.frequency.trim()
       || !additionDraft.duration.trim()
     ) {
+      setAdditionValidated(true);
       setItemMessageTone('error');
       setItemMessage('Complete the medicine name, dosage, frequency, and duration');
       return;
@@ -338,6 +354,7 @@ export function PrescriptionPage() {
           || !medicine.duration.trim(),
       )
     ) {
+      setDraftValidated(true);
       setSubmissionState('failed');
       setMessage('Complete the medicine name, dosage, frequency, and duration');
       return;
@@ -379,451 +396,327 @@ export function PrescriptionPage() {
     }
   }
 
+  const isSubmitting = submissionState === 'submitting';
+  const itemBusy = itemChangeState !== 'idle';
+
+  function removalPanel(target: RemovalTarget) {
+    return (
+      <ConfirmPanel
+        labelId={`remove-medicine-${target.id}`}
+        title="Remove Medicine"
+        confirmLabel="Confirm Remove"
+        busyLabel="Removing…"
+        busy={itemChangeState === 'removing'}
+        onConfirm={() => void confirmMedicineRemoval()}
+        onCancel={() => setRemovalTarget(null)}
+        className="mt-4"
+      >
+        Remove {target.medicineName} from this prescription?
+      </ConfirmPanel>
+    );
+  }
+
+  function medicineFields(
+    draft: MedicineDraft,
+    showMissing: boolean,
+    disabled: boolean,
+    onChange: (field: keyof Omit<MedicineDraft, 'clientId'>, value: string) => void,
+  ) {
+    const missing = (value: string) => (showMissing && !value.trim() ? 'This field is required.' : null);
+
+    return (
+      <div className="grid gap-5 sm:grid-cols-2">
+        {REQUIRED_MEDICINE_FIELDS.map(({ field, label, maxLength, hint }) => (
+          <Field
+            key={field}
+            id={`${draft.clientId}-${field}`}
+            label={label}
+            required
+            hint={hint}
+            error={missing(draft[field])}
+          >
+            {(control) => (
+              <input
+                {...control}
+                type="text"
+                autoComplete="off"
+                value={draft[field]}
+                onChange={(event) => onChange(field, event.target.value)}
+                maxLength={maxLength}
+                disabled={disabled}
+              />
+            )}
+          </Field>
+        ))}
+        <Field id={`${draft.clientId}-instructions`} label="Instructions" optional className="sm:col-span-2">
+          {(control) => (
+            <textarea
+              {...control}
+              value={draft.instructions}
+              onChange={(event) => onChange('instructions', event.target.value)}
+              maxLength={500}
+              rows={2}
+              disabled={disabled}
+            />
+          )}
+        </Field>
+      </div>
+    );
+  }
+
   return (
-    <DashboardShell sectionLabel="Prescription">
-      <section className="mt-6 border-t-4 border-b border-brand-blue bg-blue-50 px-6 py-5">
-        <h1 className="text-xl font-semibold text-slate-900">Prescription</h1>
-        {context?.completed && (
-          <p className="mt-2 text-sm font-semibold text-emerald-800">
-            Consultation completed successfully.
-          </p>
-        )}
-        {context?.queueNumber && (
-          <p className="mt-2 text-sm text-slate-700">
+    <DashboardShell sectionLabel="Prescription" backLink={{ to: '/doctor', destination: 'Dashboard' }}>
+      {context?.completed && (
+        <Banner tone="success" title="Consultation Completed">
+          Consultation completed successfully.
+        </Banner>
+      )}
+
+      {context?.queueNumber && (
+        <Banner tone="info" title="Prescription For">
+          <p className="break-words text-lg font-semibold text-slate-900" data-testid="prescription-context">
             {context.queueNumber} {context.patientName}
           </p>
-        )}
-      </section>
+        </Banner>
+      )}
 
       {contextLoadState === 'loading' ? (
-        <p className="mt-6 text-sm text-slate-600">Recovering your pending prescription...</p>
+        <LoadingText>Recovering your pending prescription…</LoadingText>
       ) : contextLoadState === 'error' ? (
-        <section className="mt-6 border border-red-300 bg-red-50 px-6 py-6" role="alert">
-          <p className="text-sm text-red-900">
-            Unable to check for a pending prescription. Please try again.
-          </p>
-        </section>
+        <Banner tone="error" title="Prescription Unavailable" role="alert">
+          Unable to check for a pending prescription. Please try again.
+        </Banner>
       ) : !hasPrescriptionContext ? (
-        <section className="mt-6 border border-slate-300 bg-white px-6 py-6">
+        <SectionCard title="No Prescription to Write">
           <p className="text-sm text-slate-700">
-            Prescription details are unavailable. Complete a consultation before creating
-            a prescription.
+            Prescription details are unavailable. Complete a consultation before creating a prescription.
           </p>
-          <Link
-            to="/doctor"
-            className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-          >
-            Back to Doctor Dashboard
-          </Link>
-        </section>
+          <ButtonLink to="/doctor" variant="secondary" className="mt-4">
+            Go to Dashboard
+          </ButtonLink>
+        </SectionCard>
       ) : (
         <>
-          <section className="mt-6 space-y-3" aria-label="Allergy warnings">
+          <section className="space-y-3 empty:hidden" aria-label="Allergy warnings">
             {allergies.map((allergy) => (
               <AlertBanner key={allergy.allergyId} tone="allergy" label="Allergy Warning">
-                ⚠️ WARNING: Patient is allergic to {allergy.allergyName} ({allergy.severity})
+                WARNING: Patient is allergic to {allergy.allergyName} ({allergy.severity})
               </AlertBanner>
             ))}
           </section>
 
           {referenceLoadState === 'error' && (
-            <p
-              className="mt-4 border-l-4 border-amber-600 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-              role="status"
-            >
-              Some patient reference information could not be loaded. You can retry by
-              reopening this page.
-            </p>
+            <Banner tone="warning" title="Some Information Is Missing" role="status">
+              Some patient reference information could not be loaded. Reload this page to try again.
+            </Banner>
           )}
 
-          <section className="mt-6 border border-slate-300 bg-white px-6 py-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Medicines</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Add every medicine included in this prescription.
-                </p>
-              </div>
-              {submissionState !== 'saved' ? (
-                <button
-                  type="button"
+          <SectionCard
+            title="Medicines"
+            description={
+              submissionState === 'saved'
+                ? undefined
+                : 'Add every medicine included in this prescription, then save it.'
+            }
+            actions={
+              submissionState !== 'saved' ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={isSubmitting}
                   onClick={() => setMedicines((current) => [...current, newMedicine()])}
-                  className="border-2 border-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
                 >
                   Add Medicine
-                </button>
+                </Button>
               ) : savedPrescription?.status === 'PENDING' && !additionDraft ? (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={itemBusy}
                   onClick={() => {
                     setAdditionDraft(newMedicine());
+                    setAdditionValidated(false);
                     setItemMessage(null);
                   }}
-                  disabled={itemChangeState !== 'idle'}
-                  className="border-2 border-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
                 >
                   Add Medicine
-                </button>
-              ) : null}
-            </div>
-
+                </Button>
+              ) : null
+            }
+          >
             {submissionState !== 'saved' && (
-              <form className="mt-5 space-y-5" noValidate onSubmit={handleSubmit}>
-              {medicines.length === 0 && (
-                <p className="border border-dashed border-slate-400 px-4 py-5 text-sm text-slate-600">
-                  No medicines added.
-                </p>
-              )}
+              <form className="max-w-3xl space-y-5" noValidate onSubmit={handleSubmit}>
+                {medicines.length === 0 ? (
+                  <EmptyState>
+                    <p>No medicines added. Select Add Medicine to start.</p>
+                  </EmptyState>
+                ) : (
+                  <RequiredLegend />
+                )}
 
-              {medicines.map((medicine, index) => (
-                <fieldset key={medicine.clientId} className="border border-slate-300 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <legend className="px-1 text-sm font-bold text-slate-800">
+                {medicines.map((medicine, index) => (
+                  <fieldset key={medicine.clientId} className="rounded-md border border-slate-200 px-4 pb-4 pt-2">
+                    <legend className="px-1.5 text-sm font-semibold text-slate-700">
                       Medicine {index + 1}
                     </legend>
-                    <button
-                      type="button"
-                      onClick={() => setRemovalTarget({
-                        source: 'draft',
-                        id: medicine.clientId,
-                        medicineName: medicine.medicineName.trim() || `Medicine ${index + 1}`,
-                      })}
-                      disabled={submissionState === 'submitting'}
-                      className="text-xs font-bold uppercase tracking-[0.12em] text-red-700 hover:text-red-900 disabled:text-slate-400"
-                    >
-                      Remove
-                    </button>
-                  </div>
 
-                  <div className="mt-3 grid gap-4 md:grid-cols-2">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Medicine name
-                      <input
-                        value={medicine.medicineName}
-                        onChange={(event) =>
-                          updateMedicine(medicine.clientId, 'medicineName', event.target.value)
-                        }
-                        maxLength={200}
-                        required
-                        disabled={submissionState === 'submitting'}
-                        className={inputClassName}
-                      />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-700">
-                      Dosage
-                      <input
-                        value={medicine.dosage}
-                        onChange={(event) =>
-                          updateMedicine(medicine.clientId, 'dosage', event.target.value)
-                        }
-                        maxLength={100}
-                        required
-                        disabled={submissionState === 'submitting'}
-                        className={inputClassName}
-                      />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-700">
-                      Frequency
-                      <input
-                        value={medicine.frequency}
-                        onChange={(event) =>
-                          updateMedicine(medicine.clientId, 'frequency', event.target.value)
-                        }
-                        maxLength={100}
-                        required
-                        disabled={submissionState === 'submitting'}
-                        className={inputClassName}
-                      />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-700">
-                      Duration
-                      <input
-                        value={medicine.duration}
-                        onChange={(event) =>
-                          updateMedicine(medicine.clientId, 'duration', event.target.value)
-                        }
-                        maxLength={100}
-                        required
-                        disabled={submissionState === 'submitting'}
-                        className={inputClassName}
-                      />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-700 md:col-span-2">
-                      Instructions (optional)
-                      <textarea
-                        value={medicine.instructions}
-                        onChange={(event) =>
-                          updateMedicine(medicine.clientId, 'instructions', event.target.value)
-                        }
-                        maxLength={500}
-                        rows={2}
-                        disabled={submissionState === 'submitting'}
-                        className={inputClassName}
-                      />
-                    </label>
-                  </div>
-                </fieldset>
-              ))}
+                    {medicineFields(medicine, draftValidated, isSubmitting, (field, value) =>
+                      updateMedicine(medicine.clientId, field, value),
+                    )}
 
-              {removalTarget?.source === 'draft' && (
-                <div
-                  className="border-l-4 border-amber-600 bg-amber-50 px-4 py-3"
-                  role="alertdialog"
-                >
-                  <p className="text-sm font-semibold text-amber-950">
-                    Remove {removalTarget.medicineName} from this prescription?
-                  </p>
-                  <div className="mt-3 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void confirmMedicineRemoval()}
-                      className="bg-red-700 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-red-800"
-                    >
-                      Confirm Remove
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRemovalTarget(null)}
-                      className="border border-slate-400 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
+                    {removalTarget?.source === 'draft' && removalTarget.id === medicine.clientId ? (
+                      removalPanel(removalTarget)
+                    ) : (
+                      <div className="mt-4">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={isSubmitting}
+                          onClick={() => setRemovalTarget({
+                            source: 'draft',
+                            id: medicine.clientId,
+                            medicineName: medicine.medicineName.trim() || `Medicine ${index + 1}`,
+                          })}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    )}
+                  </fieldset>
+                ))}
 
-              {message && (
-                <p
-                  className="border-l-4 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900"
-                  role="alert"
-                >
-                  {message}
-                </p>
-              )}
+                {message && (
+                  <Banner tone="error" role="alert">
+                    {message}
+                  </Banner>
+                )}
 
-              <button
-                type="submit"
-                disabled={submissionState === 'submitting'}
-                className="bg-brand-blue px-5 py-3 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {submissionState === 'submitting' ? 'Saving…' : 'Save Prescription'}
-              </button>
-            </form>
+                <Button type="submit" loading={isSubmitting}>
+                  {isSubmitting ? 'Saving…' : 'Save Prescription'}
+                </Button>
+              </form>
             )}
 
             {savedPrescription && (
-              <div className="mt-5 space-y-5">
+              <div className="space-y-5">
                 {savedPrescription.status === 'DISPENSED' && (
-                  <p
-                    className="border-l-4 border-slate-600 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-800"
-                    role="status"
-                  >
+                  <Banner tone="neutral" role="status">
                     Cannot modify a dispensed prescription
-                  </p>
+                  </Banner>
                 )}
 
                 <ul className="space-y-3" aria-label="Prescription medicines">
-                  {savedPrescription.medicines.map((medicine) => (
-                    <li key={medicine.id} className="border border-slate-300 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="text-sm text-slate-700">
-                          <p className="font-semibold text-slate-900">{medicine.medicineName}</p>
-                          <p className="mt-1">
-                            {medicine.dosage}, {medicine.frequency}, {medicine.duration}
-                          </p>
-                          {medicine.instructions && (
-                            <p className="mt-1 text-slate-600">{medicine.instructions}</p>
+                  {savedPrescription.medicines.map((medicine) => {
+                    const confirming =
+                      removalTarget?.source === 'saved' && removalTarget.id === medicine.id;
+
+                    return (
+                      <li key={medicine.id} className="rounded-md border border-slate-200 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 break-words text-sm text-slate-700">
+                            <p className="font-semibold text-slate-900" data-testid="medicine-name">
+                              {medicine.medicineName}
+                            </p>
+                            <p className="mt-1">
+                              {medicine.dosage}, {medicine.frequency}, {medicine.duration}
+                            </p>
+                            {medicine.instructions && (
+                              <p className="mt-1 text-slate-600">{medicine.instructions}</p>
+                            )}
+                          </div>
+                          {savedPrescription.status === 'PENDING' && !confirming && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={itemBusy}
+                              onClick={() => setRemovalTarget({
+                                source: 'saved',
+                                id: medicine.id,
+                                medicineName: medicine.medicineName,
+                              })}
+                            >
+                              Remove
+                            </Button>
                           )}
                         </div>
-                        {savedPrescription.status === 'PENDING' && (
-                          <button
-                            type="button"
-                            onClick={() => setRemovalTarget({
-                              source: 'saved',
-                              id: medicine.id,
-                              medicineName: medicine.medicineName,
-                            })}
-                            disabled={itemChangeState !== 'idle'}
-                            className="text-xs font-bold uppercase tracking-[0.12em] text-red-700 hover:text-red-900 disabled:text-slate-400"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
+                        {confirming && removalTarget && removalPanel(removalTarget)}
+                      </li>
+                    );
+                  })}
                 </ul>
 
-                {removalTarget?.source === 'saved' && (
-                  <div
-                    className="border-l-4 border-amber-600 bg-amber-50 px-4 py-3"
-                    role="alertdialog"
-                  >
-                    <p className="text-sm font-semibold text-amber-950">
-                      Remove {removalTarget.medicineName} from this prescription?
-                    </p>
-                    <div className="mt-3 flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void confirmMedicineRemoval()}
-                        disabled={itemChangeState !== 'idle'}
-                        className="bg-red-700 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-red-800 disabled:bg-slate-400"
-                      >
-                        Confirm Remove
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRemovalTarget(null)}
-                        disabled={itemChangeState !== 'idle'}
-                        className="border border-slate-400 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 disabled:text-slate-400"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {additionDraft && savedPrescription.status === 'PENDING' && (
-                  <form
-                    className="border border-slate-300 p-4"
-                    noValidate
-                    onSubmit={handleAddSavedMedicine}
-                  >
-                    <h3 className="text-sm font-bold text-slate-900">Add another medicine</h3>
-                    <div className="mt-3 grid gap-4 md:grid-cols-2">
-                      <label className="text-sm font-semibold text-slate-700">
-                        Medicine name
-                        <input
-                          value={additionDraft.medicineName}
-                          onChange={(event) =>
-                            updateAdditionDraft('medicineName', event.target.value)
-                          }
-                          maxLength={200}
-                          required
-                          disabled={itemChangeState !== 'idle'}
-                          className={inputClassName}
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-slate-700">
-                        Dosage
-                        <input
-                          value={additionDraft.dosage}
-                          onChange={(event) => updateAdditionDraft('dosage', event.target.value)}
-                          maxLength={100}
-                          required
-                          disabled={itemChangeState !== 'idle'}
-                          className={inputClassName}
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-slate-700">
-                        Frequency
-                        <input
-                          value={additionDraft.frequency}
-                          onChange={(event) =>
-                            updateAdditionDraft('frequency', event.target.value)
-                          }
-                          maxLength={100}
-                          required
-                          disabled={itemChangeState !== 'idle'}
-                          className={inputClassName}
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-slate-700">
-                        Duration
-                        <input
-                          value={additionDraft.duration}
-                          onChange={(event) => updateAdditionDraft('duration', event.target.value)}
-                          maxLength={100}
-                          required
-                          disabled={itemChangeState !== 'idle'}
-                          className={inputClassName}
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-slate-700 md:col-span-2">
-                        Instructions (optional)
-                        <textarea
-                          value={additionDraft.instructions}
-                          onChange={(event) =>
-                            updateAdditionDraft('instructions', event.target.value)
-                          }
-                          maxLength={500}
-                          rows={2}
-                          disabled={itemChangeState !== 'idle'}
-                          className={inputClassName}
-                        />
-                      </label>
+                  <form className="max-w-3xl rounded-md border border-slate-200 bg-slate-50 p-4" noValidate onSubmit={handleAddSavedMedicine}>
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Add another medicine
+                    </h3>
+                    <div className="mt-2">
+                      <RequiredLegend />
                     </div>
-                    <div className="mt-4 flex gap-3">
-                      <button
-                        type="submit"
-                        disabled={itemChangeState !== 'idle'}
-                        className="bg-brand-blue px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark disabled:bg-slate-400"
-                      >
+                    <div className="mt-4">
+                      {medicineFields(additionDraft, additionValidated, itemBusy, updateAdditionDraft)}
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <Button type="submit" loading={itemChangeState === 'adding'} disabled={itemBusy}>
                         {itemChangeState === 'adding' ? 'Adding…' : 'Add Medicine'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAdditionDraft(null)}
-                        disabled={itemChangeState !== 'idle'}
-                        className="border border-slate-400 px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 disabled:text-slate-400"
-                      >
+                      </Button>
+                      <Button variant="secondary" disabled={itemBusy} onClick={() => setAdditionDraft(null)}>
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </form>
                 )}
 
-                {message && (
-                  <p
-                    className="border-l-4 border-emerald-700 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
-                    role="status"
-                  >
-                    {message}
+                <div aria-live="polite" className="space-y-3 empty:hidden">
+                  {message && (
+                    <Banner tone="success" role="status">
+                      {message}
+                    </Banner>
+                  )}
+
+                  {itemMessage && (
+                    <Banner
+                      tone={itemMessageTone === 'success' ? 'success' : 'error'}
+                      role={itemMessageTone === 'success' ? 'status' : 'alert'}
+                    >
+                      {itemMessage}
+                    </Banner>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+                  <ButtonLink to="/doctor" data-testid="back-to-dashboard">
+                    Back to Dashboard
+                  </ButtonLink>
+                  <p className="break-all text-xs text-slate-500">
+                    Prescription reference: {savedPrescription.id}
                   </p>
-                )}
-
-                {itemMessage && (
-                  <p
-                    className={`border-l-4 px-4 py-3 text-sm ${
-                      itemMessageTone === 'success'
-                        ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
-                        : 'border-red-700 bg-red-50 text-red-900'
-                    }`}
-                    role={itemMessageTone === 'success' ? 'status' : 'alert'}
-                  >
-                    {itemMessage}
-                  </p>
-                )}
-
-                <Link
-                  to="/doctor"
-                  className="inline-block bg-brand-blue px-5 py-3 text-xs font-bold uppercase tracking-[0.12em] text-white hover:bg-brand-blue-dark"
-                >
-                  Back to Doctor Dashboard
-                </Link>
-
-                <p className="text-xs text-slate-500">
-                  Prescription reference: {savedPrescription.id}
-                </p>
+                </div>
               </div>
             )}
-          </section>
+          </SectionCard>
 
-          <section className="mt-6 border border-slate-300 bg-white px-6 py-6">
-            <h2 className="text-lg font-semibold text-slate-900">Previous prescriptions</h2>
+          <SectionCard title="Previous Prescriptions" description="Newest first.">
             {referenceLoadState === 'loading' ? (
-              <p className="mt-3 text-sm text-slate-600">Loading prescription history…</p>
+              <LoadingText>Loading prescription history…</LoadingText>
             ) : history.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-600">No previous prescriptions found.</p>
+              <EmptyState>
+                <p>No previous prescriptions found.</p>
+              </EmptyState>
             ) : (
-              <div className="mt-4 space-y-4">
+              <div className="space-y-4">
                 {history.map((prescription) => (
-                  <article key={prescription.id} className="border border-slate-300 p-4">
-                    <div className="flex flex-wrap justify-between gap-2 text-sm">
+                  <article key={prescription.id} className="rounded-md border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                       <p className="font-semibold text-slate-900">
                         {formatDateTime(prescription.createdAt)}
                       </p>
-                      <p className="font-bold text-amber-800">{prescription.status}</p>
+                      <StatusBadge
+                        tone={prescription.status === 'DISPENSED' ? 'success' : 'warning'}
+                        data-testid="prescription-status"
+                      >
+                        {prescription.status}
+                      </StatusBadge>
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
                       Prescribed by {prescription.doctorName}
@@ -832,13 +725,13 @@ export function PrescriptionPage() {
                       {prescription.medicines.map((medicine) => (
                         <li
                           key={medicine.id}
-                          className="border-l-4 border-brand-blue pl-3 text-sm text-slate-700"
+                          className="break-words border-l-2 border-slate-200 pl-3 text-sm text-slate-700"
                         >
-                          <span className="font-semibold text-slate-900">
+                          <span className="font-semibold text-slate-900" data-testid="history-medicine-name">
                             {medicine.medicineName}
                           </span>
-                          {' — '}{medicine.dosage}, {medicine.frequency}, {medicine.duration}
-                          {medicine.instructions && ` — ${medicine.instructions}`}
+                          : {medicine.dosage}, {medicine.frequency}, {medicine.duration}
+                          {medicine.instructions && `. ${medicine.instructions}`}
                         </li>
                       ))}
                     </ul>
@@ -846,7 +739,7 @@ export function PrescriptionPage() {
                 ))}
               </div>
             )}
-          </section>
+          </SectionCard>
         </>
       )}
     </DashboardShell>

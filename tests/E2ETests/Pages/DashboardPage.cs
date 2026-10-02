@@ -22,9 +22,17 @@ public class DashboardPage
         _wait.Until(d => d.FindElements(By.XPath("//button[normalize-space()='Sign Out']")).Count > 0);
     }
 
+    // The button lives in the sidebar, which every page renders afresh, so the click is
+    // retried if the button is replaced between being found and being clicked.
     public void SignOut()
     {
-        SignOutButton.Click();
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(5));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        wait.Until(_ =>
+        {
+            SignOutButton.Click();
+            return true;
+        });
         _wait.Until(d => d.Url.Contains("/login"));
     }
 }

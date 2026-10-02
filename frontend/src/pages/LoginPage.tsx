@@ -1,10 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
-import swiftcareLogo from '../assets/swiftcare-logo.svg';
+import { Banner } from '../components/ui/Banner';
+import { Button } from '../components/ui/Button';
+import { Field, RequiredLegend } from '../components/ui/Field';
+import swiftcareLogo from '../assets/swiftcare-logo.png';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'rejected' | 'deactivated' | 'issued';
 
@@ -27,6 +30,10 @@ export function LoginPage() {
   const [serverMessage, setServerMessage] = useState<string | null>(null);
 
   const isBusy = status === 'submitting' || status === 'issued';
+
+  useEffect(() => {
+    document.title = 'Staff Sign-In · SwiftCare';
+  }, []);
 
   function handleUsernameChange(value: string) {
     setUsername(value);
@@ -77,7 +84,7 @@ export function LoginPage() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setStatus('rejected');
-        setServerMessage('Invalid username or password');
+        setServerMessage('Invalid username or password.');
       } else if (error instanceof ApiError && error.status === 403) {
         setStatus('deactivated');
         setServerMessage('Your account has been deactivated. Contact your administrator.');
@@ -92,112 +99,71 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="w-full max-w-md border border-slate-300 bg-white shadow-[4px_4px_0_rgba(15,23,42,0.08)]">
-        {/* Identifier plate */}
-        <div className="flex justify-center border-b border-slate-200 px-6 py-6">
-          <img src={swiftcareLogo} alt="SwiftCare" className="h-10 w-auto" />
-        </div>
-
-        {/* Directional band */}
-        <div className="bg-brand-blue px-6 py-2.5">
-          <h1 className="text-center text-xs font-bold uppercase tracking-[0.22em] text-white">Staff Sign-In</h1>
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgb(15_23_42/0.04),0_8px_24px_rgb(15_23_42/0.06)]">
+        <div className="px-6 pt-8 text-center sm:px-8">
+          <img src={swiftcareLogo} alt="SwiftCare" width={603} height={176} className="mx-auto h-14 w-auto" />
+          <h1 className="mt-6 text-xl font-semibold tracking-tight text-slate-900">Staff Sign-In</h1>
+          <p className="mt-1 text-sm text-slate-500">Use your clinic account to continue.</p>
         </div>
 
         {/* Status region - one persistent aria-live container, content swapped by status */}
-        <div aria-live="polite">
+        <div aria-live="polite" className="px-6 pt-5 empty:hidden sm:px-8">
           {status === 'rejected' && (
-            <div className="border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Access Denied</p>
-              <p className="mt-1 text-sm text-red-900">{serverMessage}</p>
-            </div>
+            <Banner tone="error" title="Access Denied">
+              {serverMessage}
+            </Banner>
           )}
           {status === 'deactivated' && (
-            <div className="border-t-4 border-b border-amber-600 bg-amber-50 px-6 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800">Account Deactivated</p>
-              <p className="mt-1 text-sm text-amber-900">{serverMessage}</p>
-            </div>
+            <Banner tone="warning" title="Account Deactivated">
+              {serverMessage}
+            </Banner>
           )}
           {status === 'issued' && (
-            <div className="border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-emerald-800">Access Granted</p>
-              <p className="mt-1 text-sm text-emerald-900">Redirecting to your dashboard…</p>
-            </div>
+            <Banner tone="success" title="Access Granted">
+              Redirecting to your dashboard…
+            </Banner>
           )}
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-5 px-6 py-6">
-          <div>
-            <label htmlFor="username" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-              Username
-            </label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => handleUsernameChange(event.target.value)}
-              disabled={isBusy}
-              aria-invalid={fieldErrors.username ? true : undefined}
-              aria-describedby={fieldErrors.username ? 'username-error' : undefined}
-              className={`mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
-                fieldErrors.username ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
-              }`}
-            />
-            {fieldErrors.username && (
-              <p id="username-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                {fieldErrors.username}
-              </p>
-            )}
-          </div>
+        <form onSubmit={handleSubmit} noValidate className="space-y-5 px-6 py-6 sm:px-8">
+          <RequiredLegend />
 
-          <div>
-            <label htmlFor="password" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => handlePasswordChange(event.target.value)}
-              disabled={isBusy}
-              aria-invalid={fieldErrors.password ? true : undefined}
-              aria-describedby={fieldErrors.password ? 'password-error' : undefined}
-              className={`mt-1.5 block w-full border-2 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
-                fieldErrors.password ? 'border-red-600' : 'border-slate-300 focus:border-brand-blue'
-              }`}
-            />
-            {fieldErrors.password && (
-              <p id="password-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                {fieldErrors.password}
-              </p>
+          <Field id="username" label="Username" required error={fieldErrors.username}>
+            {(control) => (
+              <input
+                {...control}
+                name="username"
+                type="text"
+                autoComplete="username"
+                autoFocus
+                value={username}
+                onChange={(event) => handleUsernameChange(event.target.value)}
+                disabled={isBusy}
+              />
             )}
-          </div>
+          </Field>
 
-          <button
-            type="submit"
-            disabled={isBusy}
-            className={`relative w-full overflow-hidden px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 ${
-              status === 'submitting'
-                ? 'bg-slate-900'
-                : status === 'issued'
-                  ? 'bg-emerald-700'
-                  : 'bg-brand-blue hover:bg-brand-blue-dark'
-            }`}
-          >
+          <Field id="password" label="Password" required error={fieldErrors.password}>
+            {(control) => (
+              <input
+                {...control}
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => handlePasswordChange(event.target.value)}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
+
+          <Button type="submit" fullWidth loading={isBusy}>
             {status === 'submitting' ? 'Verifying…' : status === 'issued' ? 'Access Granted' : 'Sign In'}
-            {status === 'submitting' && (
-              <span className="absolute inset-x-0 bottom-0 block h-0.5 overflow-hidden bg-white/20" aria-hidden="true">
-                <span className="block h-full w-1/3 animate-[loading-sweep_1.1s_ease-in-out_infinite] bg-white" />
-              </span>
-            )}
-          </button>
+          </Button>
         </form>
 
-        <div className="border-t border-slate-200 px-6 py-4">
+        <div className="border-t border-slate-100 px-6 py-4 sm:px-8">
           <p className="text-center text-xs leading-relaxed text-slate-500">
             Forgot your password? Contact your clinic administrator to have it reset.
           </p>
