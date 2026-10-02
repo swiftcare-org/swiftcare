@@ -474,10 +474,12 @@ export function PrescriptionPage() {
         </Banner>
       )}
 
-      {context?.queueNumber && (
+      {/* A prescription reopened from the dashboard or after a reload has the patient's name
+          but no queue number, so the banner shows whichever of the two it has. */}
+      {(context?.queueNumber || context?.patientName) && (
         <Banner tone="info" title="Prescription For">
           <p className="break-words text-lg font-semibold text-slate-900" data-testid="prescription-context">
-            {context.queueNumber} {context.patientName}
+            {[context.queueNumber, context.patientName].filter(Boolean).join(' ')}
           </p>
         </Banner>
       )}
