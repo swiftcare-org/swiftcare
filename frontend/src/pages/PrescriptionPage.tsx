@@ -17,15 +17,17 @@ import { ConfirmPanel } from '../components/ui/ConfirmPanel';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
 import { Field, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
-import { StatusBadge } from '../components/ui/StatusBadge';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { formatDateTime } from '../lib/format';
 import { useAuth } from '../auth/useAuth';
 import {
   findPendingPrescriptionContext,
   isPrescriptionContext,
   type PrescriptionContext,
 } from '../prescriptions/pendingPrescription';
+import {
+  NO_PRESCRIPTIONS_MESSAGE,
+  PrescriptionHistoryList,
+} from '../prescriptions/PrescriptionHistoryList';
 
 interface MedicineDraft extends Omit<PrescriptionMedicineInput, 'instructions'> {
   clientId: string;
@@ -511,6 +513,9 @@ export function PrescriptionPage() {
             </Banner>
           )}
 
+          {/* The form and the patient's past prescriptions sit side by side on wide screens,
+              so the doctor can check earlier medicines without leaving the form. */}
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <SectionCard
             title="Medicines"
             description={
@@ -696,50 +701,18 @@ export function PrescriptionPage() {
             )}
           </SectionCard>
 
-          <SectionCard title="Previous Prescriptions" description="Newest first.">
+          <SectionCard title="Previous Prescriptions" description="Newest first. For reference while prescribing.">
             {referenceLoadState === 'loading' ? (
               <LoadingText>Loading prescription history…</LoadingText>
             ) : history.length === 0 ? (
               <EmptyState>
-                <p>No previous prescriptions found.</p>
+                <p>{NO_PRESCRIPTIONS_MESSAGE}</p>
               </EmptyState>
             ) : (
-              <div className="space-y-4">
-                {history.map((prescription) => (
-                  <article key={prescription.id} className="rounded-md border border-slate-200 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                      <p className="font-semibold text-slate-900">
-                        {formatDateTime(prescription.createdAt)}
-                      </p>
-                      <StatusBadge
-                        tone={prescription.status === 'DISPENSED' ? 'success' : 'warning'}
-                        data-testid="prescription-status"
-                      >
-                        {prescription.status}
-                      </StatusBadge>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Prescribed by {prescription.doctorName}
-                    </p>
-                    <ul className="mt-3 space-y-2">
-                      {prescription.medicines.map((medicine) => (
-                        <li
-                          key={medicine.id}
-                          className="break-words border-l-2 border-slate-200 pl-3 text-sm text-slate-700"
-                        >
-                          <span className="font-semibold text-slate-900" data-testid="history-medicine-name">
-                            {medicine.medicineName}
-                          </span>
-                          : {medicine.dosage}, {medicine.frequency}, {medicine.duration}
-                          {medicine.instructions && `. ${medicine.instructions}`}
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                ))}
-              </div>
+              <PrescriptionHistoryList prescriptions={history} />
             )}
           </SectionCard>
+          </div>
         </>
       )}
     </DashboardShell>
