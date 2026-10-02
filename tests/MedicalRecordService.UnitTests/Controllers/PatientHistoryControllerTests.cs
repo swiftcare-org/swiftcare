@@ -130,6 +130,61 @@ public class PatientHistoryControllerTests
         service.VerifyNoOtherCalls();
     }
 
+    // SWC-147: the all-zero GUID passes the route constraint, so the controllers reject it
+    // with 400 instead of letting the service's guard surface as a 500.
+    [Fact]
+    public async Task ConsultationEndpointsRejectEmptyPatientIdBeforeCallingService()
+    {
+        var service = new Mock<IConsultationHistoryService>(MockBehavior.Strict);
+        var controller = CreateConsultationController(service, "Doctor", Guid.NewGuid().ToString());
+
+        var history = await controller.GetHistory(Guid.Empty, CancellationToken.None);
+        var latest = await controller.GetLatest(Guid.Empty, CancellationToken.None);
+
+        AssertMissingPatientId(history);
+        AssertMissingPatientId(latest);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task VitalsHistoryRejectsEmptyPatientIdBeforeCallingService()
+    {
+        var service = new Mock<IVitalSignsHistoryService>(MockBehavior.Strict);
+
+        var result = await CreateVitalsController(service, "Doctor", Guid.NewGuid().ToString())
+            .GetHistory(Guid.Empty, CancellationToken.None);
+
+        AssertMissingPatientId(result);
+        service.VerifyNoOtherCalls();
+    }
+
+    // Authorization still wins: a caller who may not use the endpoint learns nothing
+    // about how the patient ID was judged.
+    [Theory]
+    [InlineData("Receptionist", "invalid", 403)]
+    [InlineData("Doctor", "invalid", 401)]
+    public async Task EmptyPatientIdDoesNotBypassIdentityChecks(string role, string userId, int expectedStatus)
+    {
+        var consultations = new Mock<IConsultationHistoryService>(MockBehavior.Strict);
+        var vitals = new Mock<IVitalSignsHistoryService>(MockBehavior.Strict);
+
+        var history = await CreateConsultationController(consultations, role, userId)
+            .GetHistory(Guid.Empty, CancellationToken.None);
+        var readings = await CreateVitalsController(vitals, role, userId)
+            .GetHistory(Guid.Empty, CancellationToken.None);
+
+        Assert.Equal(expectedStatus, Assert.IsAssignableFrom<ObjectResult>(history).StatusCode);
+        Assert.Equal(expectedStatus, Assert.IsAssignableFrom<ObjectResult>(readings).StatusCode);
+    }
+
+    private static void AssertMissingPatientId(IActionResult result)
+    {
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(
+            "Patient ID must be provided.",
+            Assert.IsType<MessageResponse>(badRequest.Value).Message);
+    }
+
     private static ConsultationResponse CreateConsultation(Guid patientId) => new()
     {
         Id = Guid.NewGuid(),

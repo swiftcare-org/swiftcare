@@ -10,6 +10,7 @@ public sealed class ConsultationHistoryController : ControllerBase
 {
     private const string UserRoleHeaderName = "X-User-Role";
     private const string UserIdHeaderName = "X-User-Id";
+    private const string MissingPatientIdMessage = "Patient ID must be provided.";
 
     private readonly IConsultationHistoryService _historyService;
 
@@ -20,6 +21,7 @@ public sealed class ConsultationHistoryController : ControllerBase
 
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<ConsultationResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetHistory(
@@ -32,12 +34,19 @@ public sealed class ConsultationHistoryController : ControllerBase
             return denied;
         }
 
+        // The route constraint accepts the all-zero GUID, which is not a real patient ID.
+        if (patientId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse(MissingPatientIdMessage));
+        }
+
         return Ok(await _historyService.GetHistoryAsync(patientId, cancellationToken));
     }
 
     [HttpGet("latest")]
     [ProducesResponseType(typeof(ConsultationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetLatest(
@@ -48,6 +57,12 @@ public sealed class ConsultationHistoryController : ControllerBase
         if (denied is not null)
         {
             return denied;
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real patient ID.
+        if (patientId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse(MissingPatientIdMessage));
         }
 
         var consultation = await _historyService.GetLatestAsync(patientId, cancellationToken);
