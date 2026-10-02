@@ -33,6 +33,7 @@ Allergy details remain owned by PatientService. The frontend reads them from Pat
 | `POST` | `/api/prescriptions/{prescriptionId}/items` | Doctor | Adds a medicine to the doctor's saved prescription. |
 | `DELETE` | `/api/prescriptions/{prescriptionId}/items/{medicineId}` | Doctor | Removes a medicine when at least one other medicine remains. |
 | `GET` | `/api/prescriptions/patient/{patientId}` | Doctor | Returns the patient's prescriptions newest first, including ordered medicine items. |
+| `GET` | `/api/prescriptions/report/daily?date=yyyy-MM-dd` | Admin | Returns `totalWritten`, `totalDispensed` and `totalPending` for one clinic day. `date` defaults to today. |
 | `GET` | `/api/prescriptions/pending` | Receptionist | Returns all `PENDING` prescriptions oldest first, including ordered medicine items. |
 | `GET` | `/api/prescriptions/queue/{queueId}` | Doctor, Receptionist, Admin | Returns the prescription and ordered medicines for a queue entry. |
 | `PUT` | `/api/prescriptions/{prescriptionId}/dispense` | Receptionist | Changes a `PENDING` prescription to `DISPENSED` and records who dispensed it and when. |
