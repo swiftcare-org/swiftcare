@@ -194,6 +194,10 @@ Receptionists open a completed queue entry's prescription details and use **Mark
 
 A doctor can save an optional follow-up date and instructions with a consultation. Both values must be supplied together. When a doctor opens a patient profile, SwiftCare displays one red alert per allergy, followed by one amber alert per chronic condition. If the patient's latest completed consultation has a follow-up date earlier than the current `Asia/Colombo` clinic date, a blue overdue follow-up alert appears last. The doctor-only `GET /api/consultations/patient/{patientId}/latest-follow-up` endpoint returns `204 No Content` when no overdue follow-up exists.
 
+### View patient history
+
+A doctor can open a patient's history from the **View History** button on the patient profile, at `/patients/{patientId}/history`. The page lists the patient's completed consultations from every doctor, newest first, with the date, doctor, symptoms, diagnosis and a short notes summary. Each entry expands to show the full detail, including examination findings and follow-up instructions. Below the timeline, the vitals history lists every recorded reading by date with an arrow beside each measurement showing whether it rose or fell against the previous recorded value. A first-time patient sees `First visit — no previous consultations`, and a patient without readings sees `No vital signs recorded yet`. The page is available to doctors only. See the [MedicalRecordService guide](services/MedicalRecordService/README.md#patient-history) for the endpoints.
+
 ### Load configuration
 
 Both .NET processes fail fast when configuration is missing, and several values must be **identical** across them — `Jwt__SecretKey`, `Jwt__Issuer`, `Jwt__Audience`, and `Gateway__InternalSecret`. A mismatch produces a `401` that the login page reports as invalid credentials, so derive them all from `.env` rather than typing them.

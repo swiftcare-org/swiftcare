@@ -727,6 +727,58 @@ public class ReverseProxyAuthorizationTests
     }
 
     [Theory]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    public async Task PatientHistoryRoutesWithADoctorTokenPassGatewayAuthorization(string path)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.GetAsync(path);
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Receptionist")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Admin")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest", "Receptionist")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest", "Admin")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Receptionist")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Admin")]
+    public async Task PatientHistoryRoutesWithANonDoctorTokenReturn403(string path, string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    public async Task PatientHistoryRoutesWithoutBearerTokenReturn401(string path)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
     [InlineData("Doctor")]
     [InlineData("Receptionist")]
     [InlineData("Admin")]

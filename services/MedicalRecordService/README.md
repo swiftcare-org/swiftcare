@@ -17,6 +17,9 @@ MedicalRecordService owns consultation records, consultation templates, vital si
 | `GET` | `/api/consultations/by-queue/{queueId}` | Doctor | Returns this doctor's saved consultation status and whether vital signs exist, or `204` when none exists |
 | `GET` | `/api/consultations/latest-completed` | Doctor | Returns this doctor's latest completed consultation identifiers so unfinished prescription entry can be recovered, or `204` when none exists |
 | `GET` | `/api/consultations/patient/{patientId}/latest-follow-up` | Doctor | Returns the overdue follow-up from the patient's latest completed consultation, or `204` when none is overdue |
+| `GET` | `/api/consultations/patient/{patientId}` | Doctor | Returns the patient's completed consultations from every doctor, newest first, or an empty list on a first visit |
+| `GET` | `/api/consultations/patient/{patientId}/latest` | Doctor | Returns the patient's most recent completed consultation, or `204` when none exists |
+| `GET` | `/api/vitals/patient/{patientId}` | Doctor | Returns the vital signs recorded in the patient's completed consultations, newest first, or an empty list when none exist |
 | `POST` | `/api/consultations/{consultationId}/complete` | Doctor | Completes the consultation and publishes `consultation-completed` |
 
 The Gateway supplies the authenticated doctor's ID, name, and room number. These values are not accepted from the request body. Symptoms and diagnosis are required; examination findings, notes, template selection, and follow-up details are optional. A follow-up date and instructions must be provided together, and instructions are limited to 500 characters.
@@ -28,6 +31,12 @@ Vital signs may include blood pressure, temperature, pulse rate, respiratory rat
 The doctor-only follow-up endpoint reads the patient's latest completed consultation. It returns the stored follow-up only when its date is earlier than the current clinic date. The `Clinic:TimeZone` setting defaults to `Asia/Colombo` in `appsettings.json`. A follow-up due today or later is not overdue. Missing follow-up details and patients without a completed consultation return `204 No Content`.
 
 The frontend combines this result with allergies and chronic conditions on the patient profile. It displays individual red allergy banners first, amber condition banners second, and the blue overdue follow-up banner last.
+
+## Patient history
+
+The three patient history endpoints are read-only and doctor-only. They are not limited to the requesting doctor, so a doctor sees consultations recorded by colleagues and can follow the patient's care across visits. Only `COMPLETE` consultations are returned, which leaves out the consultation that is still in progress. Patient IDs are GUIDs, matching the other patient-scoped routes, and `Consultations.PatientId` is the only key used to find a patient's records, since vital signs are joined through their consultation.
+
+Timestamps are returned as UTC. Measurements that were not recorded are `null`, and the frontend compares each reading with the nearest older reading that recorded the same measurement to show up, down or unchanged trends.
 
 ## Completing a consultation
 
