@@ -17,6 +17,7 @@ public sealed class VitalSignsHistoryController : ControllerBase
 
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<VitalSignsResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetHistory(
@@ -37,6 +38,12 @@ public sealed class VitalSignsHistoryController : ControllerBase
         if (!Guid.TryParse(userIdHeader, out var doctorId) || doctorId == Guid.Empty)
         {
             return Unauthorized(new MessageResponse("Doctor identity is unavailable"));
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real patient ID.
+        if (patientId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Patient ID must be provided."));
         }
 
         return Ok(await _historyService.GetHistoryAsync(patientId, cancellationToken));
