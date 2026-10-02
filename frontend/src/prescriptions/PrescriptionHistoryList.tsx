@@ -21,11 +21,6 @@ export function PrescriptionHistoryList({ prescriptions, currentPrescriptionId }
         <article key={prescription.id} className="rounded-md border border-slate-200 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <p className="font-semibold text-slate-900">{formatDateTime(prescription.createdAt)}</p>
-            {prescription.id === currentPrescriptionId && (
-              <StatusBadge tone="info" className="mr-auto">
-                This visit
-              </StatusBadge>
-            )}
             <StatusBadge
               tone={prescription.status === 'DISPENSED' ? 'success' : 'warning'}
               data-testid="prescription-status"
@@ -33,7 +28,10 @@ export function PrescriptionHistoryList({ prescriptions, currentPrescriptionId }
               {prescription.status}
             </StatusBadge>
           </div>
-          <p className="mt-1 text-sm text-slate-600">Prescribed by {prescription.doctorName}</p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-600">Prescribed by {prescription.doctorName}</p>
+            {prescription.id === currentPrescriptionId && <StatusBadge tone="info">This visit</StatusBadge>}
+          </div>
           <ul className="mt-3 space-y-2">
             {prescription.medicines.map((medicine) => (
               <li
