@@ -709,7 +709,7 @@ export function PrescriptionPage() {
                 <p>{NO_PRESCRIPTIONS_MESSAGE}</p>
               </EmptyState>
             ) : (
-              <PrescriptionHistoryList prescriptions={history} />
+              <PrescriptionHistoryList prescriptions={history} currentPrescriptionId={savedPrescription?.id} />
             )}
           </SectionCard>
           </div>

@@ -8,17 +8,24 @@ export const NO_PRESCRIPTIONS_MESSAGE = 'No prescriptions recorded for this pati
 interface PrescriptionHistoryListProps {
   /** Already ordered newest first by the API. */
   prescriptions: readonly Prescription[];
+  /** The prescription being written now, if it is in the list, so it is not mistaken for an earlier one. */
+  currentPrescriptionId?: string;
 }
 
 // A patient's past prescriptions, read-only. Used on the patient history page and beside
 // the prescription form, so a doctor sees the same record in both places.
-export function PrescriptionHistoryList({ prescriptions }: PrescriptionHistoryListProps) {
+export function PrescriptionHistoryList({ prescriptions, currentPrescriptionId }: PrescriptionHistoryListProps) {
   return (
     <div className="space-y-4">
       {prescriptions.map((prescription) => (
         <article key={prescription.id} className="rounded-md border border-slate-200 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <p className="font-semibold text-slate-900">{formatDateTime(prescription.createdAt)}</p>
+            {prescription.id === currentPrescriptionId && (
+              <StatusBadge tone="info" className="mr-auto">
+                This visit
+              </StatusBadge>
+            )}
             <StatusBadge
               tone={prescription.status === 'DISPENSED' ? 'success' : 'warning'}
               data-testid="prescription-status"
