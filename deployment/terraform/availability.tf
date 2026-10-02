@@ -17,9 +17,9 @@ resource "azurerm_application_insights_standard_web_test" "availability" {
   timeout                 = 30
   retry_enabled           = true
   description             = "Public ${each.key} HTTPS availability; gateway health proves liveness only."
-  tags = merge(local.common_tags, {
-    "hidden-link:${azurerm_application_insights.swiftcare.id}" = "Resource"
-  })
+  # AzureRM manages the hidden-link tag through application_insights_id and
+  # excludes it from ordinary tags when reading state.
+  tags = local.common_tags
 
   request {
     url                              = each.value

@@ -187,6 +187,7 @@ Every application has optional Azure Monitor OpenTelemetry registration and a di
 ### SWC-132 availability tests and alerts
 
 `availability.tf` defines separate standard tests for `https://swiftcare.me` and `https://api.swiftcare.me/health`, linked to this Application Insights resource.
+AzureRM creates the required hidden-link tag from `application_insights_id`; declare only ordinary project tags so refresh does not propose repeated hidden-link tag updates.
 Both run every five minutes from Southeast Asia, Japan East, Australia East, West Europe and East US, using retries, TLS validation, a 30-second timeout and exact HTTP 200 without redirects or dependent requests.
 Each target has a severity-1 alert when at least three locations fail, evaluated every minute over a five-minute window, with automatic resolution and the shared email action group.
 Set `availability_alert_emails` only in gitignored `terraform.tfvars`; the sensitive list defaults empty and enabled monitoring refuses to plan without recipients.
