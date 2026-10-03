@@ -20,7 +20,7 @@ public sealed class AdoNetConsultationFollowUpRepository : IConsultationFollowUp
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, FollowUpDate, FollowUpInstructions
+            SELECT Id, FollowUpDate, FollowUpInstructions, DoctorName
             FROM Consultations
             WHERE PatientId = @PatientId AND Status = @CompleteStatus
             ORDER BY ConsultationDate DESC
@@ -39,6 +39,7 @@ public sealed class AdoNetConsultationFollowUpRepository : IConsultationFollowUp
         return new ConsultationFollowUp(
             Guid.Parse(reader.GetValue(0).ToString()!),
             reader.IsDBNull(1) ? null : DateOnly.FromDateTime(reader.GetDateTime(1)),
-            reader.IsDBNull(2) ? null : reader.GetString(2));
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.GetString(3));
     }
 }

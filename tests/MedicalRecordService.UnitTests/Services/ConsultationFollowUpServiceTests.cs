@@ -30,7 +30,8 @@ public class ConsultationFollowUpServiceTests
             .ReturnsAsync(new ConsultationFollowUp(
                 consultationId,
                 new DateOnly(2026, 9, 21),
-                "Review blood pressure"));
+                "Review blood pressure",
+                "Dr. Amara Chen"));
 
         var result = await CreateService(repository).FindOverdueAsync(patientId);
 
@@ -55,7 +56,8 @@ public class ConsultationFollowUpServiceTests
             .ReturnsAsync(new ConsultationFollowUp(
                 Guid.NewGuid(),
                 new DateOnly(2026, 9, day),
-                "Review blood pressure"));
+                "Review blood pressure",
+                "Dr. Amara Chen"));
 
         var result = await CreateService(repository).FindOverdueAsync(patientId);
 
@@ -81,7 +83,8 @@ public class ConsultationFollowUpServiceTests
             .ReturnsAsync(new ConsultationFollowUp(
                 Guid.NewGuid(),
                 includeDate ? new DateOnly(2026, 9, 20) : null,
-                instructions));
+                instructions,
+                "Dr. Amara Chen"));
 
         var result = await CreateService(repository).FindOverdueAsync(patientId);
 
