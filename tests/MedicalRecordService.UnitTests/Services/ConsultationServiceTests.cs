@@ -158,6 +158,34 @@ public class ConsultationServiceTests
         Assert.Equal("Review blood pressure", persisted?.FollowUpInstructions);
     }
 
+    [Fact]
+    public async Task CreateWithoutAFollowUpSavesNoFollowUp()
+    {
+        var repository = new Mock<IConsultationRepository>();
+        ConsultationDraft? persisted = null;
+        repository
+            .Setup(repo => repo.CreateAsync(
+                It.IsAny<ConsultationDraft>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ConsultationDraft, CancellationToken>((consultation, _) =>
+                persisted = consultation)
+            .ReturnsAsync(new ConsultationPersistenceResult
+            {
+                Outcome = ConsultationPersistenceOutcome.Success
+            });
+
+        var result = await CreateService(repository).CreateAsync(
+            ValidRequest(),
+            Guid.NewGuid(),
+            "Dr. Amara Chen",
+            "R-204");
+
+        Assert.Equal(CreateConsultationOutcome.Success, result.Outcome);
+        Assert.NotNull(persisted);
+        Assert.Null(persisted.FollowUpDate);
+        Assert.Null(persisted.FollowUpInstructions);
+    }
+
     private static CreateConsultationRequest ValidRequest(
         Guid? templateId = null,
         DateOnly? followUpDate = null,
