@@ -68,6 +68,23 @@ export function formatDateTime(value: string | null | undefined): string {
   return parse(value) ? `${formatDate(value)}, ${formatTime(value)}` : PLACEHOLDER;
 }
 
+function plural(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
+}
+
+/** "3 days", "3 weeks", "2 months": days under two weeks, weeks under eight, months after. */
+export function formatElapsedDays(days: number): string {
+  if (days < 14) {
+    return plural(Math.max(days, 1), 'day');
+  }
+
+  if (days < 56) {
+    return plural(Math.floor(days / 7), 'week');
+  }
+
+  return plural(Math.floor(days / 30), 'month');
+}
+
 /** Today's date in the clinic's time zone, as "yyyy-MM-dd" for a date input. */
 export function clinicTodayForDateInput(): string {
   const parts = partsOf(
