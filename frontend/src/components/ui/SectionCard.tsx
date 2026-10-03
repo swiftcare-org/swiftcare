@@ -39,7 +39,8 @@ export function SectionCard({
             children ? 'border-b border-slate-200' : ''
           }`}
         >
-          <div className="min-w-0">
+          {/* The text block shrinks and wraps before the actions are pushed onto their own row. */}
+          <div className="min-w-0 flex-1 basis-48">
             {eyebrow && <p className={eyebrowClassName}>{eyebrow}</p>}
             {title && (
               <Heading id={titleId} className="break-words text-base font-semibold text-slate-900">
@@ -48,7 +49,7 @@ export function SectionCard({
             )}
             {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
           </div>
-          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+          {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
       {children && <div className="px-5 py-5 sm:px-6">{children}</div>}

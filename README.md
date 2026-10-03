@@ -182,13 +182,17 @@ After a doctor saves a consultation and its vital signs, Complete Consultation w
 
 After a successful consultation, a doctor can add multiple medicines with a name, dosage, frequency, duration, and optional instructions. The form shows PatientService allergy information as an advisory warning and loads the patient's previous prescriptions for reference. `POST /api/prescriptions` stores the consultation, queue, patient, and trusted doctor identifiers with a default `PENDING` status. After saving, the prescribing doctor can add medicines or remove a confirmed item while keeping at least one medicine. A `DISPENSED` prescription is read-only. A unique consultation index prevents a second prescription for the same consultation. See the [PrescriptionService guide](services/PrescriptionService/README.md) for endpoints, configuration, and local startup.
 
+### View prescription history
+
+A doctor sees a patient's past prescriptions in two places. The patient history page, opened with **View History** on the patient profile, has a Prescription History section listing every prescription newest first with its date, doctor, medicines, dosages and `PENDING` or `DISPENSED` status. The prescription form shows the same list beside the form on wide screens, and below it on smaller ones, so earlier medicines can be checked while prescribing; the prescription being written is labelled `This visit`. A patient without prescriptions sees `No prescriptions recorded for this patient`. Administrators can read daily totals from `GET /api/prescriptions/report/daily`, which the daily summary report uses. See the [PrescriptionService guide](services/PrescriptionService/README.md#prescription-history-and-daily-report) for the endpoints.
+
 ### View prescriptions at the counter
 
 The receptionist queue shows today's pending prescriptions in prescription-time order so the oldest is handled first. Each link opens the full counter view with the patient name, queue number, date, doctor, room, status, and all medicine details. If the consultation is complete but the doctor has not saved a prescription, the page explains that the doctor may still be writing it instead of displaying an error. When no pending prescriptions remain, the queue shows `All prescriptions dispensed today`.
 
 ### Dispense a prescription
 
-Receptionists open a completed queue entry's prescription details and use **Mark as Dispensed** while its status is `PENDING`. PrescriptionService changes the status to `DISPENSED` and records the trusted receptionist name and current UTC timestamp. The details page then shows who dispensed it and the clinic-local time, and the queue displays `✅ DISPENSED`. Doctor and Admin access is read-only, and an already dispensed prescription cannot be dispensed again.
+Receptionists open a completed queue entry's prescription details and use **Mark as Dispensed** while its status is `PENDING`. PrescriptionService changes the status to `DISPENSED` and records the trusted receptionist name and current UTC timestamp. The details page then shows who dispensed it with the clinic-local date and time, and the queue displays a `DISPENSED` badge. Doctor and Admin access is read-only, and an already dispensed prescription cannot be dispensed again.
 
 ### Medical alerts and follow-ups
 
@@ -196,7 +200,7 @@ A doctor can save an optional follow-up date and instructions with a consultatio
 
 ### View patient history
 
-A doctor can open a patient's history from the **View History** button on the patient profile, at `/patients/{patientId}/history`. The page lists the patient's completed consultations from every doctor, newest first, with the date, doctor, symptoms, diagnosis and a short notes summary. Each entry expands to show the full detail, including examination findings and follow-up instructions. Below the timeline, the vitals history lists every recorded reading by date with an arrow beside each measurement showing whether it rose or fell against the previous recorded value. A first-time patient sees `First visit — no previous consultations`, and a patient without readings sees `No vital signs recorded yet`. The page is available to doctors only. See the [MedicalRecordService guide](services/MedicalRecordService/README.md#patient-history) for the endpoints.
+A doctor can open a patient's history from the **View History** button on the patient profile, at `/patients/{patientId}/history`. The page lists the patient's completed consultations from every doctor, newest first, with the date, doctor, symptoms, diagnosis and a short notes summary. Each entry expands to show the full detail, including examination findings and follow-up instructions. Below the timeline, the vitals history lists every recorded reading by date with an arrow beside each measurement showing whether it rose or fell against the previous recorded value. A first-time patient sees `First visit. No previous consultations.`, and a patient without readings sees `No vital signs recorded yet`. The page is available to doctors only. See the [MedicalRecordService guide](services/MedicalRecordService/README.md#patient-history) for the endpoints.
 
 ### Load configuration
 

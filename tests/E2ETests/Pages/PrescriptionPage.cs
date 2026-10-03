@@ -164,7 +164,7 @@ public class PrescriptionPage
     // --- Previous prescriptions (SWC-29 AC4) ---
 
     public bool ShowsNoPreviousPrescriptions =>
-        _driver.FindElements(By.XPath("//p[normalize-space()='No previous prescriptions found.']")).Count > 0;
+        _driver.FindElements(By.XPath("//p[normalize-space()='No prescriptions recorded for this patient']")).Count > 0;
 
     private IWebElement LatestHistoryEntry =>
         _wait.Until(d => d.FindElement(By.XPath(

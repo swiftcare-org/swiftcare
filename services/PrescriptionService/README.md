@@ -13,6 +13,7 @@ PrescriptionService owns digital prescriptions and their medicine items. It stor
 - Keeps at least one medicine and rejects changes after the prescription is `DISPENSED`.
 - Returns a patient's previous prescriptions newest first for clinical reference.
 - Rejects a second prescription for the same consultation.
+- Reports how many prescriptions were written, dispensed and still pending on a clinic day.
 - Retrieves the prescription linked to a queue entry for the shared staff details page.
 - Returns `PENDING` prescriptions oldest first for the receptionist counter queue.
 - Allows a receptionist to dispense a `PENDING` prescription once and records their trusted name and the UTC dispensing time.
@@ -33,6 +34,7 @@ Allergy details remain owned by PatientService. The frontend reads them from Pat
 | `POST` | `/api/prescriptions/{prescriptionId}/items` | Doctor | Adds a medicine to the doctor's saved prescription. |
 | `DELETE` | `/api/prescriptions/{prescriptionId}/items/{medicineId}` | Doctor | Removes a medicine when at least one other medicine remains. |
 | `GET` | `/api/prescriptions/patient/{patientId}` | Doctor | Returns the patient's prescriptions newest first, including ordered medicine items. |
+| `GET` | `/api/prescriptions/report/daily?date=yyyy-MM-dd` | Admin | Returns `totalWritten`, `totalDispensed` and `totalPending` for one clinic day. `date` defaults to today. |
 | `GET` | `/api/prescriptions/pending` | Receptionist | Returns all `PENDING` prescriptions oldest first, including ordered medicine items. |
 | `GET` | `/api/prescriptions/queue/{queueId}` | Doctor, Receptionist, Admin | Returns the prescription and ordered medicines for a queue entry. |
 | `PUT` | `/api/prescriptions/{prescriptionId}/dispense` | Receptionist | Changes a `PENDING` prescription to `DISPENSED` and records who dispensed it and when. |
@@ -69,6 +71,23 @@ Removing a medicine uses `DELETE /api/prescriptions/{prescriptionId}/items/{medi
 
 Both operations are limited to the doctor who created the prescription. A prescription with `DISPENSED` status is read-only, and either operation returns HTTP `409` with `Cannot modify a dispensed prescription`.
 
+## Prescription history and daily report
+
+`GET /api/prescriptions/patient/{patientId}` is read-only and doctor-only. It returns every prescription for the patient, from any doctor, newest first with its ordered medicines, or an empty list when the patient has none. Patient IDs are GUIDs. The all-zero GUID is rejected with HTTP `400` and `Patient ID must be provided.`.
+
+`GET /api/prescriptions/report/daily` is admin-only and returns:
+
+```json
+{
+  "date": "2026-10-02",
+  "totalWritten": 5,
+  "totalDispensed": 3,
+  "totalPending": 2
+}
+```
+
+`date` is a clinic calendar day in `yyyy-MM-dd` form and defaults to today. The day is taken in the clinic time zone, so a prescription written at 00:30 clinic time belongs to that day even though its UTC timestamp falls on the previous date. `totalWritten` counts prescriptions created on the day; `totalDispensed` and `totalPending` split that same set by current status, so the two always add up to `totalWritten`. A prescription written one day and dispensed the next counts under the day it was written.
+
 ## View prescriptions at the counter
 
 The receptionist queue combines PrescriptionService results with today's QueueService entries and PatientService details. This keeps prescription storage independent while allowing the counter view to show the patient name, queue number, prescription date, doctor name, room, status, and every medicine with its dosage, frequency, duration, and optional instructions.
@@ -97,6 +116,7 @@ The database enforces a unique index on `ConsultationId` and a unique `(Prescrip
 | Variable | Purpose |
 | --- | --- |
 | `ConnectionStrings__PrescriptionDb` | MySQL connection for the service-owned `swiftcare_prescription` database. |
+| `Clinic__TimeZone` | Time zone ID used to decide which clinic day a prescription belongs to. Defaults to `Asia/Colombo` in `appsettings.json`. |
 | `Gateway__InternalSecret` | Shared secret required on non-health requests forwarded by API Gateway. |
 | `ASPNETCORE_ENVIRONMENT` | Set to `Development` to expose OpenAPI and Scalar locally. |
 

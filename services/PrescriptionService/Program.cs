@@ -6,6 +6,7 @@ using OpenTelemetry.Trace;
 using PrescriptionService.Data;
 using PrescriptionService.Maintenance;
 using PrescriptionService.Middleware;
+using PrescriptionService.Models.Configuration;
 using PrescriptionService.Services;
 using Scalar.AspNetCore;
 
@@ -36,6 +37,33 @@ builder.Services.AddDbContext<PrescriptionDbContext>(options =>
         builder.Configuration.GetConnectionString("PrescriptionDb"),
         new MySqlServerVersion(new Version(8, 4, 0))));
 builder.Services.AddScoped<IPrescriptionService, PrescriptionManagementService>();
+builder.Services.AddScoped<IPrescriptionReportService, PrescriptionReportService>();
+builder.Services.AddOptions<ClinicOptions>()
+    .Bind(builder.Configuration.GetSection(ClinicOptions.SectionName))
+    .Validate(
+        options =>
+        {
+            if (string.IsNullOrWhiteSpace(options.TimeZone))
+            {
+                return false;
+            }
+
+            try
+            {
+                _ = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZone);
+                return true;
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return false;
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return false;
+            }
+        },
+        "Clinic:TimeZone must be a valid time zone ID.")
+    .ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();

@@ -32,6 +32,7 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
 
     [HttpGet("patient/{patientId:guid}")]
     [ProducesResponseType(typeof(IReadOnlyList<PrescriptionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetPatientHistory(
         Guid patientId,
@@ -42,6 +43,12 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
             return StatusCode(
                 StatusCodes.Status403Forbidden,
                 new MessageResponse("Forbidden"));
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real patient ID.
+        if (patientId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Patient ID must be provided."));
         }
 
         var prescriptions = await prescriptionService.GetForPatientAsync(
