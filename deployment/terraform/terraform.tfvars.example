@@ -16,3 +16,11 @@ frontend_custom_domains_enabled = false
 # Set false to remove the paid NAT Gateway, public IP and ephemeral
 # Kafka/ZooKeeper group while retaining their reusable network configuration.
 messaging_enabled = true
+
+# SWC-132: add actual team addresses only to ignored terraform.tfvars.
+# Enabled monitoring fails planning until at least one recipient is supplied.
+availability_enabled      = true
+availability_alert_emails = []
+# New environments must override these with their deployed public origins.
+availability_frontend_url = "https://swiftcare.me"
+availability_gateway_url  = "https://api.swiftcare.me/health"
