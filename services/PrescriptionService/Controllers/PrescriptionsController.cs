@@ -73,6 +73,12 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
                 new MessageResponse("Forbidden"));
         }
 
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (queueId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Queue ID must be provided."));
+        }
+
         var prescription = await prescriptionService.GetByQueueIdAsync(
             queueId,
             cancellationToken);
@@ -147,6 +153,12 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
             return identityError;
         }
 
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (prescriptionId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Prescription ID must be provided."));
+        }
+
         var result = await prescriptionService.AddMedicineAsync(
             prescriptionId,
             request,
@@ -171,6 +183,17 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
         if (identityError is not null)
         {
             return identityError;
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (prescriptionId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Prescription ID must be provided."));
+        }
+
+        if (medicineId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Medicine ID must be provided."));
         }
 
         var result = await prescriptionService.RemoveMedicineAsync(
@@ -203,6 +226,12 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
         if (string.IsNullOrWhiteSpace(receptionistName))
         {
             return Unauthorized(new MessageResponse("Receptionist identity is unavailable"));
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (prescriptionId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Prescription ID must be provided."));
         }
 
         var result = await prescriptionService.DispenseAsync(
