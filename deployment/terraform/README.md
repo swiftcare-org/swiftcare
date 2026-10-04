@@ -142,7 +142,7 @@ terraform -chdir=deployment/terraform state list
 (terraform -chdir=deployment/terraform state list | Measure-Object -Line).Lines
 ```
 
-With messaging and both frontend domains enabled and the default two OIDC credentials, the configuration expands to 31 managed resource instances, including all five databases. Counts vary with switches/credential inputs and do not prove the resources exist in state. Check addresses individually. `medical_record` has a hardcoded `swiftcare_medical_record` name in `database.tf`, so changing `project_name` alone does not isolate every database name.
+With messaging and both frontend domains enabled and the default two OIDC credentials, the configuration expands to 36 managed resource instances, including all five databases and the five availability monitoring resources. Counts vary with switches/credential inputs and do not prove the resources exist in state. Check addresses individually. `medical_record` has a hardcoded `swiftcare_medical_record` name in `database.tf`, so changing `project_name` alone does not isolate every database name.
 
 ## Review before applying
 
@@ -192,6 +192,8 @@ Both run every five minutes from Southeast Asia, Japan East, Australia East, Wes
 Each target has a severity-1 alert when at least three locations fail, evaluated every minute over a five-minute window, with automatic resolution and the shared email action group.
 Set `availability_alert_emails` only in gitignored `terraform.tfvars`; the sensitive list defaults empty and enabled monitoring refuses to plan without recipients.
 Change notification targets by updating that local input and reviewing/applying a new saved plan; do not edit receivers manually in Azure.
+Recipients must complete Azure's email verification when required; an Enabled receiver can still be VerificationPending and unable to receive alerts.
+Complete recipient verification privately through the action group's Notifications page, using Resend for expired codes; keep passcodes out of Git, commands and evidence.
 Recipients may remain in state/plans even though marked sensitive, so never publish full plan/state output.
 For another environment, configure `availability_frontend_url` and `availability_gateway_url` to its deployed public origins before applying.
 `availability_enabled = false` retains the resources but disables both tests and alerts during agreed maintenance; restore it through a reviewed plan after maintenance.
@@ -201,7 +203,23 @@ These checks prove frontend response and gateway process liveness, not clinical 
 Run `fmt -check -recursive`, `validate`, and `plan -input=false -detailed-exitcode -out=swc-132.tfplan` using the verified backend and operator-supplied MySQL input.
 Against a clean existing baseline, review only five new resources: two tests, two alerts and one action group.
 Stop on unintended changes and use `apply -input=false swc-132.tfplan` only after exact reviewed-plan authorization.
-The code has passed local fmt/validate; plan/apply, Cloudflare agent-policy verification, per-location results and actual alert delivery remain outstanding as of 2 October 2026.
+Live verification on 3 October 2026: the authorized saved plan created all five monitoring resources, and both tests produced passing samples from every configured location.
+The controlled gateway test-URL drill produced failures from all five locations and a Fired alert with an ActionsTriggered history event; the test URL was restored to `/health` through a separately reviewed plan.
+The post-recovery convergence plan returned no changes after correcting redundant hidden-link tag configuration; later private recipient changes require a separate reviewed action-group plan and a fresh convergence check after applying it.
+The gateway alert resolved at 00:24:50 Asia/Colombo on 3 October, with a second ActionsTriggered event at 00:24:51; both targets then passed from all five locations.
+The later comparison confirmed delivered Fired and Resolved school-mail notifications; private Portal screenshots show both tests at 100% and each passing from all five locations during 3 October 01:20-01:30 Asia/Colombo.
+PR review/merge and isolated new-environment recreation remain outstanding before marking the story Done.
+Delivery investigation found one Verified receiver and three VerificationPending receivers through the 2026-03-01-preview read API; the older read API reports only Enabled status.
+The authorized action-group notification test was rejected with HTTP 409, Conflict, Free subscription not supported; this blocks the standalone test operation and does not prove live-alert email is unsupported.
+The subsequent authorized comparison confirmed Fired and Resolved email receipt in the school mailbox, with both targets passing from all five locations before shutdown; personal mailbox delivery remains unconfirmed.
+The 3 October shutdown encountered backend DNS errors followed by a stale Terraform planning lock; its original 15-minute deadline was missed.
+On 4 October the operator explicitly authorized the checked stale-lock release and reviewed maintenance plan.
+The apply completed with 0 added, 4 changed and 0 destroyed; read-back confirmed both tests and both alerts disabled, all six apps Stopped and backend lease unlocked.
+The operator's fresh private-input post-maintenance plan on 4 October validated successfully and returned exit code 0 with zero resource actions; the reviewed saved-plan SHA256 is DC1C23C47DB211AB5292AE707914C622CFEE18CB593BA37CD9B20FE604D1027B.
+The shared environment now follows the approved demo/test windows below; do not re-enable monitoring until the intended targets are running and healthy.
+The 4 October read-only Cloudflare zone review found one rate-limit rule scoped only to `/api/auth/login`, no custom WAF or zone IP/User Agent/lockdown rules, Bot Fight Mode and JavaScript challenge off, and Access disabled.
+Cloudflare's Free Managed Ruleset remains present; both targets passed from all five Azure test locations during the authorized ON window, confirming the tested requests were allowed then.
+No Cloudflare rule was changed; future rule changes and account-wide IP access settings require a fresh check.
 The following procedure is sufficient for deployment and evidence collection; the private DevOps runbook records the current operator evidence separately.
 Cloudflare must permit current `ApplicationInsightsAvailability` agent CIDRs on the exact hosts/paths without challenges or rate limiting; ordinary curl success is insufficient evidence.
 Capture both tests passing from every configured location, Availability screenshots, sanitized Cloudflare policy/traffic evidence, and the Fired/Resolved alert plus delivered team notification after an authorized drill.
@@ -301,9 +319,38 @@ Terraform destroys and recreates these resources; it does not pause them. The ne
 
 MySQL runtime start/stop are operational actions rather than infrastructure changes. CD sets `min-replicas=1` and `max-replicas=1` for all five services and the gateway. Stopping apps does not stop MySQL, Kafka, or NAT charges. Removing messaging destroys ephemeral broker data/offsets; there is no volume or explicit Azure topic-provisioning step, so coordinate data loss and topic/consumer recovery before approving the plan.
 
-For an approved shutdown, ensure no CD deployment is running/queued, stop all six application Container Apps (including Prescription), and verify `Stopped`. Remove messaging only with the reviewed plan and agreed data-loss window, then stop MySQL. Retained storage/other resources can still incur charges. Document who approved the window and the restart owner. Availability alerts, when introduced, need an agreed maintenance policy.
+For an approved shutdown, ensure no CD deployment is running/queued, pause the availability tests and alerts through a reviewed Terraform maintenance plan, stop all six application Container Apps (including Prescription), and verify `Stopped`.
+Any messaging removal and MySQL shutdown require separate approval; removing messaging destroys broker data and offsets.
+Retained storage/other resources can still incur charges.
+Document who approved the window and the restart owner.
 
 For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD explicitly starts stopped Auth/Patient/Queue/MedicalRecord/Gateway apps but lacks the Prescription start/readiness step; an operator must verify Prescription is running and arrange an authorized start if needed. Check all six app states, revisions and images, custom-domain health, role-specific clinical routing, Kafka flow, and frontend behavior. CD's current smoke test covers neither MedicalRecord nor Prescription API routing, and image rollback does not undo migrations or configuration.
+
+### Approved demo and test windows
+
+The shared development apps run only for an approved demo or test, then return to `Stopped`.
+Starting an existing app resumes its deployed image; it does not deploy a new release.
+Record each window's start/end time in Asia/Colombo, responsible operator and cost owner before startup.
+Check no CD run is active or queued, dependencies are ready, all six apps have ready replicas and frontend/gateway health return HTTP 200 before enabling monitoring.
+Use a reviewed saved Terraform plan with `availability_enabled=true` to resume the two tests and two alerts during the approved window.
+Before the window ends, apply a reviewed saved plan with `availability_enabled=false`, verify both tests and both alerts report disabled, then stop and verify all six apps.
+The disabled resources remain provisioned for the next window; the action group and telemetry are retained.
+This schedule is an operator procedure, not an implemented automatic scheduler.
+Changing backend locks requires a separately authorized checked lock ID; never bypass locking with `-lock=false`.
+
+### Cloudflare change and verification
+
+Dhananjaya owns the `swiftcare.me` Cloudflare zone.
+The agreed target is minimum TLS 1.2, Full (strict), and Always Use HTTPS after checking the existing redirect chain.
+Before changing Full (strict), verify trusted, unexpired origin certificates for `swiftcare.me`, `www.swiftcare.me` and `api.swiftcare.me` using their actual hostnames and SNI.
+The frontend origin is `white-island-09489d800.6.azurestaticapps.net`; the API origin is `swiftcare-gateway.yellowfield-6231b42e.eastasia.azurecontainerapps.io`.
+Recheck these origin values against Azure before each change and preserve the current DNS records and proxy flags.
+Record the previous encryption mode, automatic-mode setting, minimum TLS and HTTPS redirect setting, then change one setting at a time and verify apex/www/api after each change.
+In the approved ON window, expect frontend and gateway health HTTP 200, valid certificates and HTTP redirects that end at HTTPS without a loop.
+A stopped API can return 404 even when TLS verification succeeds; do not call that a successful API availability check.
+If a change breaks certificate validation or introduces a redirect loop, restore only the setting just changed and repeat verification.
+Dashboard access and final read-back are required; public HTTPS checks alone do not prove Cloudflare policy settings.
+See [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/), [minimum TLS](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/minimum-tls/) and [HTTPS redirect guidance](https://developers.cloudflare.com/ssl/edge-certificates/encrypt-visitor-traffic/).
 
 ## Sprint handover
 
