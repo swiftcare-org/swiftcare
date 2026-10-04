@@ -47,6 +47,8 @@ public sealed class ConsultationFollowUpService : IConsultationFollowUpService
         return new OverdueFollowUpResponse(
             followUp.ConsultationId,
             followUpDate,
-            followUp.Instructions);
+            followUp.Instructions,
+            followUp.DoctorName,
+            DaysOverdue: clinicDate.DayNumber - followUpDate.DayNumber);
     }
 }

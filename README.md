@@ -196,7 +196,7 @@ Receptionists open a completed queue entry's prescription details and use **Mark
 
 ### Medical alerts and follow-ups
 
-A doctor can save an optional follow-up date and instructions with a consultation. Both values must be supplied together. When a doctor opens a patient profile, SwiftCare displays one red alert per allergy, followed by one amber alert per chronic condition. If the patient's latest completed consultation has a follow-up date earlier than the current `Asia/Colombo` clinic date, a blue overdue follow-up alert appears last. The doctor-only `GET /api/consultations/patient/{patientId}/latest-follow-up` endpoint returns `204 No Content` when no overdue follow-up exists.
+A doctor can save an optional follow-up date and instructions with a consultation. Both values must be supplied together. When a doctor opens a patient profile, SwiftCare displays one red alert per allergy, followed by one amber alert per chronic condition. If the patient's latest completed consultation has a follow-up date earlier than the current `Asia/Colombo` clinic date, a blue overdue follow-up alert appears last. It names the doctor who recorded the follow-up and says how long it is overdue, for example `Dr. Silva noted: Review blood pressure in 6 weeks (overdue by 3 weeks)`. Under two weeks the delay is shown in days, under eight weeks in weeks, and after that in months. The doctor-only `GET /api/consultations/patient/{patientId}/latest-follow-up` endpoint returns `204 No Content` when no overdue follow-up exists.
 
 ### View patient history
 

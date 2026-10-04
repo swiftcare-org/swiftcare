@@ -56,7 +56,8 @@ public class MedicalAlertBannerTests : SeleniumTestBase
         Assert.Contains(messages, message => message.Contains("ALLERGY: Penicillin (Severe)"));
         Assert.Contains(messages, message => message.Contains("ALLERGY: Latex (Mild)"));
         Assert.Equal("CONDITION: Type 2 Diabetes (since Jan 2022)", messages[2]);
-        Assert.Equal($"FOLLOW-UP: {followUpInstructions} (overdue)", messages[3]);
+        // The fixture is backdated to yesterday, so it is one clinic day overdue.
+        Assert.Equal($"{doctor.FullName} noted: {followUpInstructions} (overdue by 1 day)", messages[3]);
 
         var classes = profile.MedicalAlertClassNamesInOrder;
         Assert.Contains("border-red-700", classes[0]);

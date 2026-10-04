@@ -85,6 +85,8 @@ export interface OverdueFollowUp {
   consultationId: string;
   followUpDate: string;
   instructions: string;
+  doctorName: string;
+  daysOverdue: number;
 }
 
 export function getLatestOverdueFollowUp(

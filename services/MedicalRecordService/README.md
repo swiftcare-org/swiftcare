@@ -30,6 +30,20 @@ Vital signs may include blood pressure, temperature, pulse rate, respiratory rat
 
 The doctor-only follow-up endpoint reads the patient's latest completed consultation. It returns the stored follow-up only when its date is earlier than the current clinic date. The `Clinic:TimeZone` setting defaults to `Asia/Colombo` in `appsettings.json`. A follow-up due today or later is not overdue. Missing follow-up details and patients without a completed consultation return `204 No Content`.
 
+An overdue follow-up is returned as:
+
+```json
+{
+  "consultationId": "6f1c2a9b-8c11-4d8f-9b4a-3b0f4d8f6f0e",
+  "followUpDate": "2026-09-11",
+  "instructions": "Review blood pressure in 6 weeks",
+  "doctorName": "Dr. Silva",
+  "daysOverdue": 21
+}
+```
+
+`doctorName` is the doctor who recorded the follow-up. `daysOverdue` counts whole clinic days since the follow-up date, so a follow-up due yesterday is `1`.
+
 The frontend combines this result with allergies and chronic conditions on the patient profile. It displays individual red allergy banners first, amber condition banners second, and the blue overdue follow-up banner last.
 
 ## Patient history

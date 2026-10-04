@@ -30,7 +30,7 @@ import {
   tableKeyCellClassName,
   tableWrapperClassName,
 } from '../components/ui/table';
-import { clinicTodayForDateInput, formatDate } from '../lib/format';
+import { clinicTodayForDateInput, formatDate, formatElapsedDays } from '../lib/format';
 
 type LoadStatus = 'loading' | 'loaded' | 'notFound' | 'error';
 type FormStatus = 'idle' | 'submitting' | 'failed';
@@ -910,7 +910,8 @@ export function PatientProfilePage() {
 
               {user?.role === 'Doctor' && overdueFollowUp && (
                 <AlertBanner tone="followUp" label="Follow-up Alert">
-                  FOLLOW-UP: {overdueFollowUp.instructions} (overdue)
+                  {overdueFollowUp.doctorName} noted: {overdueFollowUp.instructions} (overdue by{' '}
+                  {formatElapsedDays(overdueFollowUp.daysOverdue)})
                 </AlertBanner>
               )}
             </div>
