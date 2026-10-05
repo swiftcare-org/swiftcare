@@ -18,6 +18,7 @@ public sealed class ConsultationFollowUpController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(OverdueFollowUpResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetLatestOverdue(
@@ -36,6 +37,12 @@ public sealed class ConsultationFollowUpController : ControllerBase
         if (!Guid.TryParse(userIdHeader, out var doctorId) || doctorId == Guid.Empty)
         {
             return Unauthorized(new MessageResponse("Doctor identity is unavailable"));
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (patientId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Patient ID must be provided."));
         }
 
         var followUp = await _followUpService.FindOverdueAsync(patientId, cancellationToken);

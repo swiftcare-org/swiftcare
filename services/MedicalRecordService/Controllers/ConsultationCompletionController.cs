@@ -41,6 +41,12 @@ public sealed class ConsultationCompletionController : ControllerBase
             return Unauthorized(new MessageResponse("Doctor identity is unavailable"));
         }
 
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (consultationId == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Consultation ID must be provided."));
+        }
+
         var result = await _completionService.CompleteAsync(
             consultationId, doctorId, cancellationToken);
 
