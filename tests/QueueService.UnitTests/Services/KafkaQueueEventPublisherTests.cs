@@ -91,6 +91,39 @@ public class KafkaQueueEventPublisherTests
         Assert.False(result);
     }
 
+    [Fact]
+    public async Task NullEventIsRejectedBeforeProducing()
+    {
+        var producer = new Mock<IProducer<string, string>>(MockBehavior.Strict);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            CreatePublisher(producer).PublishPatientCalledAsync(null!));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task EventWithoutCorrelationIdIsRejectedBeforeProducing(string correlationId)
+    {
+        var producer = new Mock<IProducer<string, string>>(MockBehavior.Strict);
+        var template = NewEvent();
+        var patientCalledEvent = new PatientCalledEvent
+        {
+            EventId = template.EventId,
+            QueueId = template.QueueId,
+            PatientId = template.PatientId,
+            QueueNumber = template.QueueNumber,
+            DoctorId = template.DoctorId,
+            DoctorName = template.DoctorName,
+            RoomNumber = template.RoomNumber,
+            CalledAt = template.CalledAt,
+            CorrelationId = correlationId
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            CreatePublisher(producer).PublishPatientCalledAsync(patientCalledEvent));
+    }
+
     private static KafkaQueueEventPublisher CreatePublisher(
         Mock<IProducer<string, string>> producer,
         int messageTimeoutMs = 5000) => new(

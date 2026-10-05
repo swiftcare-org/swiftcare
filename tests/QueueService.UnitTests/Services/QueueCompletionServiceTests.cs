@@ -76,10 +76,39 @@ public class QueueCompletionServiceTests
         await db.SaveChangesAsync();
         var completedEvent = NewEvent(entry) with { PatientId = Guid.NewGuid() };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new QueueCompletionService(db, TimeProvider.System).CompleteAsync(completedEvent));
 
+        Assert.Equal("Consultation completion does not match a queue assignment.", exception.Message);
         Assert.Equal(QueueStatus.InConsultation, entry.Status);
+        Assert.Empty(await db.ProcessedEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task NullEventIsRejected()
+    {
+        using var connection = OpenConnection();
+        await using var db = await CreateDbContextAsync(connection);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            new QueueCompletionService(db, TimeProvider.System).CompleteAsync(null!));
+    }
+
+    [Fact]
+    public async Task EntryThatWasNeverCalledCannotBeCompleted()
+    {
+        using var connection = OpenConnection();
+        await using var db = await CreateDbContextAsync(connection);
+        var entry = NewActiveEntry();
+        entry.Status = QueueStatus.Waiting;
+        db.QueueEntries.Add(entry);
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new QueueCompletionService(db, TimeProvider.System).CompleteAsync(NewEvent(entry)));
+
+        Assert.Equal("Queue entry is not in consultation or completed.", exception.Message);
+        Assert.Equal(QueueStatus.Waiting, entry.Status);
         Assert.Empty(await db.ProcessedEvents.ToListAsync());
     }
 
