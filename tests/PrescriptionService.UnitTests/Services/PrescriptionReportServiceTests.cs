@@ -95,6 +95,25 @@ public class PrescriptionReportServiceTests
         Assert.Equal(1, report.TotalWritten);
     }
 
+    [Fact]
+    public async Task DailyReportForAnEarlierDateIgnoresToday()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.Prescriptions.AddRange(
+            NewPrescription(Utc(2026, 10, 2, 3, 0), Dispensed),
+            NewPrescription(Utc(2026, 10, 5, 3, 0), Pending));
+        await dbContext.SaveChangesAsync();
+        var today = new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero);
+
+        var report = await CreateService(dbContext, today).GetDailyReportAsync(ReportDate);
+
+        Assert.Equal(ReportDate, report.Date);
+        Assert.Equal(1, report.TotalWritten);
+        Assert.Equal(1, report.TotalDispensed);
+        Assert.Equal(0, report.TotalPending);
+    }
+
     private static PrescriptionReportService CreateService(
         PrescriptionDbContext dbContext,
         DateTimeOffset? now = null) => new(
