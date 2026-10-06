@@ -365,4 +365,46 @@ public class UserManagementControllerTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         factory.UserAccountServiceMock.VerifyNoOtherCalls();
     }
+
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData("Receptionist")]
+    [InlineData("Doctor")]
+    public async Task GetDoctorsIsOpenToEveryStaffRole(string role)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        factory.UserAccountServiceMock
+            .Setup(s => s.GetActiveDoctorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new DoctorSummaryResponse
+                {
+                    UserId = TargetUserId,
+                    FullName = "Dr. Amara Chen",
+                    RoomNumber = "R-204",
+                    Specialization = "Cardiology"
+                }
+            ]);
+
+        var response = await CreateClient(factory, role).GetAsync("/api/users/doctors");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var doctors = await response.Content.ReadFromJsonAsync<List<DoctorSummaryResponse>>();
+        Assert.Equal("Dr. Amara Chen", Assert.Single(doctors!).FullName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Patient")]
+    [InlineData("admin")]
+    [InlineData("0")]
+    public async Task GetDoctorsWithoutAKnownStaffRoleReturns403AndNeverCallsTheService(string? role)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+
+        var response = await CreateClient(factory, role).GetAsync("/api/users/doctors");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.UserAccountServiceMock.VerifyNoOtherCalls();
+    }
 }

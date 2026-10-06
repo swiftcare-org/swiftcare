@@ -373,4 +373,46 @@ public class UserAccountManagementTests
 
         Assert.Equal(UserActionOutcome.NotFound, result.Outcome);
     }
+
+    [Fact]
+    public async Task GetActiveDoctorsReturnsOnlyActiveDoctorsOrderedByName()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Users.AddRange(
+            NewUser("dr.zoysa", "Dr. Zara Zoysa", UserRole.Doctor),
+            NewUser("dr.alwis", "Dr. Amal Alwis", UserRole.Doctor),
+            NewUser("dr.inactive", "Dr. Inactive", UserRole.Doctor, isActive: false),
+            NewUser("dr.deleted", "Dr. Deleted", UserRole.Doctor, isDeleted: true),
+            NewUser("reception", "Front Desk", UserRole.Receptionist),
+            NewUser("admin", "System Admin", UserRole.Admin));
+        await dbContext.SaveChangesAsync();
+
+        var doctors = await CreateService(dbContext).GetActiveDoctorsAsync();
+
+        Assert.Equal(new[] { "Dr. Amal Alwis", "Dr. Zara Zoysa" }, doctors.Select(d => d.FullName).ToArray());
+        Assert.All(doctors, doctor => Assert.Equal("R-100", doctor.RoomNumber));
+        Assert.All(doctors, doctor => Assert.Equal("General Medicine", doctor.Specialization));
+    }
+
+    [Theory]
+    [InlineData("Username")]
+    [InlineData("PasswordHash")]
+    [InlineData("IsActive")]
+    public void DoctorSummaryExposesNoAccountDetails(string propertyName)
+    {
+        Assert.Null(typeof(DoctorSummaryResponse).GetProperty(propertyName));
+    }
+
+    private static User NewUser(
+        string username, string fullName, UserRole role, bool isActive = true, bool isDeleted = false) => new()
+        {
+            Username = username,
+            PasswordHash = "not-a-real-hash",
+            FullName = fullName,
+            Role = role,
+            RoomNumber = role == UserRole.Doctor ? "R-100" : null,
+            Specialization = role == UserRole.Doctor ? "General Medicine" : null,
+            IsActive = isActive,
+            IsDeleted = isDeleted
+        };
 }
