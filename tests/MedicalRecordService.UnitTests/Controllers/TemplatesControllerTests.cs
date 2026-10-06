@@ -1,6 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
+using MedicalRecordService.Controllers;
 using MedicalRecordService.Models.Dtos;
+using MedicalRecordService.Models.Enums;
+using MedicalRecordService.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 
 namespace MedicalRecordService.UnitTests.Controllers;
@@ -112,5 +117,155 @@ public class TemplatesControllerTests
         }
 
         return client;
+    }
+
+    private static object ValidTemplateBody() => new
+    {
+        Name = "BP Review",
+        Symptoms = "Headache:\n- ",
+        ExaminationFindings = "Blood pressure:\n- ",
+        Notes = "Plan:\n- "
+    };
+
+    [Fact]
+    public async Task CreateTemplateAsDoctorReturns201WithTheSavedTemplate()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        var savedId = Guid.NewGuid();
+        factory.TemplateServiceMock
+            .Setup(service => service.CreateAsync(
+                It.IsAny<CreateConsultationTemplateRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreateTemplateResult
+            {
+                Outcome = CreateTemplateOutcome.Created,
+                Template = new ConsultationTemplateResponse
+                {
+                    Id = savedId,
+                    Name = "BP Review",
+                    Symptoms = "Headache:\n- ",
+                    ExaminationFindings = "Blood pressure:\n- ",
+                    Notes = "Plan:\n- ",
+                    IsBuiltIn = false
+                }
+            });
+
+        var response = await CreateClientWithRole(factory, "Doctor").PostAsJsonAsync("/api/templates", ValidTemplateBody());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var template = await response.Content.ReadFromJsonAsync<ConsultationTemplateResponse>();
+        Assert.Equal(savedId, template!.Id);
+        Assert.Equal("BP Review", template.Name);
+        Assert.False(template.IsBuiltIn);
+    }
+
+    // The owner comes from the Gateway identity. An owner sent in the body is ignored.
+    [Fact]
+    public async Task CreateTemplateTakesTheOwnerFromTheGatewayIdentityNotTheBody()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        factory.TemplateServiceMock
+            .Setup(service => service.CreateAsync(
+                It.IsAny<CreateConsultationTemplateRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreateTemplateResult { Outcome = CreateTemplateOutcome.DuplicateName });
+
+        await CreateClientWithRole(factory, "Doctor").PostAsJsonAsync("/api/templates", new
+        {
+            Name = "BP Review",
+            Symptoms = "Headache",
+            ExaminationFindings = "Blood pressure",
+            Notes = "Plan",
+            CreatedByDoctorId = Guid.NewGuid(),
+            DoctorId = Guid.NewGuid()
+        });
+
+        factory.TemplateServiceMock.Verify(
+            service => service.CreateAsync(
+                It.Is<CreateConsultationTemplateRequest>(request => request.Name == "BP Review"),
+                DoctorId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        Assert.Null(typeof(CreateConsultationTemplateRequest).GetProperty("CreatedByDoctorId"));
+        Assert.Null(typeof(CreateConsultationTemplateRequest).GetProperty("DoctorId"));
+    }
+
+    [Fact]
+    public async Task CreateTemplateWithADuplicateNameReturns409WithExactMessage()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        factory.TemplateServiceMock
+            .Setup(service => service.CreateAsync(
+                It.IsAny<CreateConsultationTemplateRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreateTemplateResult { Outcome = CreateTemplateOutcome.DuplicateName });
+
+        var response = await CreateClientWithRole(factory, "Doctor").PostAsJsonAsync("/api/templates", ValidTemplateBody());
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("A template with this name already exists", body!.Message);
+    }
+
+    [Fact]
+    public async Task CreateTemplateWithEmptyFieldsReturns400AndNeverCallsTheService()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+
+        var response = await CreateClientWithRole(factory, "Doctor").PostAsJsonAsync(
+            "/api/templates", new { Name = " ", Symptoms = "", ExaminationFindings = "", Notes = "" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.Equal(["Template name is required"], problem!.Errors["Name"]);
+        Assert.Equal(["Symptoms are required"], problem.Errors["Symptoms"]);
+        Assert.Equal(["Examination findings are required"], problem.Errors["ExaminationFindings"]);
+        Assert.Equal(["Notes are required"], problem.Errors["Notes"]);
+        factory.TemplateServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task CreateTemplateAsNonDoctorReturns403AndNeverCallsTheService(string role)
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+
+        var response = await CreateClientWithRole(factory, role).PostAsJsonAsync("/api/templates", ValidTemplateBody());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.TemplateServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CreateTemplateWithoutADoctorIdReturns401AndNeverCallsTheService()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+
+        var response = await CreateClientWithRole(factory, "Doctor", userId: null)
+            .PostAsJsonAsync("/api/templates", ValidTemplateBody());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.TemplateServiceMock.VerifyNoOtherCalls();
+    }
+
+    // A "Created" outcome with no template is a programming error, not a client error.
+    [Fact]
+    public async Task CreatedOutcomeWithoutATemplateIsNotReportedAsSuccess()
+    {
+        var service = new Mock<IConsultationTemplateService>();
+        service
+            .Setup(candidate => candidate.CreateAsync(
+                It.IsAny<CreateConsultationTemplateRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreateTemplateResult { Outcome = CreateTemplateOutcome.Created });
+        var context = new DefaultHttpContext();
+        context.Request.Headers[UserRoleHeaderName] = "Doctor";
+        context.Request.Headers[UserIdHeaderName] = DoctorId.ToString();
+        var controller = new TemplatesController(service.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = context }
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => controller.CreateTemplate(new CreateConsultationTemplateRequest(), CancellationToken.None));
+
+        Assert.Equal("A successful template result must include the created template.", exception.Message);
     }
 }
