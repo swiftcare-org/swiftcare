@@ -22,4 +22,14 @@ public interface IUserAccountService
         string newPassword,
         AdminActionContext context,
         CancellationToken cancellationToken = default);
+
+    Task<UserActionResult> DeactivateUserAsync(
+        Guid userId,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default);
+
+    Task<UserActionResult> ReactivateUserAsync(
+        Guid userId,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default);
 }

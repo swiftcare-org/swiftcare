@@ -5,5 +5,6 @@ public enum UserActionOutcome
     Success,
     NotFound,
     PasswordTooShort,
-    RoomNumberRequiredForDoctor
+    RoomNumberRequiredForDoctor,
+    CannotDeactivateOwnAccount
 }

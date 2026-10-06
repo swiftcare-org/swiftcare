@@ -12,6 +12,7 @@ public sealed class UsersController : ControllerBase
 {
     private const string ForbiddenMessage = "Forbidden";
     private const string UserNotFoundMessage = "User not found";
+    private const string OwnAccountMessage = "You cannot deactivate your own account";
     private const string RoomNumberRequiredMessage = "Room number is required for doctors";
     private static readonly string PasswordTooShortMessage =
         $"Password must be at least {PasswordPolicy.MinimumLength} characters";
@@ -118,6 +119,50 @@ public sealed class UsersController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpPut("{id:guid}/deactivate")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeactivateUser(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.DeactivateUserAsync(id, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("{id:guid}/activate")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReactivateUser(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.ReactivateUserAsync(id, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
     // request that didn't originate from the Gateway, which is the sole source of this
     // header - it derives it from the validated JWT, never from the original client.
@@ -155,6 +200,8 @@ public sealed class UsersController : ControllerBase
             case UserActionOutcome.PasswordTooShort:
                 ModelState.AddModelError(nameof(ResetPasswordRequest.NewPassword), PasswordTooShortMessage);
                 return ValidationProblem(ModelState);
+            case UserActionOutcome.CannotDeactivateOwnAccount:
+                return BadRequest(new MessageResponse(OwnAccountMessage));
             default:
                 return NotFound(new MessageResponse(UserNotFoundMessage));
         }

@@ -180,6 +180,56 @@ public sealed class UserAccountService : IUserAccountService
         return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
     }
 
+    public Task<UserActionResult> DeactivateUserAsync(
+        Guid userId,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        // An admin who deactivated themselves could lock every admin out of the system.
+        if (userId == context.AdminUserId)
+        {
+            return Task.FromResult(new UserActionResult { Outcome = UserActionOutcome.CannotDeactivateOwnAccount });
+        }
+
+        return SetActiveAsync(userId, isActive: false, AdminAuditAction.UserDeactivated, context, cancellationToken);
+    }
+
+    public Task<UserActionResult> ReactivateUserAsync(
+        Guid userId,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default) =>
+        SetActiveAsync(userId, isActive: true, AdminAuditAction.UserReactivated, context, cancellationToken);
+
+    private async Task<UserActionResult> SetActiveAsync(
+        Guid userId,
+        bool isActive,
+        AdminAuditAction action,
+        AdminActionContext context,
+        CancellationToken cancellationToken)
+    {
+        var user = await FindUserAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.NotFound };
+        }
+
+        // Repeating the request is harmless, and only a real change is audited.
+        if (user.IsActive != isActive)
+        {
+            user.IsActive = isActive;
+            RecordAudit(action, user.Id, context);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "User account status changed: action={Action} userId={UserId} by adminUserId={AdminUserId}",
+                action,
+                user.Id,
+                context.AdminUserId);
+        }
+
+        return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
+    }
+
     // A soft-deleted account is treated as absent, as it is for sign-in and the user list.
     private Task<User?> FindUserAsync(Guid userId, CancellationToken cancellationToken) =>
         _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken);
