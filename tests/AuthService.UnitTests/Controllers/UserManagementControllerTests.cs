@@ -169,4 +169,99 @@ public class UserManagementControllerTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         factory.UserAccountServiceMock.VerifyNoOtherCalls();
     }
+
+    private static void SetupResetPassword(AuthServiceWebApplicationFactory factory, UserActionResult result) =>
+        factory.UserAccountServiceMock
+            .Setup(s => s.ResetPasswordAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+
+    [Fact]
+    public async Task ResetPasswordReturns200AndNeverEchoesThePassword()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupResetPassword(factory, Success());
+
+        var response = await CreateClient(factory).PutAsJsonAsync(
+            $"/api/users/{TargetUserId}/reset-password", new { NewPassword = "a-brand-new-password" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var rawBody = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("a-brand-new-password", rawBody);
+        Assert.DoesNotContain("password", rawBody, StringComparison.OrdinalIgnoreCase);
+        factory.UserAccountServiceMock.Verify(
+            s => s.ResetPasswordAsync(
+                TargetUserId,
+                "a-brand-new-password",
+                It.Is<AdminActionContext>(c => c.AdminUserId == AdminUserId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ResetPasswordThatIsTooShortReturns400WithExactPasswordMessage()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupResetPassword(factory, Outcome(UserActionOutcome.PasswordTooShort));
+
+        var response = await CreateClient(factory).PutAsJsonAsync(
+            $"/api/users/{TargetUserId}/reset-password", new { NewPassword = "short" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var errors = await ReadValidationErrorsAsync(response);
+        Assert.Equal("Password must be at least 8 characters", errors["NewPassword"][0]);
+    }
+
+    [Fact]
+    public async Task ResetPasswordWithoutAPasswordReturns400AndNeverCallsTheService()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+
+        var response = await CreateClient(factory).PutAsJsonAsync(
+            $"/api/users/{TargetUserId}/reset-password", new { NewPassword = "" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var errors = await ReadValidationErrorsAsync(response);
+        Assert.True(errors.ContainsKey("NewPassword"));
+        factory.UserAccountServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ResetPasswordForUnknownUserReturns404()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupResetPassword(factory, Outcome(UserActionOutcome.NotFound));
+
+        var response = await CreateClient(factory).PutAsJsonAsync(
+            $"/api/users/{TargetUserId}/reset-password", new { NewPassword = "a-brand-new-password" });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResetPasswordWithTheAllZeroIdReturns400AndNeverCallsTheService()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+
+        var response = await CreateClient(factory).PutAsJsonAsync(
+            $"/api/users/{EmptyId}/reset-password", new { NewPassword = "a-brand-new-password" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        factory.UserAccountServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData(null)]
+    public async Task ResetPasswordWithoutTheAdminRoleReturns403AndNeverCallsTheService(string? role)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+
+        var response = await CreateClient(factory, role).PutAsJsonAsync(
+            $"/api/users/{TargetUserId}/reset-password", new { NewPassword = "a-brand-new-password" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.UserAccountServiceMock.VerifyNoOtherCalls();
+    }
 }

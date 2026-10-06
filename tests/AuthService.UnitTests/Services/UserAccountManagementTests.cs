@@ -1,10 +1,12 @@
 using AuthService.Data;
+using AuthService.Models.Configuration;
 using AuthService.Models.Dtos;
 using AuthService.Models.Entities;
 using AuthService.Models.Enums;
 using AuthService.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace AuthService.UnitTests.Services;
 
@@ -188,5 +190,95 @@ public class UserAccountManagementTests
             user.Id, new UpdateUserRequest { FullName = "Dr. Amara Perera", RoomNumber = "R-310" }, AdminContext);
 
         AssertSingleAuditEntry(dbContext, AdminAuditAction.UserUpdated, user.Id);
+    }
+
+    // Signs in through the real AuthenticationService, so these tests prove what the
+    // acceptance criteria describe rather than only inspecting the stored row.
+    private static async Task<LoginOutcome> LoginAsync(AuthDbContext dbContext, string username, string password)
+    {
+        var tokens = new Mock<IJwtTokenService>();
+        tokens.Setup(s => s.GenerateToken(It.IsAny<User>())).Returns(("signed-jwt", DateTime.UtcNow.AddHours(12)));
+        var authentication = new AuthenticationService(
+            dbContext, tokens.Object, NullLogger<AuthenticationService>.Instance);
+
+        var result = await authentication.LoginAsync(username, password, "login-correlation-id", "127.0.0.1");
+        return result.Outcome;
+    }
+
+    [Fact]
+    public async Task ResetPasswordStoresABcryptHashOfTheNewPassword()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var result = await CreateService(dbContext).ResetPasswordAsync(user.Id, "a-brand-new-password", AdminContext);
+
+        Assert.Equal(UserActionOutcome.Success, result.Outcome);
+        var persisted = Assert.Single(dbContext.Users);
+        Assert.NotEqual("a-brand-new-password", persisted.PasswordHash);
+        Assert.True(BCrypt.Net.BCrypt.Verify("a-brand-new-password", persisted.PasswordHash));
+    }
+
+    [Fact]
+    public async Task ResetPasswordLetsTheUserLogInWithTheNewPasswordAndNotTheOldOne()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+
+        await CreateService(dbContext).ResetPasswordAsync(user.Id, "a-brand-new-password", AdminContext);
+
+        Assert.Equal(LoginOutcome.Success, await LoginAsync(dbContext, user.Username, "a-brand-new-password"));
+        Assert.Equal(LoginOutcome.InvalidCredentials, await LoginAsync(dbContext, user.Username, OriginalPassword));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("1")]
+    [InlineData("1234567")]
+    public async Task ResetPasswordShorterThanMinimumIsRejectedAndKeepsTheOldPassword(string shortPassword)
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var result = await CreateService(dbContext).ResetPasswordAsync(user.Id, shortPassword, AdminContext);
+
+        Assert.Equal(UserActionOutcome.PasswordTooShort, result.Outcome);
+        Assert.True(BCrypt.Net.BCrypt.Verify(OriginalPassword, Assert.Single(dbContext.Users).PasswordHash));
+        Assert.Empty(dbContext.AdminAuditEntries);
+    }
+
+    [Fact]
+    public async Task ResetPasswordAtMinimumLengthSucceeds()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var result = await CreateService(dbContext).ResetPasswordAsync(
+            user.Id, new string('a', PasswordPolicy.MinimumLength), AdminContext);
+
+        Assert.Equal(UserActionOutcome.Success, result.Outcome);
+    }
+
+    [Fact]
+    public async Task ResetPasswordForUnknownUserReturnsNotFound()
+    {
+        await using var dbContext = CreateDbContext();
+
+        var result = await CreateService(dbContext).ResetPasswordAsync(
+            Guid.NewGuid(), "a-brand-new-password", AdminContext);
+
+        Assert.Equal(UserActionOutcome.NotFound, result.Outcome);
+    }
+
+    [Fact]
+    public async Task ResetPasswordRecordsOneAuditEntryThatNeverHoldsThePassword()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+
+        await CreateService(dbContext).ResetPasswordAsync(user.Id, "a-brand-new-password", AdminContext);
+
+        AssertSingleAuditEntry(dbContext, AdminAuditAction.PasswordReset, user.Id);
+        Assert.Null(typeof(AdminAuditEntry).GetProperty("Password"));
     }
 }
