@@ -4,6 +4,7 @@ namespace MedicalRecordService.Services;
 
 public interface IConsultationTemplateService
 {
-    Task<IReadOnlyList<ConsultationTemplateResponse>> GetActiveTemplatesAsync(
+    Task<IReadOnlyList<ConsultationTemplateResponse>> GetTemplatesForDoctorAsync(
+        Guid doctorId,
         CancellationToken cancellationToken = default);
 }

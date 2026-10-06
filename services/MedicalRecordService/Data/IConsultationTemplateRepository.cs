@@ -4,6 +4,8 @@ namespace MedicalRecordService.Data;
 
 public interface IConsultationTemplateRepository
 {
-    Task<IReadOnlyList<ConsultationTemplate>> ListActiveAsync(
+    // Built-in templates first, then the doctor's own, each ordered by name.
+    Task<IReadOnlyList<ConsultationTemplate>> ListVisibleToDoctorAsync(
+        Guid doctorId,
         CancellationToken cancellationToken = default);
 }

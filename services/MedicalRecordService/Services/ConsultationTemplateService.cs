@@ -13,11 +13,22 @@ public sealed class ConsultationTemplateService : IConsultationTemplateService
         _templateRepository = templateRepository;
     }
 
-    public async Task<IReadOnlyList<ConsultationTemplateResponse>> GetActiveTemplatesAsync(
+    public async Task<IReadOnlyList<ConsultationTemplateResponse>> GetTemplatesForDoctorAsync(
+        Guid doctorId,
         CancellationToken cancellationToken = default)
     {
-        var templates = await _templateRepository.ListActiveAsync(cancellationToken);
+        RequireDoctorId(doctorId);
+
+        var templates = await _templateRepository.ListVisibleToDoctorAsync(doctorId, cancellationToken);
         return templates.Select(ToResponse).ToList();
+    }
+
+    private static void RequireDoctorId(Guid doctorId)
+    {
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
     }
 
     private static ConsultationTemplateResponse ToResponse(ConsultationTemplate template) => new()
@@ -26,6 +37,7 @@ public sealed class ConsultationTemplateService : IConsultationTemplateService
         Name = template.Name,
         Symptoms = template.Symptoms,
         ExaminationFindings = template.ExaminationFindings,
-        Notes = template.Notes
+        Notes = template.Notes,
+        IsBuiltIn = template.CreatedByDoctorId is null
     };
 }

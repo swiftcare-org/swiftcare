@@ -7,4 +7,7 @@ public sealed class ConsultationTemplateResponse
     public required string Symptoms { get; init; }
     public required string ExaminationFindings { get; init; }
     public required string Notes { get; init; }
+
+    // False for a template the requesting doctor saved, which only they can see or remove.
+    public required bool IsBuiltIn { get; init; }
 }

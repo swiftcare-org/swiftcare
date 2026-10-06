@@ -9,6 +9,7 @@ namespace MedicalRecordService.Controllers;
 public sealed class TemplatesController : ControllerBase
 {
     private const string UserRoleHeaderName = "X-User-Role";
+    private const string UserIdHeaderName = "X-User-Id";
 
     private readonly IConsultationTemplateService _templateService;
 
@@ -23,8 +24,22 @@ public sealed class TemplatesController : ControllerBase
     [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetTemplates(CancellationToken cancellationToken)
     {
-        // The role header is trusted only after GatewaySecretMiddleware proves that the
-        // API Gateway forwarded the request and rebuilt identity from a validated JWT.
+        if (RejectUnlessDoctor(out var doctorId) is { } rejection)
+        {
+            return rejection;
+        }
+
+        var templates = await _templateService.GetTemplatesForDoctorAsync(doctorId, cancellationToken);
+        return Ok(templates);
+    }
+
+    // The identity headers are trusted only after GatewaySecretMiddleware proves that the
+    // API Gateway forwarded the request and rebuilt identity from a validated JWT. The
+    // owner of a template always comes from here, never from the request body.
+    private IActionResult? RejectUnlessDoctor(out Guid doctorId)
+    {
+        doctorId = Guid.Empty;
+
         if (!string.Equals(
                 HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault(),
                 "Doctor",
@@ -33,7 +48,12 @@ public sealed class TemplatesController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse("Forbidden"));
         }
 
-        var templates = await _templateService.GetActiveTemplatesAsync(cancellationToken);
-        return Ok(templates);
+        if (!Guid.TryParse(HttpContext.Request.Headers[UserIdHeaderName].FirstOrDefault(), out doctorId)
+            || doctorId == Guid.Empty)
+        {
+            return Unauthorized(new MessageResponse("Doctor identity is unavailable"));
+        }
+
+        return null;
     }
 }
