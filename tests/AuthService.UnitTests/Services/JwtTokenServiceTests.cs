@@ -65,6 +65,18 @@ public class JwtTokenServiceTests
         Assert.DoesNotContain(jwt.Claims, c => c.Type == "roomNumber");
     }
 
+    [Theory]
+    [InlineData(UserRole.Receptionist, "R-204")]
+    [InlineData(UserRole.Doctor, null)]
+    [InlineData(UserRole.Doctor, "   ")]
+    public void RoomNumberClaimNeedsBothTheDoctorRoleAndARoom(UserRole role, string? roomNumber)
+    {
+        var (token, _) = CreateService().GenerateToken(CreateUser(role, roomNumber));
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+        Assert.DoesNotContain(jwt.Claims, c => c.Type == "roomNumber");
+    }
+
     [Fact]
     public void GenerateTokenSetsExpiryTwelveHoursOut()
     {

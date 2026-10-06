@@ -51,9 +51,26 @@ public class PrescriptionReportsControllerTests
         var result = await CreateReportController(service, role)
             .GetDailyReport(new DateOnly(2026, 10, 2), CancellationToken.None);
 
-        Assert.Equal(
-            StatusCodes.Status403Forbidden,
-            Assert.IsType<ObjectResult>(result).StatusCode);
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        Assert.Equal("Forbidden", Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DailyReportWithoutRoleHeaderReturnsForbidden()
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+        var controller = new PrescriptionReportsController(service.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.GetDailyReport(new DateOnly(2026, 10, 2), CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        Assert.Equal("Forbidden", Assert.IsType<MessageResponse>(response.Value).Message);
         service.VerifyNoOtherCalls();
     }
 
