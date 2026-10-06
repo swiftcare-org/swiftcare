@@ -20,6 +20,7 @@ public sealed class AuthServiceWebApplicationFactory : WebApplicationFactory<Pro
 
     public Mock<IAuthenticationService> AuthenticationServiceMock { get; } = new();
     public Mock<IUserAccountService> UserAccountServiceMock { get; } = new();
+    public Mock<IAuditLogService> AuditLogServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -48,6 +49,9 @@ public sealed class AuthServiceWebApplicationFactory : WebApplicationFactory<Pro
 
             services.RemoveAll<IUserAccountService>();
             services.AddScoped(_ => UserAccountServiceMock.Object);
+
+            services.RemoveAll<IAuditLogService>();
+            services.AddScoped(_ => AuditLogServiceMock.Object);
         });
     }
 }
