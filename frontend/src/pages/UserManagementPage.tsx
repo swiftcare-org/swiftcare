@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { createUser, listUsers } from '../api/users';
+import { createUser, deactivateUser, listUsers, reactivateUser } from '../api/users';
 import type { CreateUserRequestBody, UserSummary } from '../api/users';
 import { ApiError } from '../api/client';
 import type { UserRole } from '../auth/types';
+import { useAuth } from '../auth/useAuth';
 import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
+import { ConfirmPanel } from '../components/ui/ConfirmPanel';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
 import { Field, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
@@ -18,10 +20,30 @@ import {
   tableHeaderCellClassName,
   tableKeyCellClassName,
   tableWrapperClassName,
+  textLinkClassName,
 } from '../components/ui/table';
+import { EditUserForm } from '../users/EditUserForm';
+import { ResetPasswordForm } from '../users/ResetPasswordForm';
+import { MINIMUM_PASSWORD_LENGTH } from '../users/passwordPolicy';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'created' | 'failed';
 type ListStatus = 'loading' | 'loaded' | 'error';
+type PanelKind = 'edit' | 'reset' | 'deactivate' | 'reactivate';
+
+// The one panel open under a row. Only one is open at a time, so two unsaved forms
+// can never be on screen together.
+interface RowPanel {
+  userId: string;
+  kind: PanelKind;
+}
+
+interface Notice {
+  tone: 'success' | 'error';
+  title: string;
+  message: string;
+}
+
+const COLUMNS = ['Username', 'Full Name', 'Role', 'Room', 'Specialization', 'Status', 'Actions'];
 
 interface FieldErrors {
   username: string | null;
@@ -38,11 +60,6 @@ const EMPTY_FIELD_ERRORS: FieldErrors = {
   role: null,
   roomnumber: null,
 };
-
-// Mirrors AuthService's PasswordPolicy.MinimumLength. The frontend has no way to import a
-// C# constant, so this must be kept in sync by hand - the server remains authoritative
-// regardless of what this pre-submit check catches.
-const MINIMUM_PASSWORD_LENGTH = 8;
 
 const ROLE_OPTIONS: UserRole[] = ['Doctor', 'Receptionist', 'Admin'];
 
@@ -61,6 +78,8 @@ function applyServerFieldErrors(prev: FieldErrors, serverErrors: Readonly<Record
 }
 
 export function UserManagementPage() {
+  const { user: currentUser } = useAuth();
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -73,6 +92,11 @@ export function UserManagementPage() {
 
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [listStatus, setListStatus] = useState<ListStatus>('loading');
+
+  const [panel, setPanel] = useState<RowPanel | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const isBusy = status === 'submitting';
 
@@ -107,6 +131,89 @@ export function UserManagementPage() {
     }
   }
 
+  function openPanel(target: UserSummary, kind: PanelKind) {
+    setNotice(null);
+    setStatusError(null);
+    if (status === 'created' || status === 'failed') {
+      setStatus('idle');
+      setServerMessage(null);
+    }
+
+    // The server refuses this too; saying so here saves a confirmation that cannot succeed.
+    if (kind === 'deactivate' && target.userId === currentUser?.userId) {
+      setPanel(null);
+      setNotice({
+        tone: 'error',
+        title: 'Account Not Deactivated',
+        message: 'You cannot deactivate your own account.',
+      });
+      return;
+    }
+
+    setPanel({ userId: target.userId, kind });
+  }
+
+  function closePanel() {
+    setPanel(null);
+    setStatusError(null);
+  }
+
+  function replaceUser(updated: UserSummary) {
+    setUsers((prev) => prev.map((existing) => (existing.userId === updated.userId ? updated : existing)));
+  }
+
+  function handleEdited(updated: UserSummary) {
+    replaceUser(updated);
+    setPanel(null);
+    setNotice({
+      tone: 'success',
+      title: 'Account Updated',
+      message: `The details for ${updated.username} were saved.`,
+    });
+  }
+
+  function handlePasswordReset(target: UserSummary) {
+    setPanel(null);
+    setNotice({
+      tone: 'success',
+      title: 'Password Reset',
+      message: `${target.username} can sign in with the new password now.`,
+    });
+  }
+
+  async function handleStatusChange(target: UserSummary, deactivate: boolean) {
+    setStatusBusy(true);
+    setStatusError(null);
+
+    try {
+      replaceUser(deactivate ? await deactivateUser(target.userId) : await reactivateUser(target.userId));
+      setPanel(null);
+      setNotice(
+        deactivate
+          ? {
+              tone: 'success',
+              title: 'Account Deactivated',
+              message: `${target.username} can no longer sign in.`,
+            }
+          : {
+              tone: 'success',
+              title: 'Account Reactivated',
+              message: `${target.username} can sign in again.`,
+            },
+      );
+    } catch (error) {
+      if (deactivate && error instanceof ApiError && error.status === 400) {
+        setStatusError('You cannot deactivate your own account.');
+      } else if (error instanceof ApiError && error.status === 404) {
+        setStatusError('This account no longer exists. Please refresh the page.');
+      } else {
+        setStatusError(`Unable to ${deactivate ? 'deactivate' : 'reactivate'} the account. Please try again.`);
+      }
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
@@ -134,6 +241,7 @@ export function UserManagementPage() {
 
     setStatus('submitting');
     setServerMessage(null);
+    setNotice(null);
 
     const request: CreateUserRequestBody = {
       username: trimmedUsername,
@@ -312,12 +420,21 @@ export function UserManagementPage() {
         )}
         {listStatus === 'loaded' && users.length === 0 && <EmptyState>No accounts yet.</EmptyState>}
 
+        {/* Outcome of a row action, shown beside the table it changed. */}
+        <div aria-live="polite" className="empty:hidden" data-testid="user-action-notice">
+          {notice && (
+            <Banner tone={notice.tone} title={notice.title} className="mb-4">
+              {notice.message}
+            </Banner>
+          )}
+        </div>
+
         {listStatus === 'loaded' && users.length > 0 && (
           <div className={tableWrapperClassName}>
             <table className={tableClassName}>
               <thead className={tableHeadClassName}>
                 <tr>
-                  {['Username', 'Full Name', 'Role', 'Room', 'Status'].map((heading) => (
+                  {COLUMNS.map((heading) => (
                     <th key={heading} scope="col" className={tableHeaderCellClassName}>
                       {heading}
                     </th>
@@ -325,19 +442,95 @@ export function UserManagementPage() {
                 </tr>
               </thead>
               <tbody className={tableBodyClassName}>
-                {users.map((listedUser) => (
-                  <tr key={listedUser.userId}>
-                    <td className={tableKeyCellClassName}>{listedUser.username}</td>
-                    <td className={tableCellClassName}>{listedUser.fullName}</td>
-                    <td className={tableCellClassName}>{listedUser.role}</td>
-                    <td className={tableCellClassName}>{listedUser.roomNumber ?? '-'}</td>
-                    <td className={tableCellClassName}>
-                      <StatusBadge tone={listedUser.isActive ? 'success' : 'neutral'}>
-                        {listedUser.isActive ? 'Active' : 'Inactive'}
-                      </StatusBadge>
-                    </td>
-                  </tr>
-                ))}
+                {users.map((listedUser) => {
+                  const openKind = panel?.userId === listedUser.userId ? panel.kind : null;
+                  const rowAction = (kind: PanelKind, label: string, testId: string) => (
+                    <button
+                      type="button"
+                      className={textLinkClassName}
+                      aria-expanded={openKind === kind}
+                      data-testid={testId}
+                      onClick={() => (openKind === kind ? closePanel() : openPanel(listedUser, kind))}
+                    >
+                      {label}
+                      <span className="sr-only"> for {listedUser.username}</span>
+                    </button>
+                  );
+
+                  return (
+                    <Fragment key={listedUser.userId}>
+                      <tr data-testid="user-row">
+                        <td className={tableKeyCellClassName}>{listedUser.username}</td>
+                        <td className={tableCellClassName}>{listedUser.fullName}</td>
+                        <td className={tableCellClassName}>{listedUser.role}</td>
+                        <td className={tableCellClassName}>{listedUser.roomNumber ?? '-'}</td>
+                        <td className={tableCellClassName}>{listedUser.specialization ?? '-'}</td>
+                        <td className={tableCellClassName} data-testid="user-status">
+                          <StatusBadge tone={listedUser.isActive ? 'success' : 'neutral'}>
+                            {listedUser.isActive ? 'Active' : 'Inactive'}
+                          </StatusBadge>
+                        </td>
+                        <td className={tableCellClassName}>
+                          <div className="flex gap-4 whitespace-nowrap">
+                            {rowAction('edit', 'Edit', 'user-edit')}
+                            {rowAction('reset', 'Reset Password', 'user-reset-password')}
+                            {listedUser.isActive
+                              ? rowAction('deactivate', 'Deactivate', 'user-deactivate')
+                              : rowAction('reactivate', 'Reactivate', 'user-reactivate')}
+                          </div>
+                        </td>
+                      </tr>
+
+                      {openKind && (
+                        <tr data-testid="user-panel">
+                          <td colSpan={COLUMNS.length} className="bg-slate-50 px-4 py-5">
+                            {openKind === 'edit' && (
+                              <EditUserForm user={listedUser} onSaved={handleEdited} onCancel={closePanel} />
+                            )}
+                            {openKind === 'reset' && (
+                              <ResetPasswordForm
+                                user={listedUser}
+                                onReset={() => handlePasswordReset(listedUser)}
+                                onCancel={closePanel}
+                              />
+                            )}
+                            {openKind === 'deactivate' && (
+                              <ConfirmPanel
+                                labelId={`deactivate-${listedUser.userId}`}
+                                title={`Deactivate ${listedUser.username}`}
+                                confirmLabel="Deactivate"
+                                busyLabel="Deactivating…"
+                                busy={statusBusy}
+                                error={statusError}
+                                onConfirm={() => handleStatusChange(listedUser, true)}
+                                onCancel={closePanel}
+                                className="max-w-xl"
+                              >
+                                Are you sure you want to deactivate this account?
+                              </ConfirmPanel>
+                            )}
+                            {openKind === 'reactivate' && (
+                              <ConfirmPanel
+                                labelId={`reactivate-${listedUser.userId}`}
+                                title={`Reactivate ${listedUser.username}`}
+                                confirmLabel="Reactivate"
+                                busyLabel="Reactivating…"
+                                tone="primary"
+                                busy={statusBusy}
+                                error={statusError}
+                                onConfirm={() => handleStatusChange(listedUser, false)}
+                                onCancel={closePanel}
+                                className="max-w-xl"
+                              >
+                                Are you sure you want to reactivate this account?
+                              </ConfirmPanel>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
