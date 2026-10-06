@@ -96,16 +96,17 @@ Equivalent mutants (no test can tell them apart from the original):
 ## Thresholds
 
 `break` was 0 for the baseline so it could not fail. It is now set 5 points below each final
-score, rounded down to 5, so CI fails if the suite is weakened:
+score, rounded down to 5, so CI fails if the suite is weakened. Stryker requires
+high ≥ low ≥ break, so `low` equals `break` and `high` is 5 points above it:
 
-| Service | high | low | break |
-|---|---:|---:|---:|
-| ApiGateway | 80 | 60 | 90 |
-| AuthService | 80 | 60 | 80 |
-| MedicalRecordService | 80 | 60 | 85 |
-| PatientService | 80 | 60 | 85 |
-| PrescriptionService | 80 | 60 | 85 |
-| QueueService | 80 | 60 | 80 |
+| Service | high | low | break | Final score |
+|---|---:|---:|---:|---:|
+| ApiGateway | 95 | 90 | 90 | 96.49% |
+| AuthService | 85 | 80 | 80 | 86.03% |
+| MedicalRecordService | 90 | 85 | 85 | 91.71% |
+| PatientService | 90 | 85 | 85 | 90.88% |
+| PrescriptionService | 90 | 85 | 85 | 90.32% |
+| QueueService | 85 | 80 | 80 | 88.97% |
 
 ## Notes on the run
 

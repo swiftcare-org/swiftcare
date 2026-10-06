@@ -39,7 +39,7 @@ Settings shared by all six configs:
 |---|---|---|
 | `mutation-level` | `Standard` | The full set of C# mutators without the slowest experimental ones. |
 | `coverage-analysis` | `perTest` | Each mutant runs only the tests that reach it, which keeps a full run practical. Mutants no test reaches are reported as **NoCoverage** without running anything. |
-| `thresholds` | high 80, low 60, break 80-90 | `break` is set per service 5 points below its final score, so CI fails if the suite is weakened (see Results). |
+| `thresholds` | break 80-90, low = break, high = break + 5 | `break` is set per service 5 points below its final score, so CI fails if the suite is weakened (see Results). Stryker requires high ≥ low ≥ break. |
 
 ## Prerequisites
 
