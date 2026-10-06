@@ -19,7 +19,7 @@ public sealed class AdoNetConsultationTemplateRepository : IConsultationTemplate
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Name, Symptoms, ExaminationFindings, Notes, CreatedByDoctorId
+            SELECT Id, Name, Symptoms, ExaminationFindings, Notes, CreatedByDoctorId, IsActive
             FROM ConsultationTemplates
             WHERE IsActive = TRUE
               AND (CreatedByDoctorId IS NULL OR CreatedByDoctorId = @DoctorId)
@@ -72,6 +72,44 @@ public sealed class AdoNetConsultationTemplateRepository : IConsultationTemplate
         }
     }
 
+    public async Task<ConsultationTemplate?> FindAsync(
+        Guid templateId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Name, Symptoms, ExaminationFindings, Notes, CreatedByDoctorId, IsActive
+            FROM ConsultationTemplates
+            WHERE Id = @Id
+            LIMIT 1;
+            """;
+        command.Parameters.Add("@Id", MySqlDbType.VarChar, 36).Value = templateId.ToString();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadTemplate(reader) : null;
+    }
+
+    public async Task<bool> DeactivateAsync(
+        Guid templateId,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // The owner is part of the WHERE clause, so even a caller that skipped the
+        // ownership check could not deactivate a built-in or another doctor's template.
+        command.CommandText = """
+            UPDATE ConsultationTemplates
+            SET IsActive = FALSE
+            WHERE Id = @Id AND CreatedByDoctorId = @DoctorId AND IsActive = TRUE;
+            """;
+        command.Parameters.Add("@Id", MySqlDbType.VarChar, 36).Value = templateId.ToString();
+        command.Parameters.Add("@DoctorId", MySqlDbType.VarChar, 36).Value = doctorId.ToString();
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private static ConsultationTemplate ReadTemplate(MySqlDataReader reader) => new()
     {
         Id = reader.GetGuid(reader.GetOrdinal("Id")),
@@ -81,6 +119,7 @@ public sealed class AdoNetConsultationTemplateRepository : IConsultationTemplate
         Notes = reader.GetString(reader.GetOrdinal("Notes")),
         CreatedByDoctorId = reader.IsDBNull(reader.GetOrdinal("CreatedByDoctorId"))
             ? null
-            : reader.GetGuid(reader.GetOrdinal("CreatedByDoctorId"))
+            : reader.GetGuid(reader.GetOrdinal("CreatedByDoctorId")),
+        IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive"))
     };
 }

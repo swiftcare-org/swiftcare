@@ -61,6 +61,37 @@ public sealed class TemplatesController : ControllerBase
         };
     }
 
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RemoveTemplate(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectUnlessDoctor(out var doctorId) is { } rejection)
+        {
+            return rejection;
+        }
+
+        // The route constraint accepts the all-zero GUID, which is not a real ID.
+        if (id == Guid.Empty)
+        {
+            return BadRequest(new MessageResponse("Template ID must be provided."));
+        }
+
+        var outcome = await _templateService.RemoveAsync(id, doctorId, cancellationToken);
+
+        return outcome switch
+        {
+            RemoveTemplateOutcome.Removed => NoContent(),
+            RemoveTemplateOutcome.BuiltIn => StatusCode(
+                StatusCodes.Status403Forbidden,
+                new MessageResponse("Built-in templates cannot be removed")),
+            _ => NotFound(new MessageResponse("Template not found"))
+        };
+    }
+
     // The identity headers are trusted only after GatewaySecretMiddleware proves that the
     // API Gateway forwarded the request and rebuilt identity from a validated JWT. The
     // owner of a template always comes from here, never from the request body.

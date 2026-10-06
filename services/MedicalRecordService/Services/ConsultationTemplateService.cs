@@ -56,6 +56,39 @@ public sealed class ConsultationTemplateService : IConsultationTemplateService
             : new CreateTemplateResult { Outcome = CreateTemplateOutcome.DuplicateName };
     }
 
+    public async Task<RemoveTemplateOutcome> RemoveAsync(
+        Guid templateId,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireDoctorId(doctorId);
+
+        if (templateId == Guid.Empty)
+        {
+            throw new ArgumentException("Template ID must be provided.", nameof(templateId));
+        }
+
+        var template = await _templateRepository.FindAsync(templateId, cancellationToken);
+        if (template is null || !template.IsActive)
+        {
+            return RemoveTemplateOutcome.NotFound;
+        }
+
+        if (template.CreatedByDoctorId is null)
+        {
+            return RemoveTemplateOutcome.BuiltIn;
+        }
+
+        // Another doctor's template is reported as missing, so its existence stays private.
+        if (template.CreatedByDoctorId != doctorId)
+        {
+            return RemoveTemplateOutcome.NotFound;
+        }
+
+        var removed = await _templateRepository.DeactivateAsync(templateId, doctorId, cancellationToken);
+        return removed ? RemoveTemplateOutcome.Removed : RemoveTemplateOutcome.NotFound;
+    }
+
     private static void RequireDoctorId(Guid doctorId)
     {
         if (doctorId == Guid.Empty)
