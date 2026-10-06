@@ -1,50 +1,31 @@
 using MedicalRecordService.Data;
 using MedicalRecordService.Models.Dtos;
+using MedicalRecordService.Models.Entities;
 
 namespace MedicalRecordService.Services;
 
 public sealed class ConsultationTemplateService : IConsultationTemplateService
 {
-    private readonly IMedicalRecordConnectionFactory _connectionFactory;
+    private readonly IConsultationTemplateRepository _templateRepository;
 
-    public ConsultationTemplateService(IMedicalRecordConnectionFactory connectionFactory)
+    public ConsultationTemplateService(IConsultationTemplateRepository templateRepository)
     {
-        _connectionFactory = connectionFactory;
+        _templateRepository = templateRepository;
     }
 
     public async Task<IReadOnlyList<ConsultationTemplateResponse>> GetActiveTemplatesAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id, Name, Symptoms, ExaminationFindings, Notes
-            FROM ConsultationTemplates
-            WHERE IsActive = TRUE
-            ORDER BY Name;
-            """;
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var templates = new List<ConsultationTemplateResponse>();
-
-        var idOrdinal = reader.GetOrdinal("Id");
-        var nameOrdinal = reader.GetOrdinal("Name");
-        var symptomsOrdinal = reader.GetOrdinal("Symptoms");
-        var examinationFindingsOrdinal = reader.GetOrdinal("ExaminationFindings");
-        var notesOrdinal = reader.GetOrdinal("Notes");
-
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            templates.Add(new ConsultationTemplateResponse
-            {
-                Id = reader.GetGuid(idOrdinal),
-                Name = reader.GetString(nameOrdinal),
-                Symptoms = reader.GetString(symptomsOrdinal),
-                ExaminationFindings = reader.GetString(examinationFindingsOrdinal),
-                Notes = reader.GetString(notesOrdinal)
-            });
-        }
-
-        return templates;
+        var templates = await _templateRepository.ListActiveAsync(cancellationToken);
+        return templates.Select(ToResponse).ToList();
     }
+
+    private static ConsultationTemplateResponse ToResponse(ConsultationTemplate template) => new()
+    {
+        Id = template.Id,
+        Name = template.Name,
+        Symptoms = template.Symptoms,
+        ExaminationFindings = template.ExaminationFindings,
+        Notes = template.Notes
+    };
 }
