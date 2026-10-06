@@ -35,11 +35,24 @@ public class CreatePrescriptionRequestValidationTests
 
         Assert.Equal(3, errors.Count);
         Assert.Contains(errors, error =>
-            error.MemberNames.Contains(nameof(CreatePrescriptionRequest.ConsultationId)));
+            error.ErrorMessage == "Consultation ID is required"
+            && error.MemberNames.Contains(nameof(CreatePrescriptionRequest.ConsultationId)));
         Assert.Contains(errors, error =>
-            error.MemberNames.Contains(nameof(CreatePrescriptionRequest.QueueId)));
+            error.ErrorMessage == "Queue ID is required"
+            && error.MemberNames.Contains(nameof(CreatePrescriptionRequest.QueueId)));
         Assert.Contains(errors, error =>
-            error.MemberNames.Contains(nameof(CreatePrescriptionRequest.PatientId)));
+            error.ErrorMessage == "Patient ID is required"
+            && error.MemberNames.Contains(nameof(CreatePrescriptionRequest.PatientId)));
+    }
+
+    [Fact]
+    public void NewMedicineWithNoValuesFailsEveryRequiredField()
+    {
+        var errors = Validate(new PrescriptionItemRequest());
+
+        Assert.Equal(
+            ["Dosage is required", "Duration is required", "Frequency is required", "Medicine name is required"],
+            errors.Select(error => error.ErrorMessage).Order());
     }
 
     [Theory]

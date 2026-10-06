@@ -87,6 +87,28 @@ public class ConsultationCompletedConsumerTests
         Message = new Message<string, string> { Key = Guid.NewGuid().ToString(), Value = payload }
     };
 
+    [Fact]
+    public void DisposingTheWorkerDisposesTheKafkaConsumer()
+    {
+        var consumer = new Mock<IConsumer<string, string>>();
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        var worker = new ConsultationCompletedConsumer(
+            consumer.Object,
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new KafkaOptions
+            {
+                BootstrapServers = "localhost:9092",
+                PatientCheckedInTopic = "patient-checked-in",
+                PatientCalledTopic = "patient-called",
+                ConsumerGroupId = "queue-service"
+            }),
+            NullLogger<ConsultationCompletedConsumer>.Instance);
+
+        worker.Dispose();
+
+        consumer.Verify(item => item.Dispose(), Times.Once);
+    }
+
     private static Mock<IConsumer<string, string>> CreateConsumerMock(
         ConsumeResult<string, string> result)
     {
