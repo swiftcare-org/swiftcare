@@ -45,7 +45,8 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `current-patient-route` | `GET /api/queue/today/current` | `DoctorOnly` | `http://localhost:5003` (QueueService) |
 | `today-queue-route` | `GET /api/queue/today` | `ReceptionistOnly` | `http://localhost:5003` (QueueService) |
 | `consultations-create-route` | `POST /api/consultations` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
-| `consultation-templates-route` | `GET /api/templates` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
+| `consultation-templates-route` | `GET, POST /api/templates` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
+| `consultation-template-item-route` | `DELETE /api/templates/{id:guid}` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 
 `patient-read-route` is deliberately constrained to `{id:guid}` and ordered after `patients-search-route`: this guarantees `/api/patients/search` can never be shadowed by the parameterized route regardless of Order, since `"search"` fails the guid constraint outright. `PatientSearchAndReadPolicy` permits Doctor, Receptionist, and Admin access to patient-profile clinical reads. Chronic-condition creation and removal reuse `ReceptionistOnly`; no condition update route is configured. `AllergyWritePolicy` remains limited to Doctor and Receptionist. `DoctorOnly` restricts the shared waiting-pool, current-patient, and call-next routes to authenticated doctors. Only the exact `GET /api/queue/display` route is anonymous; all other queue routes retain their role policies.
 
@@ -125,5 +126,6 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 | `GET` | `/api/queue/today/waiting` | Bearer JWT, `Doctor` role | Proxied to QueueService |
 | `GET` | `/api/queue/today/current` | Bearer JWT, `Doctor` role | Proxied to QueueService; returns `204` when no assignment exists |
 | `GET` | `/api/queue/today` | Bearer JWT, `Receptionist` role | Proxied to QueueService |
-| `GET` | `/api/templates` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |
+| `GET`, `POST` | `/api/templates` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |
+| `DELETE` | `/api/templates/{id}` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |
 | `POST` | `/api/consultations` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |

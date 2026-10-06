@@ -11,7 +11,9 @@ MedicalRecordService owns consultation records, consultation templates, vital si
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/health` | none | Health check |
-| `GET` | `/api/templates` | Doctor | Returns active consultation templates ordered by name |
+| `GET` | `/api/templates` | Doctor | Returns the built-in templates plus the requesting doctor's own, each marked with `isBuiltIn` |
+| `POST` | `/api/templates` | Doctor | Saves a template for the requesting doctor. `201`, `400` for a missing or too-long value, `409` for a name the doctor already uses |
+| `DELETE` | `/api/templates/{id}` | Doctor (owner) | Marks the doctor's own template inactive. `204`, `403` for a built-in template, `404` for a missing or another doctor's template |
 | `POST` | `/api/consultations` | Doctor | Creates a consultation for the doctor's current queue assignment |
 | `POST` | `/api/consultations/{consultationId}/vitals` | Doctor | Records vital signs for the doctor's consultation and calculates BMI |
 | `GET` | `/api/consultations/by-queue/{queueId}` | Doctor | Returns this doctor's saved consultation status and whether vital signs exist, or `204` when none exists |
@@ -95,6 +97,14 @@ Automatic baselining of the retired SQL-created schema is not supported. The dev
 Do not manually insert rows into `__EFMigrationsHistory`. Running `--migrate` against an existing SQL-created schema fails instead of silently adopting it.
 
 Each queue entry can have at most one consultation record, and each consultation can have at most one vital-sign record. The chosen template ID and name are stored on the consultation so the template used for the visit remains identifiable.
+
+### Doctor-owned templates
+
+A template with no `CreatedByDoctorId` is built in: every doctor sees it and nobody can remove it. A template with an owner is private to that doctor. The owner always comes from the Gateway identity header, never from the request body, and a consultation can only record a built-in template or one the same doctor owns.
+
+A template needs a name (up to 100 characters) and symptoms, examination findings and notes (up to 5000 characters each). Names are unique per owner among active templates, enforced by the `UX_ConsultationTemplates_ActiveOwnerScope_Name` index over a generated column, so two doctors can use the same name and a removed template frees its name for reuse.
+
+Removing a template sets `IsActive` to false and keeps the row. Past consultations hold their own copy of the clinical text and the template name, so they load unchanged.
 
 ## Required environment variables
 
