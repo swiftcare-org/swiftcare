@@ -75,7 +75,7 @@ public class UserManagementPage
 
     public string UserRowStatus(string username) =>
         _driver.FindElement(By.XPath(
-            $"//tr[td[normalize-space()='{username}']]/td[last()]")).Text;
+            $"//tr[td[normalize-space()='{username}']]/td[@data-testid='user-status']")).Text;
 
     private static By RowCell(string username) =>
         By.XPath($"//table//td[normalize-space()='{username}']");

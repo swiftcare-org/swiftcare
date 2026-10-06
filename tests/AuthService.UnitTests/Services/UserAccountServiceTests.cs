@@ -12,8 +12,7 @@ namespace AuthService.UnitTests.Services;
 public class UserAccountServiceTests
 {
     private const string ValidPassword = "correct-horse-battery-staple";
-    private const string CorrelationId = "test-correlation-id";
-    private static readonly Guid ActingAdminId = Guid.NewGuid();
+    private static readonly AdminActionContext AdminContext = new(Guid.NewGuid(), "test-correlation-id", "127.0.0.1");
 
     private static AuthDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<AuthDbContext>()
@@ -43,7 +42,7 @@ public class UserAccountServiceTests
         await using var dbContext = CreateDbContext();
         var service = CreateService(dbContext);
 
-        var result = await service.CreateUserAsync(CreateValidRequest(), CorrelationId, ActingAdminId);
+        var result = await service.CreateUserAsync(CreateValidRequest(), AdminContext);
 
         Assert.Equal(CreateUserOutcome.Success, result.Outcome);
         var persisted = Assert.Single(dbContext.Users);
@@ -60,7 +59,7 @@ public class UserAccountServiceTests
         var service = CreateService(dbContext);
 
         var request = CreateValidRequest(username: "reception.new", role: UserRole.Receptionist, roomNumber: null);
-        var result = await service.CreateUserAsync(request, CorrelationId, ActingAdminId);
+        var result = await service.CreateUserAsync(request, AdminContext);
 
         Assert.Equal(CreateUserOutcome.Success, result.Outcome);
         var persisted = Assert.Single(dbContext.Users);
@@ -82,7 +81,7 @@ public class UserAccountServiceTests
         await dbContext.SaveChangesAsync();
 
         var service = CreateService(dbContext);
-        var result = await service.CreateUserAsync(CreateValidRequest(), CorrelationId, ActingAdminId);
+        var result = await service.CreateUserAsync(CreateValidRequest(), AdminContext);
 
         Assert.Equal(CreateUserOutcome.DuplicateUsername, result.Outcome);
     }
@@ -103,7 +102,7 @@ public class UserAccountServiceTests
         await dbContext.SaveChangesAsync();
 
         var service = CreateService(dbContext);
-        var result = await service.CreateUserAsync(CreateValidRequest(), CorrelationId, ActingAdminId);
+        var result = await service.CreateUserAsync(CreateValidRequest(), AdminContext);
 
         Assert.Equal(CreateUserOutcome.DuplicateUsername, result.Outcome);
     }
@@ -118,7 +117,7 @@ public class UserAccountServiceTests
         var service = CreateService(dbContext);
 
         var result = await service.CreateUserAsync(
-            CreateValidRequest(password: shortPassword), CorrelationId, ActingAdminId);
+            CreateValidRequest(password: shortPassword), AdminContext);
 
         Assert.Equal(CreateUserOutcome.PasswordTooShort, result.Outcome);
     }
@@ -131,7 +130,7 @@ public class UserAccountServiceTests
 
         var minimumLengthPassword = new string('a', PasswordPolicy.MinimumLength);
         var result = await service.CreateUserAsync(
-            CreateValidRequest(password: minimumLengthPassword), CorrelationId, ActingAdminId);
+            CreateValidRequest(password: minimumLengthPassword), AdminContext);
 
         Assert.Equal(CreateUserOutcome.Success, result.Outcome);
     }
@@ -146,7 +145,7 @@ public class UserAccountServiceTests
         var service = CreateService(dbContext);
 
         var result = await service.CreateUserAsync(
-            CreateValidRequest(roomNumber: roomNumber), CorrelationId, ActingAdminId);
+            CreateValidRequest(roomNumber: roomNumber), AdminContext);
 
         Assert.Equal(CreateUserOutcome.RoomNumberRequiredForDoctor, result.Outcome);
     }
@@ -158,7 +157,7 @@ public class UserAccountServiceTests
         var service = CreateService(dbContext);
 
         var request = CreateValidRequest(username: "admin.new", role: UserRole.Admin, roomNumber: "R-999");
-        var result = await service.CreateUserAsync(request, CorrelationId, ActingAdminId);
+        var result = await service.CreateUserAsync(request, AdminContext);
 
         Assert.Equal(CreateUserOutcome.Success, result.Outcome);
         var persisted = Assert.Single(dbContext.Users);
@@ -171,10 +170,37 @@ public class UserAccountServiceTests
         await using var dbContext = CreateDbContext();
         var service = CreateService(dbContext);
 
-        await service.CreateUserAsync(CreateValidRequest(password: "short"), CorrelationId, ActingAdminId);
-        await service.CreateUserAsync(CreateValidRequest(roomNumber: null), CorrelationId, ActingAdminId);
+        await service.CreateUserAsync(CreateValidRequest(password: "short"), AdminContext);
+        await service.CreateUserAsync(CreateValidRequest(roomNumber: null), AdminContext);
 
         Assert.Empty(dbContext.Users);
+    }
+
+    [Fact]
+    public async Task CreateRecordsOneAuditEntryForTheActingAdmin()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+
+        var result = await service.CreateUserAsync(CreateValidRequest(), AdminContext);
+
+        var entry = Assert.Single(dbContext.AdminAuditEntries);
+        Assert.Equal(AdminAuditAction.UserCreated, entry.Action);
+        Assert.Equal(AdminContext.AdminUserId, entry.ActorUserId);
+        Assert.Equal(result.User!.UserId, entry.TargetUserId);
+        Assert.Equal(AdminContext.CorrelationId, entry.CorrelationId);
+        Assert.Equal(AdminContext.IpAddress, entry.IpAddress);
+    }
+
+    [Fact]
+    public async Task CreateFailureRecordsNoAuditEntry()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+
+        await service.CreateUserAsync(CreateValidRequest(password: "short"), AdminContext);
+
+        Assert.Empty(dbContext.AdminAuditEntries);
     }
 
     [Fact]

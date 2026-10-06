@@ -9,6 +9,9 @@ public sealed class UserSummaryResponse
 
     // Populated for Doctor accounts only.
     public string? RoomNumber { get; init; }
+
+    // Optional, and populated for Doctor accounts only.
+    public string? Specialization { get; init; }
     public required bool IsActive { get; init; }
     public required DateTime CreatedAt { get; init; }
 }

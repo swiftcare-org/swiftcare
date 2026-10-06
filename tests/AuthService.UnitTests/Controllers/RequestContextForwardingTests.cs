@@ -92,10 +92,10 @@ public class RequestContextForwardingTests
         var service = new Mock<IUserAccountService>();
         service.Setup(candidate => candidate.CreateUserAsync(
                 It.IsAny<CreateUserRequest>(),
-                It.IsAny<string>(),
-                It.IsAny<Guid>(),
+                It.IsAny<AdminActionContext>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<CreateUserRequest, string, Guid, CancellationToken>((_, correlation, _, _) => forwarded = correlation)
+            .Callback<CreateUserRequest, AdminActionContext, CancellationToken>(
+                (_, actionContext, _) => forwarded = actionContext.CorrelationId)
             .ReturnsAsync(new CreateUserResult { Outcome = CreateUserOutcome.Success });
         var context = Context(correlationId, ipAddress: null);
         context.HttpContext.Request.Headers["X-User-Role"] = "Admin";

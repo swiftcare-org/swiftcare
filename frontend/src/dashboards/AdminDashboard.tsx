@@ -58,8 +58,18 @@ export function AdminDashboard() {
 
       <SectionCard
         title="Staff Accounts"
-        description="Create accounts for new staff and review existing ones."
+        description="Create accounts, edit details, reset passwords and deactivate staff who leave."
         actions={<ButtonLink to="/admin/users">Open Staff Accounts</ButtonLink>}
+      />
+
+      <SectionCard
+        title="Audit Log"
+        description="Review sign-ins, sign-outs and every change made to an account."
+        actions={
+          <ButtonLink to="/admin/audit-log" variant="secondary">
+            Open Audit Log
+          </ButtonLink>
+        }
       />
     </DashboardShell>
   );

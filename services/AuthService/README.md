@@ -8,6 +8,12 @@ Issues and validates the credentials for SwiftCare staff accounts. AuthService o
 - `POST /api/auth/logout` — records a `LogoutAuditEntry` (userId, correlation ID, IP, timestamp) for the calling user. Always returns `204`, even if the token was never revoked at the Gateway; ending the session client-side never depends on this call succeeding.
 - `POST /api/users` — creates a staff account (username, password, full name, role, room number for Doctors only). Admin-only. Rejects a duplicate username and an under-length password with a per-field validation error.
 - `GET /api/users` — lists all staff accounts (no passwords). Admin-only.
+- `GET /api/users/doctors`: lists active doctors (name, room, specialization) for every staff role. No account details are returned.
+- `PUT /api/users/{id}`: edits the full name, and the room number and specialization for Doctors. Admin-only. The username and role cannot be changed.
+- `PUT /api/users/{id}/reset-password`: stores a BCrypt hash of a new password, applying the same minimum length as account creation. Admin-only.
+- `PUT /api/users/{id}/deactivate` and `PUT /api/users/{id}/activate`: toggle `IsActive`. Admin-only. An admin cannot deactivate their own account. A deactivated account is refused at the next sign-in; a token it already holds stays valid until it expires.
+- `GET /api/audit-logs`: lists sign-in, sign-out and account management events, newest first (default 200, `?limit=` up to 500). Admin-only and read-only.
+- Writes one `AdminAuditEntry` for every account created, edited, deactivated, reactivated or given a new password, in the same unit of work as the change itself.
 - `GET /health` — liveness/readiness check.
 - Writes one `LoginAuditEntry` per login attempt (`Success`, `InvalidCredentials`, or `AccountDeactivated`) and one `LogoutAuditEntry` per logout, without ever storing the attempted username or password.
 - Enforces the Gateway trust boundary: every request except `/health` must carry a valid `X-Gateway-Secret` header.
@@ -76,6 +82,16 @@ Tests use EF Core InMemory and Moq exclusively — no real database or network c
 | `POST` | `/api/auth/logout` | `X-Gateway-Secret`, `X-User-Id` | Records a logout audit entry, returns `204` |
 | `POST` | `/api/users` | `X-Gateway-Secret`, `X-User-Role: Admin` | Creates a staff account, returns the created user summary |
 | `GET` | `/api/users` | `X-Gateway-Secret`, `X-User-Role: Admin` | Lists all staff accounts |
+| `GET` | `/api/users/doctors` | `X-Gateway-Secret`, any staff `X-User-Role` | Lists active doctors with room and specialization |
+| `PUT` | `/api/users/{id}` | `X-Gateway-Secret`, `X-User-Role: Admin` | Edits full name, room number and specialization |
+| `PUT` | `/api/users/{id}/reset-password` | `X-Gateway-Secret`, `X-User-Role: Admin` | Sets a new password |
+| `PUT` | `/api/users/{id}/deactivate` | `X-Gateway-Secret`, `X-User-Role: Admin`, `X-User-Id` | Deactivates the account; `400` for the caller's own account |
+| `PUT` | `/api/users/{id}/activate` | `X-Gateway-Secret`, `X-User-Role: Admin` | Reactivates the account |
+| `GET` | `/api/audit-logs` | `X-Gateway-Secret`, `X-User-Role: Admin` | Lists audit entries, newest first |
+
+User IDs are GUIDs. The all-zero GUID returns `400`, and an unknown or soft-deleted account returns `404`.
+
+The IP address stored with each audit entry is the address AuthService sees for the connection. Behind the Gateway this is the Gateway's address, not the browser's, so the Audit Log page does not show it. It is still stored and returned by the API, ready for when the real client address is forwarded.
 | `GET` | `/health` | none | Health check |
 
 See `Controllers/AuthController.cs` and `Controllers/UsersController.cs` for the exact request/response contracts and status-code mapping.

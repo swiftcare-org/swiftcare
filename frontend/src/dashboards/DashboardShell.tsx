@@ -37,6 +37,7 @@ const NAVIGATION: Record<UserRole, NavItem[]> = {
   Admin: [
     { to: '/admin', label: 'Dashboard', icon: 'home' },
     { to: '/admin/users', label: 'Staff Accounts', icon: 'users' },
+    { to: '/admin/audit-log', label: 'Audit Log', icon: 'clipboard' },
     { to: '/patients/search', label: 'Patients', icon: 'search' },
   ],
 };

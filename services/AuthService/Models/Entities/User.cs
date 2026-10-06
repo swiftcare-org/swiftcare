@@ -13,6 +13,9 @@ public sealed class User : IHasTimestamps
     // Set only for Doctor accounts; omitted from the JWT for other roles.
     public string? RoomNumber { get; set; }
 
+    // Optional, and kept only for Doctor accounts.
+    public string? Specialization { get; set; }
+
     public bool IsActive { get; set; } = true;
     public bool IsDeleted { get; set; }
     public DateTime CreatedAt { get; set; }

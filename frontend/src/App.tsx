@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { UserManagementPage } from './pages/UserManagementPage';
+import { AuditLogPage } from './pages/AuditLogPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
 import { PatientProfilePage } from './pages/PatientProfilePage';
@@ -74,6 +75,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="Admin">
             <UserManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/audit-log"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <AuditLogPage />
           </ProtectedRoute>
         }
       />

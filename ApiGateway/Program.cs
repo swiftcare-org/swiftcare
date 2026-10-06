@@ -86,6 +86,10 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
     options.AddPolicy("ReceptionistOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Receptionist"));
     options.AddPolicy("DoctorOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Doctor"));
+    // The list of active doctors holds only names, rooms and specializations, so every
+    // staff role may read it. Managing accounts stays AdminOnly.
+    options.AddPolicy("StaffDirectoryPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Doctor", "Receptionist", "Admin"));
     // Patient search, patient profile, allergy reads, and chronic-condition reads are open
     // to all authorized profile roles so doctors can see clinical alerts before consulting.
     options.AddPolicy("PatientSearchAndReadPolicy", policy => policy.RequireAuthenticatedUser()
