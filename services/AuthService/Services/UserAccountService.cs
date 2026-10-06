@@ -20,13 +20,12 @@ public sealed class UserAccountService : IUserAccountService
 
     public async Task<CreateUserResult> CreateUserAsync(
         CreateUserRequest request,
-        string correlationId,
-        Guid actingAdminId,
+        AdminActionContext context,
         CancellationToken cancellationToken = default)
     {
         if (request.Password.Length < PasswordPolicy.MinimumLength)
         {
-            LogRejection(CreateUserOutcome.PasswordTooShort, actingAdminId);
+            LogRejection(CreateUserOutcome.PasswordTooShort, context.AdminUserId);
 
             // lgtm[cs/cleartext-storage-of-sensitive-information]
             // CreateUserOutcome.PasswordTooShort is an outcome discriminator, not password
@@ -38,7 +37,7 @@ public sealed class UserAccountService : IUserAccountService
 
         if (request.Role == UserRole.Doctor && string.IsNullOrWhiteSpace(request.RoomNumber))
         {
-            LogRejection(CreateUserOutcome.RoomNumberRequiredForDoctor, actingAdminId);
+            LogRejection(CreateUserOutcome.RoomNumberRequiredForDoctor, context.AdminUserId);
             return new CreateUserResult { Outcome = CreateUserOutcome.RoomNumberRequiredForDoctor };
         }
 
@@ -53,7 +52,7 @@ public sealed class UserAccountService : IUserAccountService
 
         if (usernameExists)
         {
-            LogRejection(CreateUserOutcome.DuplicateUsername, actingAdminId);
+            LogRejection(CreateUserOutcome.DuplicateUsername, context.AdminUserId);
             return new CreateUserResult { Outcome = CreateUserOutcome.DuplicateUsername };
         }
 
@@ -69,6 +68,7 @@ public sealed class UserAccountService : IUserAccountService
         };
 
         _dbContext.Users.Add(user);
+        RecordAudit(AdminAuditAction.UserCreated, user.Id, context);
 
         try
         {
@@ -78,7 +78,7 @@ public sealed class UserAccountService : IUserAccountService
         {
             // Two admins submitting the same username concurrently can both pass the
             // AnyAsync check above; the unique index is the final backstop.
-            LogRejection(CreateUserOutcome.DuplicateUsername, actingAdminId);
+            LogRejection(CreateUserOutcome.DuplicateUsername, context.AdminUserId);
             return new CreateUserResult { Outcome = CreateUserOutcome.DuplicateUsername };
         }
 
@@ -86,7 +86,7 @@ public sealed class UserAccountService : IUserAccountService
             "User account created: createdUserId={CreatedUserId} role={Role} by adminUserId={AdminUserId}",
             user.Id,
             user.Role,
-            actingAdminId);
+            context.AdminUserId);
 
         return new CreateUserResult
         {
@@ -123,6 +123,21 @@ public sealed class UserAccountService : IUserAccountService
         IsActive = user.IsActive,
         CreatedAt = user.CreatedAt
     };
+
+    // Added to the same unit of work as the change itself, so an action is never saved
+    // without its audit entry, or the other way round.
+    private void RecordAudit(AdminAuditAction action, Guid targetUserId, AdminActionContext context)
+    {
+        _dbContext.AdminAuditEntries.Add(new AdminAuditEntry
+        {
+            ActorUserId = context.AdminUserId,
+            Action = action,
+            TargetUserId = targetUserId,
+            CorrelationId = context.CorrelationId,
+            IpAddress = context.IpAddress,
+            OccurredAt = DateTime.UtcNow
+        });
+    }
 
     private void LogRejection(CreateUserOutcome outcome, Guid actingAdminId)
     {

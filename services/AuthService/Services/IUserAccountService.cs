@@ -6,8 +6,7 @@ public interface IUserAccountService
 {
     Task<CreateUserResult> CreateUserAsync(
         CreateUserRequest request,
-        string correlationId,
-        Guid actingAdminId,
+        AdminActionContext context,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UserSummaryResponse>> GetUsersAsync(CancellationToken cancellationToken = default);

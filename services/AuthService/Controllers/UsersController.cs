@@ -35,11 +35,7 @@ public sealed class UsersController : ControllerBase
             return forbidden;
         }
 
-        var correlationId = HttpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault()
-            ?? Guid.NewGuid().ToString();
-        var actingAdminId = ParseUserIdHeader();
-
-        var result = await _userAccountService.CreateUserAsync(request, correlationId, actingAdminId, cancellationToken);
+        var result = await _userAccountService.CreateUserAsync(request, CreateActionContext(), cancellationToken);
 
         if (result.Outcome != CreateUserOutcome.Success)
         {
@@ -87,6 +83,11 @@ public sealed class UsersController : ControllerBase
 
         return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
     }
+
+    private AdminActionContext CreateActionContext() => new(
+        ParseUserIdHeader(),
+        HttpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString(),
+        HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
 
     private Guid ParseUserIdHeader()
     {

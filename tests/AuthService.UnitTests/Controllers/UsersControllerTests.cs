@@ -41,7 +41,7 @@ public class UsersControllerTests
 
         factory.UserAccountServiceMock
             .Setup(s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CreateUserResult
             {
                 Outcome = CreateUserOutcome.Success,
@@ -87,7 +87,7 @@ public class UsersControllerTests
         Assert.True(errors.ContainsKey("Role"));
         factory.UserAccountServiceMock.Verify(
             s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -109,7 +109,7 @@ public class UsersControllerTests
         Assert.True(errors.ContainsKey("Role"));
         factory.UserAccountServiceMock.Verify(
             s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -119,7 +119,7 @@ public class UsersControllerTests
         using var factory = new AuthServiceWebApplicationFactory();
         factory.UserAccountServiceMock
             .Setup(s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CreateUserResult { Outcome = CreateUserOutcome.DuplicateUsername });
 
         var client = CreateAdminClient(factory);
@@ -136,7 +136,7 @@ public class UsersControllerTests
         using var factory = new AuthServiceWebApplicationFactory();
         factory.UserAccountServiceMock
             .Setup(s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CreateUserResult { Outcome = CreateUserOutcome.PasswordTooShort });
 
         var client = CreateAdminClient(factory);
@@ -153,7 +153,7 @@ public class UsersControllerTests
         using var factory = new AuthServiceWebApplicationFactory();
         factory.UserAccountServiceMock
             .Setup(s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CreateUserResult { Outcome = CreateUserOutcome.RoomNumberRequiredForDoctor });
 
         var client = CreateAdminClient(factory);
@@ -176,7 +176,7 @@ public class UsersControllerTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         factory.UserAccountServiceMock.Verify(
             s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -221,7 +221,7 @@ public class UsersControllerTests
 
         factory.UserAccountServiceMock.Verify(
             s => s.CreateUserAsync(
-                It.IsAny<CreateUserRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+                It.IsAny<CreateUserRequest>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
