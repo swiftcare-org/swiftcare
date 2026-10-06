@@ -180,4 +180,115 @@ public class ConsultationTemplateServiceTests
         Assert.Equal("doctorId", exception.ParamName);
         _repository.VerifyNoOtherCalls();
     }
+
+    private void SetupFind(ConsultationTemplate? template) =>
+        _repository
+            .Setup(repository => repository.FindAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(template);
+
+    [Fact]
+    public async Task RemoveDeactivatesTheDoctorsOwnTemplate()
+    {
+        var own = Template("BP Review", DoctorId);
+        SetupFind(own);
+        _repository
+            .Setup(repository => repository.DeactivateAsync(own.Id, DoctorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var outcome = await CreateService().RemoveAsync(own.Id, DoctorId);
+
+        Assert.Equal(RemoveTemplateOutcome.Removed, outcome);
+        _repository.Verify(repository => repository.FindAsync(own.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _repository.Verify(
+            repository => repository.DeactivateAsync(own.Id, DoctorId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RemoveBuiltInTemplateIsRefusedAndNothingIsDeactivated()
+    {
+        var builtIn = Template("General Consultation");
+        SetupFind(builtIn);
+
+        var outcome = await CreateService().RemoveAsync(builtIn.Id, DoctorId);
+
+        Assert.Equal(RemoveTemplateOutcome.BuiltIn, outcome);
+        _repository.Verify(
+            repository => repository.DeactivateAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RemoveAnotherDoctorsTemplateIsReportedAsMissingAndNothingIsDeactivated()
+    {
+        var someoneElses = Template("BP Review", Guid.NewGuid());
+        SetupFind(someoneElses);
+
+        var outcome = await CreateService().RemoveAsync(someoneElses.Id, DoctorId);
+
+        Assert.Equal(RemoveTemplateOutcome.NotFound, outcome);
+        _repository.Verify(
+            repository => repository.DeactivateAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RemoveUnknownTemplateReturnsNotFound()
+    {
+        SetupFind(null);
+
+        var outcome = await CreateService().RemoveAsync(Guid.NewGuid(), DoctorId);
+
+        Assert.Equal(RemoveTemplateOutcome.NotFound, outcome);
+    }
+
+    [Fact]
+    public async Task RemoveAnAlreadyRemovedTemplateReturnsNotFoundAndNothingIsDeactivated()
+    {
+        var removed = Template("BP Review", DoctorId);
+        removed.IsActive = false;
+        SetupFind(removed);
+
+        var outcome = await CreateService().RemoveAsync(removed.Id, DoctorId);
+
+        Assert.Equal(RemoveTemplateOutcome.NotFound, outcome);
+        _repository.Verify(
+            repository => repository.DeactivateAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // Two requests can pass the checks together; only the one that changed a row succeeded.
+    [Fact]
+    public async Task RemoveThatChangesNoRowReturnsNotFound()
+    {
+        var own = Template("BP Review", DoctorId);
+        SetupFind(own);
+        _repository
+            .Setup(repository => repository.DeactivateAsync(own.Id, DoctorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var outcome = await CreateService().RemoveAsync(own.Id, DoctorId);
+
+        Assert.Equal(RemoveTemplateOutcome.NotFound, outcome);
+    }
+
+    [Fact]
+    public async Task RemoveWithoutADoctorIdIsRejectedBeforeTheRepositoryIsCalled()
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => CreateService().RemoveAsync(Guid.NewGuid(), Guid.Empty));
+
+        Assert.Equal("doctorId", exception.ParamName);
+        _repository.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RemoveWithoutATemplateIdIsRejectedBeforeTheRepositoryIsCalled()
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => CreateService().RemoveAsync(Guid.Empty, DoctorId));
+
+        Assert.Equal("templateId", exception.ParamName);
+        Assert.StartsWith("Template ID must be provided.", exception.Message);
+        _repository.VerifyNoOtherCalls();
+    }
 }

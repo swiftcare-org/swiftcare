@@ -268,4 +268,91 @@ public class TemplatesControllerTests
 
         Assert.Equal("A successful template result must include the created template.", exception.Message);
     }
+
+    private static readonly Guid TemplateId = Guid.NewGuid();
+
+    private static void SetupRemove(MedicalRecordServiceWebApplicationFactory factory, RemoveTemplateOutcome outcome) =>
+        factory.TemplateServiceMock
+            .Setup(service => service.RemoveAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(outcome);
+
+    [Fact]
+    public async Task RemoveOwnTemplateReturns204AndPassesTheTemplateAndTheSignedInDoctor()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        SetupRemove(factory, RemoveTemplateOutcome.Removed);
+
+        var response = await CreateClientWithRole(factory, "Doctor").DeleteAsync($"/api/templates/{TemplateId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        factory.TemplateServiceMock.Verify(
+            service => service.RemoveAsync(TemplateId, DoctorId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RemoveBuiltInTemplateReturns403WithExactMessage()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        SetupRemove(factory, RemoveTemplateOutcome.BuiltIn);
+
+        var response = await CreateClientWithRole(factory, "Doctor").DeleteAsync($"/api/templates/{TemplateId}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Built-in templates cannot be removed", body!.Message);
+    }
+
+    [Fact]
+    public async Task RemoveMissingTemplateReturns404WithExactMessage()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+        SetupRemove(factory, RemoveTemplateOutcome.NotFound);
+
+        var response = await CreateClientWithRole(factory, "Doctor").DeleteAsync($"/api/templates/{TemplateId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Template not found", body!.Message);
+    }
+
+    [Fact]
+    public async Task RemoveWithTheAllZeroIdReturns400AndNeverCallsTheService()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+
+        var response = await CreateClientWithRole(factory, "Doctor")
+            .DeleteAsync("/api/templates/00000000-0000-0000-0000-000000000000");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Template ID must be provided.", body!.Message);
+        factory.TemplateServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task RemoveTemplateAsNonDoctorReturns403AndNeverCallsTheService(string role)
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+
+        var response = await CreateClientWithRole(factory, role).DeleteAsync($"/api/templates/{TemplateId}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("Forbidden", body!.Message);
+        factory.TemplateServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RemoveTemplateWithoutADoctorIdReturns401AndNeverCallsTheService()
+    {
+        using var factory = new MedicalRecordServiceWebApplicationFactory();
+
+        var response = await CreateClientWithRole(factory, "Doctor", userId: null)
+            .DeleteAsync($"/api/templates/{TemplateId}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        factory.TemplateServiceMock.VerifyNoOtherCalls();
+    }
 }
