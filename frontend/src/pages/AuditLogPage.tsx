@@ -19,7 +19,9 @@ import { formatDateTime } from '../lib/format';
 
 type LoadState = 'loading' | 'loaded' | 'error';
 
-const COLUMNS = ['Time', 'User', 'Action', 'Account', 'IP Address'];
+// The recorded IP address is left out: behind the Gateway it is the Gateway's own
+// address, so showing it would suggest a traceability the log does not have yet.
+const COLUMNS = ['Time', 'User', 'Action', 'Account'];
 
 // The server sends a stable code per action; the wording lives here with the rest of the copy.
 const ACTION_LABELS: Record<string, string> = {
@@ -119,7 +121,6 @@ export function AuditLogPage() {
                     <td className={tableKeyCellClassName}>{entry.username}</td>
                     <td className={tableCellClassName}>{ACTION_LABELS[entry.action] ?? entry.action}</td>
                     <td className={tableCellClassName}>{entry.targetUsername ?? '-'}</td>
-                    <td className={`${tableCellClassName} ${numericClassName}`}>{entry.ipAddress}</td>
                   </tr>
                 ))}
               </tbody>

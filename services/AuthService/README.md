@@ -91,7 +91,7 @@ Tests use EF Core InMemory and Moq exclusively — no real database or network c
 
 User IDs are GUIDs. The all-zero GUID returns `400`, and an unknown or soft-deleted account returns `404`.
 
-The IP address stored with each audit entry is the address AuthService sees for the connection. Behind the Gateway this is the Gateway's address, not the browser's.
+The IP address stored with each audit entry is the address AuthService sees for the connection. Behind the Gateway this is the Gateway's address, not the browser's, so the Audit Log page does not show it. It is still stored and returned by the API, ready for when the real client address is forwarded.
 | `GET` | `/health` | none | Health check |
 
 See `Controllers/AuthController.cs` and `Controllers/UsersController.cs` for the exact request/response contracts and status-code mapping.
