@@ -8,6 +8,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     public DbSet<User> Users => Set<User>();
     public DbSet<LoginAuditEntry> LoginAuditEntries => Set<LoginAuditEntry>();
     public DbSet<LogoutAuditEntry> LogoutAuditEntries => Set<LogoutAuditEntry>();
+    public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,11 +21,13 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.Property(u => u.FullName).HasMaxLength(128).IsRequired();
             entity.Property(u => u.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(u => u.RoomNumber).HasMaxLength(16);
+            entity.Property(u => u.Specialization).HasMaxLength(64);
         });
 
         modelBuilder.Entity<LoginAuditEntry>(entity =>
         {
             entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.HasIndex(e => e.OccurredAt);
             entity.Property(e => e.Outcome).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(e => e.CorrelationId).HasMaxLength(64).IsRequired();
             entity.Property(e => e.IpAddress).HasMaxLength(45).IsRequired();
@@ -34,6 +37,16 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
         {
             entity.Property(e => e.Id).ValueGeneratedNever();
             entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.OccurredAt);
+            entity.Property(e => e.CorrelationId).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.IpAddress).HasMaxLength(45).IsRequired();
+        });
+
+        modelBuilder.Entity<AdminAuditEntry>(entity =>
+        {
+            entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.HasIndex(e => e.OccurredAt);
+            entity.Property(e => e.Action).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(e => e.CorrelationId).HasMaxLength(64).IsRequired();
             entity.Property(e => e.IpAddress).HasMaxLength(45).IsRequired();
         });
