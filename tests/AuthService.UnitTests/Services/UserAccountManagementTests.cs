@@ -281,4 +281,96 @@ public class UserAccountManagementTests
         AssertSingleAuditEntry(dbContext, AdminAuditAction.PasswordReset, user.Id);
         Assert.Null(typeof(AdminAuditEntry).GetProperty("Password"));
     }
+
+    [Fact]
+    public async Task DeactivateSetsTheAccountInactiveAndBlocksLogin()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var result = await CreateService(dbContext).DeactivateUserAsync(user.Id, AdminContext);
+
+        Assert.Equal(UserActionOutcome.Success, result.Outcome);
+        Assert.False(result.User!.IsActive);
+        Assert.False(Assert.Single(dbContext.Users).IsActive);
+        Assert.Equal(LoginOutcome.AccountDeactivated, await LoginAsync(dbContext, user.Username, OriginalPassword));
+    }
+
+    [Fact]
+    public async Task AdminCannotDeactivateTheirOwnAccount()
+    {
+        await using var dbContext = CreateDbContext();
+        var admin = await SeedUserAsync(dbContext, UserRole.Admin);
+        var ownContext = AdminContext with { AdminUserId = admin.Id };
+
+        var result = await CreateService(dbContext).DeactivateUserAsync(admin.Id, ownContext);
+
+        Assert.Equal(UserActionOutcome.CannotDeactivateOwnAccount, result.Outcome);
+        Assert.True(Assert.Single(dbContext.Users).IsActive);
+        Assert.Empty(dbContext.AdminAuditEntries);
+    }
+
+    [Fact]
+    public async Task ReactivateSetsTheAccountActiveAndAllowsLoginAgain()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext, isActive: false);
+
+        var result = await CreateService(dbContext).ReactivateUserAsync(user.Id, AdminContext);
+
+        Assert.Equal(UserActionOutcome.Success, result.Outcome);
+        Assert.True(result.User!.IsActive);
+        Assert.Equal(LoginOutcome.Success, await LoginAsync(dbContext, user.Username, OriginalPassword));
+    }
+
+    [Fact]
+    public async Task DeactivateThenReactivateRecordsOneAuditEntryForEachChange()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext);
+        var service = CreateService(dbContext);
+
+        await service.DeactivateUserAsync(user.Id, AdminContext);
+        await service.ReactivateUserAsync(user.Id, AdminContext);
+
+        Assert.Equal(
+            new[] { AdminAuditAction.UserDeactivated, AdminAuditAction.UserReactivated },
+            dbContext.AdminAuditEntries.OrderBy(e => e.OccurredAt).Select(e => e.Action).ToArray());
+        Assert.All(dbContext.AdminAuditEntries, entry => Assert.Equal(user.Id, entry.TargetUserId));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RepeatingAStatusChangeSucceedsWithoutASecondAuditEntry(bool deactivate)
+    {
+        await using var dbContext = CreateDbContext();
+        var user = await SeedUserAsync(dbContext, isActive: deactivate);
+        var service = CreateService(dbContext);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var result = deactivate
+                ? await service.DeactivateUserAsync(user.Id, AdminContext)
+                : await service.ReactivateUserAsync(user.Id, AdminContext);
+            Assert.Equal(UserActionOutcome.Success, result.Outcome);
+        }
+
+        Assert.Single(dbContext.AdminAuditEntries);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task StatusChangeForUnknownUserReturnsNotFound(bool deactivate)
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+
+        var result = deactivate
+            ? await service.DeactivateUserAsync(Guid.NewGuid(), AdminContext)
+            : await service.ReactivateUserAsync(Guid.NewGuid(), AdminContext);
+
+        Assert.Equal(UserActionOutcome.NotFound, result.Outcome);
+    }
 }

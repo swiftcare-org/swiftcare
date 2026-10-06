@@ -264,4 +264,105 @@ public class UserManagementControllerTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         factory.UserAccountServiceMock.VerifyNoOtherCalls();
     }
+
+    private static void SetupDeactivate(AuthServiceWebApplicationFactory factory, UserActionResult result) =>
+        factory.UserAccountServiceMock
+            .Setup(s => s.DeactivateUserAsync(
+                It.IsAny<Guid>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+
+    private static void SetupReactivate(AuthServiceWebApplicationFactory factory, UserActionResult result) =>
+        factory.UserAccountServiceMock
+            .Setup(s => s.ReactivateUserAsync(
+                It.IsAny<Guid>(), It.IsAny<AdminActionContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+
+    [Fact]
+    public async Task DeactivateUserReturns200WithTheInactiveAccount()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupDeactivate(factory, Success(isActive: false));
+
+        var response = await CreateClient(factory).PutAsync($"/api/users/{TargetUserId}/deactivate", content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<UserSummaryResponse>();
+        Assert.False(body!.IsActive);
+        factory.UserAccountServiceMock.Verify(
+            s => s.DeactivateUserAsync(
+                TargetUserId,
+                It.Is<AdminActionContext>(c => c.AdminUserId == AdminUserId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeactivateOwnAccountReturns400WithExactMessage()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupDeactivate(factory, Outcome(UserActionOutcome.CannotDeactivateOwnAccount));
+
+        var response = await CreateClient(factory).PutAsync($"/api/users/{AdminUserId}/deactivate", content: null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("You cannot deactivate your own account", body!.Message);
+    }
+
+    [Fact]
+    public async Task ReactivateUserReturns200WithTheActiveAccount()
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupReactivate(factory, Success(isActive: true));
+
+        var response = await CreateClient(factory).PutAsync($"/api/users/{TargetUserId}/activate", content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<UserSummaryResponse>();
+        Assert.True(body!.IsActive);
+    }
+
+    [Theory]
+    [InlineData("deactivate")]
+    [InlineData("activate")]
+    public async Task StatusChangeForUnknownUserReturns404(string action)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+        SetupDeactivate(factory, Outcome(UserActionOutcome.NotFound));
+        SetupReactivate(factory, Outcome(UserActionOutcome.NotFound));
+
+        var response = await CreateClient(factory).PutAsync($"/api/users/{TargetUserId}/{action}", content: null);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("deactivate")]
+    [InlineData("activate")]
+    public async Task StatusChangeWithTheAllZeroIdReturns400AndNeverCallsTheService(string action)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+
+        var response = await CreateClient(factory).PutAsync($"/api/users/{EmptyId}/{action}", content: null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        factory.UserAccountServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("deactivate", "Doctor")]
+    [InlineData("deactivate", "Receptionist")]
+    [InlineData("deactivate", null)]
+    [InlineData("activate", "Doctor")]
+    [InlineData("activate", "Receptionist")]
+    [InlineData("activate", null)]
+    public async Task StatusChangeWithoutTheAdminRoleReturns403AndNeverCallsTheService(string action, string? role)
+    {
+        using var factory = new AuthServiceWebApplicationFactory();
+
+        var response = await CreateClient(factory, role).PutAsync($"/api/users/{TargetUserId}/{action}", content: null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        factory.UserAccountServiceMock.VerifyNoOtherCalls();
+    }
 }
