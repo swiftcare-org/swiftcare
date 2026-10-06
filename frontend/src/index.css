@@ -95,6 +95,22 @@ select option {
     cursor: pointer;
   }
 
+  /* A group heading inside the list reads as a small label, not as a choice. */
+  select optgroup {
+    padding-top: 0.375rem;
+    color: #64748b;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  select optgroup option {
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
   select option:hover,
   select option:focus-visible {
     background-color: #f1f5f9;

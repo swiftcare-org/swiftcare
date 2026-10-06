@@ -12,6 +12,7 @@ import {
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { loadCurrentPatient, type CurrentPatient } from '../consultations/currentPatient';
+import { TemplateActions, type TemplateDraftErrors } from '../consultations/TemplateActions';
 import { VitalSignsForm } from '../consultations/VitalSignsForm';
 import { Banner } from '../components/ui/Banner';
 import { Button, ButtonLink } from '../components/ui/Button';
@@ -38,6 +39,8 @@ interface ConsultationFormState {
 
 interface FieldErrors {
   symptoms: string | null;
+  examinationFindings: string | null;
+  notes: string | null;
   diagnosis: string | null;
   templateId: string | null;
   followUpDate: string | null;
@@ -56,6 +59,8 @@ const EMPTY_FORM: ConsultationFormState = {
 
 const EMPTY_FIELD_ERRORS: FieldErrors = {
   symptoms: null,
+  examinationFindings: null,
+  notes: null,
   diagnosis: null,
   templateId: null,
   followUpDate: null,
@@ -67,6 +72,7 @@ function applyServerFieldErrors(
   serverErrors: Readonly<Record<string, string>>,
 ): FieldErrors {
   return {
+    ...previous,
     symptoms: serverErrors.symptoms ?? previous.symptoms,
     diagnosis: serverErrors.diagnosis ?? previous.diagnosis,
     templateId: serverErrors.templateid ?? previous.templateId,
@@ -202,7 +208,24 @@ export function ConsultationPage() {
       examinationFindings: selectedTemplate.examinationFindings,
       notes: selectedTemplate.notes,
     }));
-    setFieldErrors((previous) => ({ ...previous, symptoms: null }));
+    setFieldErrors((previous) => ({ ...previous, symptoms: null, examinationFindings: null, notes: null }));
+  }
+
+  function handleTemplateDraftErrors(errors: TemplateDraftErrors) {
+    setFieldErrors((previous) => ({ ...previous, ...errors }));
+  }
+
+  function handleTemplateSaved(saved: ConsultationTemplate) {
+    setTemplates((previous) => [...previous, saved]);
+    // The text already matches the new template, so it is selected without refilling the fields.
+    setForm((previous) => ({ ...previous, templateId: saved.id }));
+    clearFieldError('templateId');
+  }
+
+  function handleTemplateRemoved(templateId: string) {
+    setTemplates((previous) => previous.filter((template) => template.id !== templateId));
+    // The text stays; only the link to a template that no longer exists is dropped.
+    setForm((previous) => (previous.templateId === templateId ? { ...previous, templateId: '' } : previous));
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -217,6 +240,8 @@ export function ConsultationPage() {
     const followUpInstructions = form.followUpInstructions.trim();
     const nextFieldErrors: FieldErrors = {
       symptoms: symptoms ? null : 'Symptoms are required',
+      examinationFindings: null,
+      notes: null,
       diagnosis: diagnosis ? null : 'Diagnosis is required',
       templateId: null,
       followUpDate:
@@ -308,6 +333,12 @@ export function ConsultationPage() {
   const isSaved = submissionState === 'created';
   const fieldsLocked = isBusy || isSaved;
 
+  const builtInTemplates = templates.filter((template) => template.isBuiltIn);
+  const ownTemplates = templates
+    .filter((template) => !template.isBuiltIn)
+    .sort((first, second) => first.name.localeCompare(second.name));
+  const selectedTemplate = templates.find((template) => template.id === form.templateId) ?? null;
+
   return (
     <DashboardShell
       sectionLabel="Create Consultation Record"
@@ -384,14 +415,42 @@ export function ConsultationPage() {
                       <option value="">
                         {templateLoadState === 'loading' ? 'Loading templates…' : 'No template'}
                       </option>
-                      {templates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name}
-                        </option>
-                      ))}
+                      {builtInTemplates.length > 0 && (
+                        <optgroup label="Built-in templates">
+                          {builtInTemplates.map((template) => (
+                            <option key={template.id} value={template.id}>
+                              {template.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {ownTemplates.length > 0 && (
+                        <optgroup label="My templates">
+                          {ownTemplates.map((template) => (
+                            <option key={template.id} value={template.id}>
+                              {template.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   )}
                 </Field>
+
+                {!isSaved && templateLoadState === 'loaded' && (
+                  <TemplateActions
+                    draft={{
+                      symptoms: form.symptoms,
+                      examinationFindings: form.examinationFindings,
+                      notes: form.notes,
+                    }}
+                    selectedTemplate={selectedTemplate}
+                    disabled={fieldsLocked}
+                    onDraftErrors={handleTemplateDraftErrors}
+                    onSaved={handleTemplateSaved}
+                    onRemoved={handleTemplateRemoved}
+                  />
+                )}
 
                 <Field id="symptoms" label="Symptoms" required error={fieldErrors.symptoms}>
                   {(control) => (
@@ -409,19 +468,25 @@ export function ConsultationPage() {
                   )}
                 </Field>
 
-                <Field id="examinationFindings" label="Examination Findings" optional>
+                <Field
+                  id="examinationFindings"
+                  label="Examination Findings"
+                  optional
+                  error={fieldErrors.examinationFindings}
+                >
                   {(control) => (
                     <textarea
                       {...control}
                       name="examinationFindings"
                       rows={4}
                       value={form.examinationFindings}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setForm((previous) => ({
                           ...previous,
                           examinationFindings: event.target.value,
-                        }))
-                      }
+                        }));
+                        clearFieldError('examinationFindings');
+                      }}
                       disabled={fieldsLocked}
                     />
                   )}
@@ -443,16 +508,17 @@ export function ConsultationPage() {
                   )}
                 </Field>
 
-                <Field id="notes" label="Notes" optional>
+                <Field id="notes" label="Notes" optional error={fieldErrors.notes}>
                   {(control) => (
                     <textarea
                       {...control}
                       name="notes"
                       rows={4}
                       value={form.notes}
-                      onChange={(event) =>
-                        setForm((previous) => ({ ...previous, notes: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        setForm((previous) => ({ ...previous, notes: event.target.value }));
+                        clearFieldError('notes');
+                      }}
                       disabled={fieldsLocked}
                     />
                   )}
