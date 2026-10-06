@@ -376,6 +376,14 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 **CodeQL** analyses first-party source instead — injection flaws, unsafe patterns, and hardcoded credentials in code we wrote. The C# build runs after CodeQL initialises so the extractor can trace the compilation; reordering those steps silently produces an empty analysis. Findings appear under the repository's Security tab.
 
+### Code quality (SonarQube Cloud)
+
+The **SonarQube Cloud analysis** job sends the .NET services, API Gateway and frontend to the hosted SonarQube Cloud project `swiftcare-org_swiftcare` on the Free plan. It runs after the .NET build and test job and reuses its coverage through a `SonarQube.xml` report produced by ReportGenerator, so the Cobertura report and the 55% coverage gate are unchanged. Migrations, generated files, dependencies and build or test output are excluded.
+
+The Free plan analyzes one branch and pull requests into it. The project's main branch is `develop`, so the job runs on pushes to `develop` and on pull requests into `develop` from this repository; it is skipped on `main`, manual runs and fork pull requests. Results appear as a pull request comment and on the SonarQube Cloud dashboard. The job waits for the built-in **Sonar way** quality gate, which checks only new code, and fails when the gate fails. Custom gates and `main` analysis need a paid plan and are not used.
+
+The job reads the repository Actions secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY`. Never commit or print the token.
+
 ### Continuous deployment
 
 A successful CI run for `main` automatically deploys the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, QueueService, and MedicalRecordService images to GHCR; run service EF migrations as finite Container Apps jobs inside the VNet; deploy the services with internal ingress, including MedicalRecordService on port `5004`; deploy the public Gateway last with internal HTTPS destinations for QueueService and MedicalRecordService; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
