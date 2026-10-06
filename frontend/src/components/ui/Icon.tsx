@@ -4,6 +4,7 @@ export type IconName =
   | 'userPlus'
   | 'search'
   | 'queue'
+  | 'clipboard'
   | 'display'
   | 'signOut'
   | 'menu'
@@ -29,6 +30,12 @@ const PATHS: Record<IconName, string[]> = {
   ],
   search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z', 'm20 20-4.05-4.05'],
   queue: ['M8 6h13', 'M8 12h13', 'M8 18h13', 'M3.5 6h.01', 'M3.5 12h.01', 'M3.5 18h.01'],
+  clipboard: [
+    'M9 3h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z',
+    'M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2',
+    'M9 12h6',
+    'M9 16h6',
+  ],
   display: ['M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5Z', 'M8 20h8', 'M12 16v4'],
   signOut: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'm16 17 5-5-5-5', 'M21 12H9'],
   menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
