@@ -107,11 +107,52 @@ public sealed class UserAccountService : IUserAccountService
                 FullName = u.FullName,
                 Role = u.Role.ToString(),
                 RoomNumber = u.RoomNumber,
+                Specialization = u.Specialization,
                 IsActive = u.IsActive,
                 CreatedAt = u.CreatedAt
             })
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<UserActionResult> UpdateUserAsync(
+        Guid userId,
+        UpdateUserRequest request,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await FindUserAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.NotFound };
+        }
+
+        var isDoctor = user.Role == UserRole.Doctor;
+        if (isDoctor && string.IsNullOrWhiteSpace(request.RoomNumber))
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.RoomNumberRequiredForDoctor };
+        }
+
+        // Room and specialization belong to doctors only, matching how accounts are created.
+        user.FullName = request.FullName.Trim();
+        user.RoomNumber = isDoctor ? request.RoomNumber!.Trim() : null;
+        user.Specialization = isDoctor && !string.IsNullOrWhiteSpace(request.Specialization)
+            ? request.Specialization.Trim()
+            : null;
+
+        RecordAudit(AdminAuditAction.UserUpdated, user.Id, context);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "User account updated: userId={UserId} by adminUserId={AdminUserId}",
+            user.Id,
+            context.AdminUserId);
+
+        return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
+    }
+
+    // A soft-deleted account is treated as absent, as it is for sign-in and the user list.
+    private Task<User?> FindUserAsync(Guid userId, CancellationToken cancellationToken) =>
+        _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken);
 
     private static UserSummaryResponse ToSummary(User user) => new()
     {
@@ -120,6 +161,7 @@ public sealed class UserAccountService : IUserAccountService
         FullName = user.FullName,
         Role = user.Role.ToString(),
         RoomNumber = user.RoomNumber,
+        Specialization = user.Specialization,
         IsActive = user.IsActive,
         CreatedAt = user.CreatedAt
     };

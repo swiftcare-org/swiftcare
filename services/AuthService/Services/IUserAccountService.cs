@@ -10,4 +10,10 @@ public interface IUserAccountService
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UserSummaryResponse>> GetUsersAsync(CancellationToken cancellationToken = default);
+
+    Task<UserActionResult> UpdateUserAsync(
+        Guid userId,
+        UpdateUserRequest request,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default);
 }

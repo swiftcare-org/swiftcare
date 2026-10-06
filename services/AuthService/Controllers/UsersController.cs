@@ -11,6 +11,8 @@ namespace AuthService.Controllers;
 public sealed class UsersController : ControllerBase
 {
     private const string ForbiddenMessage = "Forbidden";
+    private const string UserNotFoundMessage = "User not found";
+    private const string RoomNumberRequiredMessage = "Room number is required for doctors";
     private const string UserRoleHeaderName = "X-User-Role";
     private const string UserIdHeaderName = "X-User-Id";
 
@@ -63,6 +65,31 @@ public sealed class UsersController : ControllerBase
         return Ok(users);
     }
 
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateUser(
+        Guid id,
+        [FromBody] UpdateUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.UpdateUserAsync(id, request, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
     // request that didn't originate from the Gateway, which is the sole source of this
     // header - it derives it from the validated JWT, never from the original client.
@@ -82,6 +109,24 @@ public sealed class UsersController : ControllerBase
         _logger.LogWarning("Rejected non-admin request to user management: userId={UserId}", ParseUserIdHeader());
 
         return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
+    }
+
+    // The route constraint accepts the all-zero GUID, which is not a real ID.
+    private IActionResult? RejectIfEmptyUserId(Guid id) =>
+        id == Guid.Empty ? BadRequest(new MessageResponse("User ID must be provided.")) : null;
+
+    private IActionResult ToActionResult(UserActionResult result)
+    {
+        switch (result.Outcome)
+        {
+            case UserActionOutcome.Success:
+                return Ok(result.User);
+            case UserActionOutcome.RoomNumberRequiredForDoctor:
+                ModelState.AddModelError(nameof(UpdateUserRequest.RoomNumber), RoomNumberRequiredMessage);
+                return ValidationProblem(ModelState);
+            default:
+                return NotFound(new MessageResponse(UserNotFoundMessage));
+        }
     }
 
     private AdminActionContext CreateActionContext() => new(
@@ -108,7 +153,7 @@ public sealed class UsersController : ControllerBase
                     $"Password must be at least {PasswordPolicy.MinimumLength} characters");
                 break;
             case CreateUserOutcome.RoomNumberRequiredForDoctor:
-                ModelState.AddModelError(nameof(CreateUserRequest.RoomNumber), "Room number is required for doctors");
+                ModelState.AddModelError(nameof(CreateUserRequest.RoomNumber), RoomNumberRequiredMessage);
                 break;
         }
     }
