@@ -16,4 +16,10 @@ public interface IUserAccountService
         UpdateUserRequest request,
         AdminActionContext context,
         CancellationToken cancellationToken = default);
+
+    Task<UserActionResult> ResetPasswordAsync(
+        Guid userId,
+        string newPassword,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default);
 }

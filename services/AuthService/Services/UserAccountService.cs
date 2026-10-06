@@ -150,6 +150,36 @@ public sealed class UserAccountService : IUserAccountService
         return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
     }
 
+    public async Task<UserActionResult> ResetPasswordAsync(
+        Guid userId,
+        string newPassword,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (newPassword.Length < PasswordPolicy.MinimumLength)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.PasswordTooShort };
+        }
+
+        var user = await FindUserAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.NotFound };
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+
+        RecordAudit(AdminAuditAction.PasswordReset, user.Id, context);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "User password reset: userId={UserId} by adminUserId={AdminUserId}",
+            user.Id,
+            context.AdminUserId);
+
+        return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
+    }
+
     // A soft-deleted account is treated as absent, as it is for sign-in and the user list.
     private Task<User?> FindUserAsync(Guid userId, CancellationToken cancellationToken) =>
         _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken);

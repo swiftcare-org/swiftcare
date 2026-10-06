@@ -13,6 +13,8 @@ public sealed class UsersController : ControllerBase
     private const string ForbiddenMessage = "Forbidden";
     private const string UserNotFoundMessage = "User not found";
     private const string RoomNumberRequiredMessage = "Room number is required for doctors";
+    private static readonly string PasswordTooShortMessage =
+        $"Password must be at least {PasswordPolicy.MinimumLength} characters";
     private const string UserRoleHeaderName = "X-User-Role";
     private const string UserIdHeaderName = "X-User-Id";
 
@@ -90,6 +92,32 @@ public sealed class UsersController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpPut("{id:guid}/reset-password")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ResetPassword(
+        Guid id,
+        [FromBody] ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.ResetPasswordAsync(
+            id, request.NewPassword, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
     // request that didn't originate from the Gateway, which is the sole source of this
     // header - it derives it from the validated JWT, never from the original client.
@@ -124,6 +152,9 @@ public sealed class UsersController : ControllerBase
             case UserActionOutcome.RoomNumberRequiredForDoctor:
                 ModelState.AddModelError(nameof(UpdateUserRequest.RoomNumber), RoomNumberRequiredMessage);
                 return ValidationProblem(ModelState);
+            case UserActionOutcome.PasswordTooShort:
+                ModelState.AddModelError(nameof(ResetPasswordRequest.NewPassword), PasswordTooShortMessage);
+                return ValidationProblem(ModelState);
             default:
                 return NotFound(new MessageResponse(UserNotFoundMessage));
         }
@@ -150,7 +181,7 @@ public sealed class UsersController : ControllerBase
             case CreateUserOutcome.PasswordTooShort:
                 ModelState.AddModelError(
                     nameof(CreateUserRequest.Password),
-                    $"Password must be at least {PasswordPolicy.MinimumLength} characters");
+                    PasswordTooShortMessage);
                 break;
             case CreateUserOutcome.RoomNumberRequiredForDoctor:
                 ModelState.AddModelError(nameof(CreateUserRequest.RoomNumber), RoomNumberRequiredMessage);
