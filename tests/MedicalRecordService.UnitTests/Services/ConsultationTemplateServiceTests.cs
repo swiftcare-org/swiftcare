@@ -12,7 +12,14 @@ public class ConsultationTemplateServiceTests
 
     private readonly Mock<IConsultationTemplateRepository> _repository = new(MockBehavior.Strict);
 
-    private ConsultationTemplateService CreateService() => new(_repository.Object);
+    private static readonly DateTimeOffset Now = new(2026, 10, 7, 4, 30, 0, TimeSpan.Zero);
+
+    private ConsultationTemplateService CreateService() => new(_repository.Object, new FixedTimeProvider());
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
 
     private static ConsultationTemplate Template(string name, Guid? ownerId = null) => new()
     {

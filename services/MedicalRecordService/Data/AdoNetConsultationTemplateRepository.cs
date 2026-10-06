@@ -38,6 +38,40 @@ public sealed class AdoNetConsultationTemplateRepository : IConsultationTemplate
         return templates;
     }
 
+    public async Task<bool> TryAddAsync(
+        ConsultationTemplate template,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO ConsultationTemplates
+                (Id, Name, Symptoms, ExaminationFindings, Notes, IsActive, CreatedAt, CreatedByDoctorId)
+            VALUES
+                (@Id, @Name, @Symptoms, @ExaminationFindings, @Notes, TRUE, @CreatedAt, @CreatedByDoctorId);
+            """;
+        command.Parameters.Add("@Id", MySqlDbType.VarChar, 36).Value = template.Id.ToString();
+        command.Parameters.Add("@Name", MySqlDbType.VarChar, 150).Value = template.Name;
+        command.Parameters.Add("@Symptoms", MySqlDbType.Text).Value = template.Symptoms;
+        command.Parameters.Add("@ExaminationFindings", MySqlDbType.Text).Value = template.ExaminationFindings;
+        command.Parameters.Add("@Notes", MySqlDbType.Text).Value = template.Notes;
+        command.Parameters.Add("@CreatedAt", MySqlDbType.DateTime).Value = template.CreatedAt;
+        command.Parameters.Add("@CreatedByDoctorId", MySqlDbType.VarChar, 36).Value =
+            template.CreatedByDoctorId.HasValue ? template.CreatedByDoctorId.Value.ToString() : DBNull.Value;
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return true;
+        }
+        catch (MySqlException exception) when (exception.ErrorCode == MySqlErrorCode.DuplicateKeyEntry)
+        {
+            // UX_ConsultationTemplates_ActiveOwnerScope_Name: this owner already has an
+            // active template with the same name.
+            return false;
+        }
+    }
+
     private static ConsultationTemplate ReadTemplate(MySqlDataReader reader) => new()
     {
         Id = reader.GetGuid(reader.GetOrdinal("Id")),

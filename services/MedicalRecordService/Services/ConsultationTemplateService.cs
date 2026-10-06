@@ -1,16 +1,21 @@
 using MedicalRecordService.Data;
 using MedicalRecordService.Models.Dtos;
 using MedicalRecordService.Models.Entities;
+using MedicalRecordService.Models.Enums;
 
 namespace MedicalRecordService.Services;
 
 public sealed class ConsultationTemplateService : IConsultationTemplateService
 {
     private readonly IConsultationTemplateRepository _templateRepository;
+    private readonly TimeProvider _timeProvider;
 
-    public ConsultationTemplateService(IConsultationTemplateRepository templateRepository)
+    public ConsultationTemplateService(
+        IConsultationTemplateRepository templateRepository,
+        TimeProvider timeProvider)
     {
         _templateRepository = templateRepository;
+        _timeProvider = timeProvider;
     }
 
     public async Task<IReadOnlyList<ConsultationTemplateResponse>> GetTemplatesForDoctorAsync(
@@ -21,6 +26,34 @@ public sealed class ConsultationTemplateService : IConsultationTemplateService
 
         var templates = await _templateRepository.ListVisibleToDoctorAsync(doctorId, cancellationToken);
         return templates.Select(ToResponse).ToList();
+    }
+
+    public async Task<CreateTemplateResult> CreateAsync(
+        CreateConsultationTemplateRequest request,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireDoctorId(doctorId);
+
+        // Only the name is trimmed. The clinical text is stored as typed, because a
+        // template often ends with a prompt such as "- " for the doctor to continue from.
+        var template = new ConsultationTemplate
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name.Trim(),
+            Symptoms = request.Symptoms,
+            ExaminationFindings = request.ExaminationFindings,
+            Notes = request.Notes,
+            CreatedByDoctorId = doctorId,
+            IsActive = true,
+            CreatedAt = _timeProvider.GetUtcNow().UtcDateTime
+        };
+
+        var added = await _templateRepository.TryAddAsync(template, cancellationToken);
+
+        return added
+            ? new CreateTemplateResult { Outcome = CreateTemplateOutcome.Created, Template = ToResponse(template) }
+            : new CreateTemplateResult { Outcome = CreateTemplateOutcome.DuplicateName };
     }
 
     private static void RequireDoctorId(Guid doctorId)
