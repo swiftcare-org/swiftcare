@@ -25,6 +25,10 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `auth-login-route` | `POST /api/auth/login` | `Anonymous` | `http://localhost:5000` (AuthService) |
 | `auth-route` | `/api/auth/{**catch-all}` | `Default` (requires a valid, non-revoked JWT) | `http://localhost:5000` (AuthService) |
 | `users-route` | `GET, POST /api/users` | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `users-doctors-route` | `GET /api/users/doctors` | `StaffDirectoryPolicy` (Doctor, Receptionist, Admin) | `http://localhost:5000` (AuthService) |
+| `user-item-route` | `PUT /api/users/{id:guid}` | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `user-action-route` | `PUT /api/users/{id:guid}/{action}` (`reset-password`, `deactivate`, `activate`) | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `audit-logs-route` | `GET /api/audit-logs` | `AdminOnly` | `http://localhost:5000` (AuthService) |
 | `patients-route` | `POST /api/patients` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
 | `patients-search-route` | `GET /api/patients/search` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
 | `patient-allergies-read-route` | `GET /api/patients/{id:guid}/allergies` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
@@ -102,6 +106,10 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 | `POST` | `/api/auth/logout` | Bearer JWT | Revokes the token's `jti`, then proxies to AuthService |
 | `*` | `/api/auth/{**catch-all}` | Bearer JWT | Proxied to AuthService |
 | `GET`, `POST` | `/api/users` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `GET` | `/api/users/doctors` | Bearer JWT, any staff role | Proxied to AuthService |
+| `PUT` | `/api/users/{id}` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `PUT` | `/api/users/{id}/reset-password`, `/deactivate`, `/activate` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `GET` | `/api/audit-logs` | Bearer JWT, `Admin` role | Proxied to AuthService |
 | `POST` | `/api/patients` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
 | `GET` | `/api/patients/search` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
 | `GET` | `/api/patients/{id}` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
