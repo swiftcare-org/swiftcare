@@ -293,6 +293,7 @@ jobs:
             /o:"$SONAR_ORGANIZATION" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.scanner.skipJreProvisioning=true \
             /d:sonar.scanner.scanAll=true \
             /d:sonar.inclusions="services/**,ApiGateway/**,frontend/**" \
             /d:sonar.exclusions="**/Migrations/**,**/*.Designer.cs,**/*ModelSnapshot.cs,**/*.g.cs,**/*.generated.*,**/bin/**,**/obj/**,**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/TestResults/**,frontend/package-lock.json,frontend/public/**" \
