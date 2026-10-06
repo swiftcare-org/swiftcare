@@ -103,43 +103,19 @@ justification in the result report instead of being "fixed".
 
 ## CI handoff (DevOps)
 
-Suggested job for `.github/workflows/ci.yml`. It runs one matrix leg per service, mutates only
-changed code on pull requests and everything on a manual run, uploads each HTML report and
-writes the score table to the job summary.
+The `mutation-testing` job in `.github/workflows/ci.yml` runs after the existing .NET build and test job on pull requests to `main` or `develop`, and on manual `workflow_dispatch` runs.
+One matrix leg runs `run-mutation-tests.ps1` for each of the six services above.
+Push and reusable workflow calls do not run mutation testing.
 
-```yaml
-  mutation-testing:
-    name: Mutation testing (${{ matrix.service }})
-    needs: build-and-test
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [ApiGateway, AuthService, MedicalRecordService, PatientService, PrescriptionService, QueueService]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-      - name: Run Stryker.NET
-        shell: pwsh
-        run: |
-          $since = ''
-          if ('${{ github.event_name }}' -eq 'pull_request') { $since = 'origin/${{ github.base_ref }}' }
-          ./tests/MutationTesting/run-mutation-tests.ps1 -Service ${{ matrix.service }} -Since $since
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mutation-report-${{ matrix.service }}
-          path: tests/MutationTesting/results/${{ matrix.service }}
-```
+Pull request legs fetch full Git history and pass `-Since origin/<base branch>` to mutate only changed code.
+A manual run passes an empty `-Since` value and mutates the full service.
+Each leg writes its score table to the GitHub Actions job summary and uploads its result directory as `mutation-report-<Service>`, including the HTML report when Stryker produces one.
+Upload runs even when the mutation step fails.
+The script returns a failure if the configured service break threshold is missed or no report is produced.
 
-`fetch-depth: 0` is needed for `-Since`, which compares against the base branch. `ci.yml`
-has no `workflow_dispatch` trigger yet; add it under `on:` to allow a manual full run.
+After the workflow is merged, inspect a pull request CI run for six matrix results, score tables and downloadable reports.
+Use the CI workflow's manual Run workflow option on the intended ref to verify a full six-service run.
+Record the run IDs and results; the workflow definition alone does not establish that either mode or the failure threshold passed in GitHub Actions.
 
 ## Results
 
