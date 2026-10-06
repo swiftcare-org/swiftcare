@@ -177,6 +177,33 @@ public class UserAccountServiceTests
     }
 
     [Fact]
+    public async Task CreateRecordsOneAuditEntryForTheActingAdmin()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+
+        var result = await service.CreateUserAsync(CreateValidRequest(), AdminContext);
+
+        var entry = Assert.Single(dbContext.AdminAuditEntries);
+        Assert.Equal(AdminAuditAction.UserCreated, entry.Action);
+        Assert.Equal(AdminContext.AdminUserId, entry.ActorUserId);
+        Assert.Equal(result.User!.UserId, entry.TargetUserId);
+        Assert.Equal(AdminContext.CorrelationId, entry.CorrelationId);
+        Assert.Equal(AdminContext.IpAddress, entry.IpAddress);
+    }
+
+    [Fact]
+    public async Task CreateFailureRecordsNoAuditEntry()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext);
+
+        await service.CreateUserAsync(CreateValidRequest(password: "short"), AdminContext);
+
+        Assert.Empty(dbContext.AdminAuditEntries);
+    }
+
+    [Fact]
     public async Task GetUsersExcludesSoftDeletedUsers()
     {
         await using var dbContext = CreateDbContext();
