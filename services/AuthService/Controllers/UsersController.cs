@@ -68,6 +68,24 @@ public sealed class UsersController : ControllerBase
         return Ok(users);
     }
 
+    // Open to every staff role: it lists only who is on duty and where, which the
+    // waiting-room display already shows publicly.
+    [HttpGet("doctors")]
+    [ProducesResponseType(typeof(IReadOnlyList<DoctorSummaryResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetDoctors(CancellationToken cancellationToken)
+    {
+        var role = HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault();
+        if (role is null || !Enum.GetNames<UserRole>().Contains(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
+        }
+
+        var doctors = await _userAccountService.GetActiveDoctorsAsync(cancellationToken);
+        return Ok(doctors);
+    }
+
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -114,6 +114,23 @@ public sealed class UserAccountService : IUserAccountService
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<DoctorSummaryResponse>> GetActiveDoctorsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Role == UserRole.Doctor && u.IsActive && !u.IsDeleted)
+            .OrderBy(u => u.FullName)
+            .Select(u => new DoctorSummaryResponse
+            {
+                UserId = u.Id,
+                FullName = u.FullName,
+                RoomNumber = u.RoomNumber,
+                Specialization = u.Specialization
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<UserActionResult> UpdateUserAsync(
         Guid userId,
         UpdateUserRequest request,

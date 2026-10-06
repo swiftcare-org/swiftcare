@@ -11,6 +11,8 @@ public interface IUserAccountService
 
     Task<IReadOnlyList<UserSummaryResponse>> GetUsersAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<DoctorSummaryResponse>> GetActiveDoctorsAsync(CancellationToken cancellationToken = default);
+
     Task<UserActionResult> UpdateUserAsync(
         Guid userId,
         UpdateUserRequest request,
