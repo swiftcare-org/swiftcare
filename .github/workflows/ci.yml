@@ -148,7 +148,7 @@ jobs:
           dotnet reportgenerator \
             -reports:"TestResults/**/coverage.cobertura.xml" \
             -targetdir:"TestResults/coverage-report" \
-            -reporttypes:"MarkdownSummaryGithub;JsonSummary;Html" \
+            -reporttypes:"MarkdownSummaryGithub;JsonSummary;Html;SonarQube" \
             -filefilters:"-*/Migrations/*"
 
       - name: Publish coverage summary
@@ -209,6 +209,98 @@ jobs:
           name: mutation-report-${{ matrix.service }}
           path: tests/MutationTesting/results/${{ matrix.service }}/
           if-no-files-found: warn
+
+  sonarqube-analysis:
+    name: SonarQube Cloud analysis
+    needs: build-and-test
+    # The SonarQube Cloud Free plan analyzes only its main branch (develop) and pull requests into it.
+    # Fork pull requests are skipped because they do not receive repository secrets.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'develop' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_SCANNER_VERSION: "11.3.0"
+    steps:
+      - name: Check out repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confirm SonarQube Cloud configuration
+        run: |
+          test -n "$SONAR_TOKEN" || { echo "::error::Repository secret SONAR_TOKEN is not configured"; exit 1; }
+          test -n "$SONAR_ORGANIZATION" || { echo "::error::Repository variable SONAR_ORGANIZATION is not configured"; exit 1; }
+          test -n "$SONAR_PROJECT_KEY" || { echo "::error::Repository variable SONAR_PROJECT_KEY is not configured"; exit 1; }
+
+      - name: Set up Java for the scanner
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Cache SonarQube Cloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}-${{ env.SONAR_SCANNER_VERSION }}
+          restore-keys: sonar-${{ runner.os }}-
+
+      - name: Download .NET coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: TestResults
+
+      - name: Confirm SonarQube coverage report
+        run: test -s TestResults/coverage-report/SonarQube.xml || { echo "::error::SonarQube coverage report was not produced"; exit 1; }
+
+      - name: Install frontend dependencies for type-aware analysis
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install SonarScanner for .NET
+        run: dotnet tool install dotnet-sonarscanner --version "$SONAR_SCANNER_VERSION" --tool-path .sonar/scanner
+
+      - name: Analyze and wait for the quality gate
+        run: |
+          .sonar/scanner/dotnet-sonarscanner begin \
+            /k:"$SONAR_PROJECT_KEY" \
+            /o:"$SONAR_ORGANIZATION" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.scanner.scanAll=true \
+            /d:sonar.inclusions="services/**,ApiGateway/**,frontend/**" \
+            /d:sonar.exclusions="**/Migrations/**,**/*.Designer.cs,**/*ModelSnapshot.cs,**/*.g.cs,**/*.generated.*,**/bin/**,**/obj/**,**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/TestResults/**,frontend/package-lock.json,frontend/public/**" \
+            /d:sonar.coverageReportPaths="TestResults/coverage-report/SonarQube.xml" \
+            /d:sonar.qualitygate.wait=true \
+            /d:sonar.qualitygate.timeout=300
+          dotnet build SwiftCare.slnx --configuration Release
+          .sonar/scanner/dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
   build-frontend:
     name: Build and lint frontend
