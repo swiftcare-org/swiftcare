@@ -1,8 +1,12 @@
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NotificationService.Data;
 using NotificationService.Maintenance;
 using NotificationService.Middleware;
+using NotificationService.Models.Configuration;
+using NotificationService.Services;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -40,6 +44,27 @@ builder.Services.AddDbContext<NotificationDbContext>(options =>
         new MySqlServerVersion(new Version(8, 4, 0))));
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<INotificationRecorder, NotificationRecorder>();
+
+builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+
+// Registered as a singleton: IConsumer is not thread-safe for concurrent Consume() calls,
+// but only ActivityEventConsumer's single loop ever calls it. Keeping it injectable lets
+// tests replace the Kafka dependency.
+builder.Services.AddSingleton<IConsumer<string, string>>(services =>
+{
+    var kafkaOptions = services.GetRequiredService<IOptions<KafkaOptions>>().Value;
+    return new ConsumerBuilder<string, string>(new ConsumerConfig
+    {
+        BootstrapServers = kafkaOptions.BootstrapServers,
+        GroupId = kafkaOptions.ConsumerGroupId,
+        EnableAutoCommit = false,
+        // A new consumer group starts from the oldest event still on the topic, so the
+        // feed is not empty the first time the service runs.
+        AutoOffsetReset = AutoOffsetReset.Earliest
+    }).Build();
+});
+builder.Services.AddHostedService<ActivityEventConsumer>();
 
 var app = builder.Build();
 
@@ -57,6 +82,14 @@ if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
 {
     throw new InvalidOperationException(
         "Gateway:InternalSecret is not configured. Set it via the Gateway__InternalSecret environment variable.");
+}
+
+// Checked for presence only, never reachability: the service must start and serve
+// /health even when Kafka is down. The consumer retries instead of blocking startup.
+if (string.IsNullOrEmpty(app.Configuration["Kafka:BootstrapServers"]))
+{
+    throw new InvalidOperationException(
+        "Kafka:BootstrapServers is not configured. Set it via the Kafka__BootstrapServers environment variable.");
 }
 
 if (app.Environment.IsDevelopment())
