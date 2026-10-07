@@ -31,6 +31,16 @@ public sealed class NoPrescriptionService(
 
         ArgumentException.ThrowIfNullOrWhiteSpace(doctorName);
 
+        if (request.QueueId is not { } queueId || queueId == Guid.Empty)
+        {
+            throw new ArgumentException("Queue ID must be provided.", nameof(request));
+        }
+
+        if (request.PatientId is not { } patientId || patientId == Guid.Empty)
+        {
+            throw new ArgumentException("Patient ID must be provided.", nameof(request));
+        }
+
         // A consultation ends with a prescription or with this decision, never both.
         if (await FindConflictAsync(consultationId, cancellationToken) is { } conflict)
         {
@@ -41,8 +51,8 @@ public sealed class NoPrescriptionService(
         {
             Id = Guid.NewGuid(),
             ConsultationId = consultationId,
-            QueueId = request.QueueId,
-            PatientId = request.PatientId,
+            QueueId = queueId,
+            PatientId = patientId,
             DoctorId = doctorId,
             DoctorName = doctorName.Trim(),
             RecordedAt = timeProvider.GetUtcNow().UtcDateTime

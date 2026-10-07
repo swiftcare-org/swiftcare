@@ -150,41 +150,34 @@ public class NoPrescriptionControllerTests
         return service;
     }
 
-    private static NoPrescriptionController CreateController(Mock<INoPrescriptionService> service) =>
+    private static Caller CreateController(Mock<INoPrescriptionService> service) =>
         CreateController(service, "Doctor", DoctorId, "Dr. Amara Chen");
 
-    private static NoPrescriptionController CreateController(
+    private static Caller CreateController(
         Mock<INoPrescriptionService> service,
         string? role,
         Guid doctorId,
         string? doctorName) => CreateController(service, role, doctorId.ToString(), doctorName);
 
-    private static NoPrescriptionController CreateController(
+    private static Caller CreateController(
         Mock<INoPrescriptionService> service,
+        string? role,
+        string? userId,
+        string? doctorName) => new(new NoPrescriptionController(service.Object), role, userId, doctorName);
+
+    // Calls the action the way the framework does: the identity headers the Gateway sets
+    // arrive as bound parameters.
+    private sealed class Caller(
+        NoPrescriptionController controller,
         string? role,
         string? userId,
         string? doctorName)
     {
-        var context = new DefaultHttpContext();
-        if (role is not null)
-        {
-            context.Request.Headers["X-User-Role"] = role;
-        }
-
-        if (userId is not null)
-        {
-            context.Request.Headers["X-User-Id"] = userId;
-        }
-
-        if (doctorName is not null)
-        {
-            context.Request.Headers["X-User-Name"] = doctorName;
-        }
-
-        return new NoPrescriptionController(service.Object)
-        {
-            ControllerContext = new ControllerContext { HttpContext = context }
-        };
+        public Task<IActionResult> RecordNoPrescription(
+            Guid consultationId,
+            RecordNoPrescriptionRequest request,
+            CancellationToken cancellationToken) =>
+            controller.RecordNoPrescription(consultationId, request, role, userId, doctorName, cancellationToken);
     }
 
     private static void AssertMessage(IActionResult result, int expectedStatus, string expectedMessage)
@@ -203,8 +196,8 @@ public class NoPrescriptionControllerTests
     private static PrescriptionResponse Decision(RecordNoPrescriptionRequest request) => new(
         Guid.NewGuid(),
         ConsultationId,
-        request.QueueId,
-        request.PatientId,
+        request.QueueId!.Value,
+        request.PatientId!.Value,
         DoctorId,
         "Dr. Amara Chen",
         "NOT_REQUIRED",

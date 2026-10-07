@@ -23,23 +23,21 @@ public sealed class NoPrescriptionController(INoPrescriptionService noPrescripti
     public async Task<IActionResult> RecordNoPrescription(
         Guid consultationId,
         [FromBody] RecordNoPrescriptionRequest request,
+        [FromHeader(Name = UserRoleHeaderName)] string? userRole,
+        [FromHeader(Name = UserIdHeaderName)] string? userId,
+        [FromHeader(Name = UserNameHeaderName)] string? doctorName,
         CancellationToken cancellationToken)
     {
         // The identity headers are trusted because GatewaySecretMiddleware has already
         // rejected any request that did not come through the API Gateway.
-        if (!string.Equals(
-                Request.Headers[UserRoleHeaderName].FirstOrDefault(),
-                "Doctor",
-                StringComparison.Ordinal))
+        if (!string.Equals(userRole, "Doctor", StringComparison.Ordinal))
         {
             return StatusCode(
                 StatusCodes.Status403Forbidden,
                 new MessageResponse("Forbidden"));
         }
 
-        var userIdHeader = Request.Headers[UserIdHeaderName].FirstOrDefault();
-        var doctorName = Request.Headers[UserNameHeaderName].FirstOrDefault();
-        if (!Guid.TryParse(userIdHeader, out var doctorId)
+        if (!Guid.TryParse(userId, out var doctorId)
             || doctorId == Guid.Empty
             || string.IsNullOrWhiteSpace(doctorName))
         {
