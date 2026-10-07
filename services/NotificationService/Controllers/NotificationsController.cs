@@ -25,6 +25,11 @@ public sealed class NotificationsController(INotificationFeedService feedService
     {
         // The role header is trusted because GatewaySecretMiddleware has already rejected
         // any request that did not come through the API Gateway.
+        if (string.IsNullOrWhiteSpace(userRole))
+        {
+            return Unauthorized(new MessageResponse("User identity is unavailable"));
+        }
+
         if (!AllowedRoles.Contains(userRole, StringComparer.Ordinal))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse("Forbidden"));
