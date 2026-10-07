@@ -116,6 +116,7 @@ jobs:
           dotnet test tests/QueueService.UnitTests/QueueService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
           dotnet test tests/PrescriptionService.UnitTests/PrescriptionService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+          dotnet test tests/NotificationService.UnitTests/NotificationService.UnitTests.csproj --no-build --configuration Release --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
 
       - name: Publish test summary
         if: always() && hashFiles('SwiftCare.slnx') != ''
