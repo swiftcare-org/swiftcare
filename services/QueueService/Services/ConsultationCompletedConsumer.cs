@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Confluent.Kafka;
 using Microsoft.Extensions.Options;
+using QueueService.Logging;
 using QueueService.Models.Configuration;
 using QueueService.Models.Events;
 
@@ -106,13 +107,15 @@ public sealed class ConsultationCompletedConsumer : BackgroundService
                 outcome);
             CommitSafely(result);
         }
-        catch (Exception) when (!stoppingToken.IsCancellationRequested)
+        catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
         {
             // Leave the offset uncommitted and retry the same event. The transaction
             // ensures a failed queue update does not record the event ID as processed.
+            // Only the exception type is logged: its message could carry patient data.
             _logger.LogError(
-                "Consultation-completed processing failed; retrying eventId={EventId}",
-                completedEvent.EventId);
+                "Consultation-completed processing failed; retrying eventId={EventId} errorType={ErrorType}",
+                completedEvent.EventId,
+                exception.GetType().Name);
             _consumer.Seek(result.TopicPartitionOffset);
             await Task.Delay(_options.RetryDelay, stoppingToken);
         }
@@ -124,12 +127,16 @@ public sealed class ConsultationCompletedConsumer : BackgroundService
         {
             _consumer.Commit(result);
         }
-        catch (KafkaException)
+        catch (KafkaException exception)
         {
-            // Kafka may redeliver; the ProcessedEvents ledger makes that safe.
+            // Kafka may redeliver; the ProcessedEvents ledger makes that safe. The Kafka
+            // error code and reason describe the broker failure and hold no payload.
             _logger.LogError(
-                "Failed to commit consultation-completed offset: event position={Offset}",
-                result.TopicPartitionOffset);
+                "Failed to commit consultation-completed offset: event position={Offset} errorType={ErrorType} kafkaErrorCode={KafkaErrorCode} kafkaErrorReason={KafkaErrorReason}",
+                result.TopicPartitionOffset,
+                exception.GetType().Name,
+                exception.Error.Code,
+                LogSanitizer.Sanitize(exception.Error.Reason));
         }
     }
 
