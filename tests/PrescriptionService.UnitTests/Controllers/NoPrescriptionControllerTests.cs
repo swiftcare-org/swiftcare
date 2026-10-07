@@ -131,12 +131,10 @@ public class NoPrescriptionControllerTests
         var controller = CreateController(
             ServiceReturning(new RecordNoPrescriptionResult((RecordNoPrescriptionOutcome)99)));
 
-        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             controller.RecordNoPrescription(ConsultationId, ValidRequest(), CancellationToken.None));
 
-        Assert.Equal("result", exception.ParamName);
-        Assert.Equal((RecordNoPrescriptionOutcome)99, exception.ActualValue);
-        Assert.StartsWith("Unsupported record-no-prescription outcome.", exception.Message);
+        Assert.Equal("Unsupported record-no-prescription outcome: 99.", exception.Message);
     }
 
     private static Mock<INoPrescriptionService> ServiceReturning(RecordNoPrescriptionResult result)
@@ -191,7 +189,7 @@ public class NoPrescriptionControllerTests
 
     private static void AssertMessage(IActionResult result, int expectedStatus, string expectedMessage)
     {
-        var response = Assert.IsAssignableFrom<ObjectResult>(result);
+        var response = Assert.IsType<ObjectResult>(result, exactMatch: false);
         Assert.Equal(expectedStatus, response.StatusCode);
         Assert.Equal(expectedMessage, Assert.IsType<MessageResponse>(response.Value).Message);
     }

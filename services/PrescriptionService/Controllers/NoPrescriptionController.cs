@@ -69,10 +69,8 @@ public sealed class NoPrescriptionController(INoPrescriptionService noPrescripti
                 new MessageResponse("A prescription already exists for this consultation")),
             RecordNoPrescriptionOutcome.AlreadyRecorded => Conflict(
                 new MessageResponse("No prescription required is already recorded for this consultation")),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(result),
-                result.Outcome,
-                "Unsupported record-no-prescription outcome.")
+            _ => throw new InvalidOperationException(
+                $"Unsupported record-no-prescription outcome: {result.Outcome}.")
         };
     }
 }

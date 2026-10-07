@@ -67,6 +67,8 @@ public class NoPrescriptionRouteTests
 
         Assert.Equal("prescription-cluster", route["ClusterId"]);
         Assert.Equal("DoctorOnly", route["AuthorizationPolicy"]);
-        Assert.Equal(["POST"], route.GetSection("Match:Methods").Get<string[]>());
+        var methods = route.GetSection("Match:Methods").Get<string[]>();
+        Assert.NotNull(methods);
+        Assert.Equal(["POST"], methods);
     }
 }
