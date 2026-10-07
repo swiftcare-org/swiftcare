@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { getAllergies, type Allergy } from '../api/allergies';
 import { ApiError } from '../api/client';
 import {
   addPrescriptionMedicine,
   createPrescription,
   getPatientPrescriptions,
+  getPrescriptionByQueueId,
+  recordNoPrescriptionRequired,
   removePrescriptionMedicine,
   type Prescription,
   type PrescriptionMedicineInput,
@@ -18,6 +20,7 @@ import { EmptyState, LoadingText } from '../components/ui/Feedback';
 import { Field, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { DashboardShell } from '../dashboards/DashboardShell';
+import { formatDate, formatTime } from '../lib/format';
 import { useAuth } from '../auth/useAuth';
 import {
   findPendingPrescriptionContext,
@@ -73,6 +76,7 @@ function newMedicine(): MedicineDraft {
 export function PrescriptionPage() {
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const navigatedContext = isPrescriptionContext(location.state) ? location.state : null;
   const [context, setContext] = useState<PrescriptionContext | null>(navigatedContext);
   const [contextLoadState, setContextLoadState] = useState<ContextLoadState>(
@@ -80,6 +84,7 @@ export function PrescriptionPage() {
   );
   const patientId = context?.patientId;
   const consultationId = context?.consultationId;
+  const queueId = context?.queueId;
   const [medicines, setMedicines] = useState<MedicineDraft[]>([]);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [history, setHistory] = useState<Prescription[]>([]);
@@ -95,6 +100,10 @@ export function PrescriptionPage() {
   // Set once a submit finds gaps, so the empty required fields are pointed out one by one.
   const [draftValidated, setDraftValidated] = useState(false);
   const [additionValidated, setAdditionValidated] = useState(false);
+  // Set when this consultation was already recorded as needing no prescription.
+  const [noPrescription, setNoPrescription] = useState<Prescription | null>(null);
+  const [noPrescriptionState, setNoPrescriptionState] = useState<'idle' | 'confirming' | 'submitting'>('idle');
+  const [noPrescriptionError, setNoPrescriptionError] = useState<string | null>(null);
 
   const hasPrescriptionContext = isPrescriptionContext(context);
 
@@ -134,9 +143,11 @@ export function PrescriptionPage() {
     let disposed = false;
 
     async function loadReferenceData() {
-      const [allergyResult, historyResult] = await Promise.allSettled([
+      const [allergyResult, historyResult, outcomeResult] = await Promise.allSettled([
         getAllergies(patientId!),
         getPatientPrescriptions(patientId!),
+        // 404 simply means nothing is recorded for this visit yet.
+        queueId ? getPrescriptionByQueueId(queueId) : Promise.reject(new Error('No queue entry')),
       ]);
 
       if (disposed) {
@@ -158,6 +169,10 @@ export function PrescriptionPage() {
         }
       }
 
+      if (outcomeResult.status === 'fulfilled' && outcomeResult.value.status === 'NOT_REQUIRED') {
+        setNoPrescription(outcomeResult.value);
+      }
+
       setReferenceLoadState(
         allergyResult.status === 'fulfilled' && historyResult.status === 'fulfilled'
           ? 'loaded'
@@ -170,7 +185,7 @@ export function PrescriptionPage() {
     return () => {
       disposed = true;
     };
-  }, [consultationId, patientId]);
+  }, [consultationId, patientId, queueId]);
 
   function updateMedicine(
     clientId: string,
@@ -398,6 +413,33 @@ export function PrescriptionPage() {
     }
   }
 
+  async function handleNoPrescriptionRequired() {
+    if (!hasPrescriptionContext || noPrescriptionState === 'submitting') {
+      return;
+    }
+
+    setNoPrescriptionState('submitting');
+    setNoPrescriptionError(null);
+
+    try {
+      await recordNoPrescriptionRequired(context!.consultationId, {
+        queueId: context!.queueId,
+        patientId: context!.patientId,
+      });
+      navigate('/doctor', { replace: true, state: { notice: 'No prescription required was recorded.' } });
+    } catch (error) {
+      setNoPrescriptionError(
+        error instanceof ApiError && (error.status === 401 || error.status === 403)
+          ? 'You are not authorized to record this.'
+          : error instanceof ApiError && error.status === 409
+            ? error.message
+            : 'Unable to record this. Please try again.',
+      );
+      // Back to the confirm step, so the reason is shown beside the action that failed.
+      setNoPrescriptionState('confirming');
+    }
+  }
+
   const isSubmitting = submissionState === 'submitting';
   const itemBusy = itemChangeState !== 'idle';
 
@@ -521,12 +563,12 @@ export function PrescriptionPage() {
           <SectionCard
             title="Medicines"
             description={
-              submissionState === 'saved'
+              submissionState === 'saved' || noPrescription
                 ? undefined
                 : 'Add every medicine included in this prescription, then save it.'
             }
             actions={
-              submissionState !== 'saved' ? (
+              noPrescription ? null : submissionState !== 'saved' ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -551,7 +593,17 @@ export function PrescriptionPage() {
               ) : null
             }
           >
-            {submissionState !== 'saved' && (
+            {noPrescription && (
+              <div className="space-y-5" data-testid="no-prescription-recorded">
+                <Banner tone="neutral" title="No Prescription Required" role="status">
+                  Recorded by {noPrescription.doctorName} on {formatDate(noPrescription.createdAt)} at{' '}
+                  {formatTime(noPrescription.createdAt)}. A prescription cannot be added for this consultation.
+                </Banner>
+                <ButtonLink to="/doctor">Back to Dashboard</ButtonLink>
+              </div>
+            )}
+
+            {!noPrescription && submissionState !== 'saved' && (
               <form className="max-w-3xl space-y-5" noValidate onSubmit={handleSubmit}>
                 {medicines.length === 0 ? (
                   <EmptyState>
@@ -602,6 +654,47 @@ export function PrescriptionPage() {
                   {isSubmitting ? 'Saving…' : 'Save Prescription'}
                 </Button>
               </form>
+            )}
+
+            {/* The other way to finish this visit: record that no medicine is needed. */}
+            {!noPrescription && submissionState !== 'saved' && (
+              <div className="mt-6 max-w-3xl border-t border-slate-200 pt-5">
+                {noPrescriptionState === 'idle' ? (
+                  <>
+                    <p className="text-sm text-slate-600">
+                      If this patient needs no medicine, record that instead of writing a prescription.
+                    </p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-3"
+                      disabled={isSubmitting}
+                      onClick={() => setNoPrescriptionState('confirming')}
+                      data-testid="no-prescription-required"
+                    >
+                      No prescription required
+                    </Button>
+                  </>
+                ) : (
+                  <ConfirmPanel
+                    labelId="confirm-no-prescription-title"
+                    title="No Prescription Required?"
+                    tone="primary"
+                    confirmLabel="Confirm"
+                    busyLabel="Recording…"
+                    busy={noPrescriptionState === 'submitting'}
+                    error={noPrescriptionError}
+                    onConfirm={() => void handleNoPrescriptionRequired()}
+                    onCancel={() => {
+                      setNoPrescriptionState('idle');
+                      setNoPrescriptionError(null);
+                    }}
+                  >
+                    This records that the patient needs no medicine. A prescription cannot be added for this
+                    consultation afterwards.
+                  </ConfirmPanel>
+                )}
+              </div>
             )}
 
             {savedPrescription && (
