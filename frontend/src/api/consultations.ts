@@ -154,7 +154,7 @@ export function recordVitalSigns(
   consultationId: string,
   request: RecordVitalSignsRequestBody,
 ): Promise<VitalSigns> {
-  return apiRequest<VitalSigns>(`/api/consultations/${consultationId}/vitals`, {
+  return apiRequest<VitalSigns>(`/api/consultations/${encodeURIComponent(consultationId)}/vitals`, {
     method: 'POST',
     body: request,
   });
@@ -164,7 +164,7 @@ export async function getConsultationForQueue(
   queueId: string,
 ): Promise<ConsultationProgress | null> {
   return (await apiRequest<ConsultationProgress | undefined>(
-    `/api/consultations/by-queue/${queueId}`,
+    `/api/consultations/by-queue/${encodeURIComponent(queueId)}`,
   )) ?? null;
 }
 
@@ -172,7 +172,7 @@ export function completeConsultation(
   consultationId: string,
 ): Promise<CompleteConsultationResponse> {
   return apiRequest<CompleteConsultationResponse>(
-    `/api/consultations/${consultationId}/complete`,
+    `/api/consultations/${encodeURIComponent(consultationId)}/complete`,
     { method: 'POST' },
   );
 }
