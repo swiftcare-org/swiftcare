@@ -128,6 +128,8 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
                 "A successful prescription result must contain the prescription."),
             CreatePrescriptionOutcome.ConsultationAlreadyHasPrescription => Conflict(
                 new MessageResponse("A prescription already exists for this consultation")),
+            CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded => Conflict(
+                new MessageResponse("This consultation is recorded as needing no prescription")),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(result),
                 result.Outcome,

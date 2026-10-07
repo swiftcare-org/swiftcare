@@ -42,6 +42,20 @@ public sealed class PrescriptionManagementService(
                 CreatePrescriptionOutcome.ConsultationAlreadyHasPrescription);
         }
 
+        // A consultation ends with a prescription or with a recorded decision that none
+        // is needed, never both.
+        var noPrescriptionRecorded = await dbContext.NoPrescriptionDecisions
+            .AsNoTracking()
+            .AnyAsync(
+                decision => decision.ConsultationId == request.ConsultationId,
+                cancellationToken);
+
+        if (noPrescriptionRecorded)
+        {
+            return new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded);
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var prescription = new Prescription
         {

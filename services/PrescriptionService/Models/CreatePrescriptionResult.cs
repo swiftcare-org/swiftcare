@@ -5,7 +5,8 @@ namespace PrescriptionService.Models;
 public enum CreatePrescriptionOutcome
 {
     Success,
-    ConsultationAlreadyHasPrescription
+    ConsultationAlreadyHasPrescription,
+    NoPrescriptionRequiredRecorded
 }
 
 public sealed record CreatePrescriptionResult(
