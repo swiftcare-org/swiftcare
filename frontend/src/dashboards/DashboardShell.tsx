@@ -31,6 +31,7 @@ const NAVIGATION: Record<UserRole, NavItem[]> = {
   Receptionist: [
     { to: '/reception', label: 'Dashboard', icon: 'home' },
     { to: '/reception/queue', label: 'Queue', icon: 'queue' },
+    { to: '/activity', label: 'Activity Feed', icon: 'activity' },
     { to: '/patients/search', label: 'Patients', icon: 'search' },
     { to: '/reception/patients/new', label: 'Register Patient', icon: 'userPlus' },
   ],
@@ -38,6 +39,7 @@ const NAVIGATION: Record<UserRole, NavItem[]> = {
     { to: '/admin', label: 'Dashboard', icon: 'home' },
     { to: '/admin/users', label: 'Staff Accounts', icon: 'users' },
     { to: '/admin/audit-log', label: 'Audit Log', icon: 'clipboard' },
+    { to: '/activity', label: 'Activity Feed', icon: 'activity' },
     { to: '/patients/search', label: 'Patients', icon: 'search' },
   ],
 };
