@@ -113,8 +113,7 @@ public class NotificationsControllerTests
     [Theory]
     [InlineData("Doctor")]
     [InlineData("receptionist")]
-    [InlineData(null)]
-    public async Task FeedIsForbiddenToOtherRoles(string? role)
+    public async Task FeedIsForbiddenToOtherRoles(string role)
     {
         using var factory = new NotificationServiceWebApplicationFactory();
 
@@ -123,6 +122,22 @@ public class NotificationsControllerTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
         Assert.Equal("Forbidden", body!.Message);
+        factory.FeedServiceMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RequestWithoutARoleReturns401AndNeverCallsTheService(string? role)
+    {
+        using var factory = new NotificationServiceWebApplicationFactory();
+
+        using var response = await CreateClient(factory, role).GetAsync("/api/notifications");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        Assert.Equal("User identity is unavailable", body!.Message);
         factory.FeedServiceMock.VerifyNoOtherCalls();
     }
 
