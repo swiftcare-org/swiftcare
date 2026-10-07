@@ -208,15 +208,25 @@ export function PrescriptionDetailsPage() {
 
           {prescription && (
             <SectionCard
-              eyebrow="Prescription date"
+              eyebrow={prescription.status === 'NOT_REQUIRED' ? 'Recorded' : 'Prescription date'}
               title={<span data-testid="prescription-date">{formatDateTime(prescription.createdAt)}</span>}
-              description={!counterContext ? `Prescribed by ${prescription.doctorName}` : undefined}
+              description={
+                !counterContext && prescription.status !== 'NOT_REQUIRED'
+                  ? `Prescribed by ${prescription.doctorName}`
+                  : undefined
+              }
               actions={
                 <StatusBadge
-                  tone={prescription.status === 'DISPENSED' ? 'success' : 'warning'}
+                  tone={
+                    prescription.status === 'DISPENSED'
+                      ? 'success'
+                      : prescription.status === 'NOT_REQUIRED'
+                        ? 'neutral'
+                        : 'warning'
+                  }
                   data-testid="prescription-status"
                 >
-                  {prescription.status}
+                  {prescription.status === 'NOT_REQUIRED' ? 'No prescription required' : prescription.status}
                 </StatusBadge>
               }
             >
@@ -234,6 +244,16 @@ export function PrescriptionDetailsPage() {
                   </dl>
                 )}
 
+                {prescription.status === 'NOT_REQUIRED' && (
+                  <Banner tone="neutral" role="status">
+                    <span data-testid="no-prescription-details">
+                      No prescription required. Recorded by {prescription.doctorName} on{' '}
+                      {formatDate(prescription.createdAt)} at {formatTime(prescription.createdAt)}.
+                    </span>
+                  </Banner>
+                )}
+
+                {prescription.status !== 'NOT_REQUIRED' && (
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">Medicines</h3>
                   <ul className="mt-3 space-y-3">
@@ -262,6 +282,7 @@ export function PrescriptionDetailsPage() {
                     ))}
                   </ul>
                 </div>
+                )}
 
                 {prescription.status === 'DISPENSED' && (
                   <Banner tone="success" role="status">
