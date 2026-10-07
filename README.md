@@ -376,6 +376,51 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 **CodeQL** analyses first-party source instead — injection flaws, unsafe patterns, and hardcoded credentials in code we wrote. The C# build runs after CodeQL initialises so the extractor can trace the compilation; reordering those steps silently produces an empty analysis. Findings appear under the repository's Security tab.
 
+### Code quality (SonarQube Cloud)
+
+The **SonarQube Cloud analysis** job sends the .NET services, API Gateway and frontend to the hosted SonarQube Cloud project `swiftcare-org_swiftcare` on the Free plan. It runs after the .NET build and test job and reuses its coverage through a `SonarQube.xml` report produced by ReportGenerator, so the Cobertura report and the 55% coverage gate are unchanged. Migrations, generated files, dependencies and build or test output are excluded.
+
+The Free plan analyzes one branch and pull requests into it. The project's main branch is `develop`, so the job runs on pushes to `develop` and on pull requests into `develop` from this repository; it is skipped on `main`, manual runs and fork pull requests. Results appear as a pull request comment and on the SonarQube Cloud dashboard. The job waits for the built-in **Sonar way** quality gate, which checks only new code, and fails when the gate fails. Custom gates and `main` analysis need a paid plan and are not used.
+
+The job reads the repository Actions secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY`. Never commit or print the token.
+
+#### Setup and GitHub integration
+
+SonarQube Cloud is an external hosted service; nothing is deployed to Azure and the Free plan has no cost.
+
+1. Sign in to SonarQube Cloud with GitHub and import the `swiftcare-org` GitHub organization, installing the SonarQube Cloud GitHub App on the `swiftcare` repository only.
+2. Choose the Free plan and import the repository as project `swiftcare-org_swiftcare` (public, matching the repository).
+3. Under Administration > Analysis method, turn **Automatic Analysis off**. CI-based analysis is required to import coverage, and both methods cannot run together.
+4. Under Project > Branches, rename the SonarQube main branch to `develop`. The GitHub branches are not renamed.
+5. Keep the **Sonar way** quality gate and the **Previous version** new-code setting.
+6. Create a token under My Account > Security with an expiry date, store it as the repository Actions secret `SONAR_TOKEN`, and store the organization and project keys as repository variables.
+
+#### Ownership and responsibilities
+
+The Sprint 4 DevOps engineer owns the SonarQube Cloud organization, the project settings and the analysis token, and keeps at least one other team member as an organization administrator for continuity. The Free plan allows up to five organization members. Developers own fixing findings in their own new code; the quality gate does not require fixing historical findings.
+
+#### Credential management
+
+The token exists only in the repository Actions secret; it is not stored in the `azure-development` Environment because the CI job does not use one. GitHub masks it in logs, and fork pull requests never receive it. To rotate it, create a new token, update `SONAR_TOKEN`, confirm a green analysis on a pull request into `develop`, then revoke the old token. Rotate before expiry and whenever ownership changes. Do not paste tokens into issues, chat, screenshots or evidence.
+
+#### Quality gate behavior
+
+On a pull request, new code is the pull request diff; on `develop` it is everything since the new-code baseline. Sonar way fails when new code introduces issues, leaves security hotspots unreviewed, has coverage below 80% or has more than 3% duplicated lines. Coverage and duplication are not evaluated for very small changes. Frontend files have no coverage report, so frontend coverage is not measured.
+
+#### Free-plan limitations
+
+Only `develop` and pull requests into it are analyzed. `main` is not analyzed, so the gate protects `develop` before promotion and does not directly block the Azure deployment from `main`. Custom quality gates and quality profiles are not available.
+
+#### Troubleshooting
+
+- Job skipped: the event must be a push to `develop` or a pull request into `develop` from this repository, and the .NET build and test job must pass.
+- Configuration error before scanning: the step names the missing secret or variable.
+- `You are running CI analysis while Automatic Analysis is enabled`: turn Automatic Analysis off.
+- Analysis rejected for a branch: the Free plan accepts only `develop` and pull requests into it.
+- Coverage missing: confirm the `test-results` artifact contains `coverage-report/SonarQube.xml` and the log shows `Imported coverage data for N files`.
+- Authentication error: the token has expired or been revoked; rotate it.
+- Quality gate failed: open the SonarQube link in the job log or pull request comment, read the failed new-code condition, and fix the new code rather than weakening the gate.
+
 ### Continuous deployment
 
 A successful CI run for `main` automatically deploys the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, QueueService, and MedicalRecordService images to GHCR; run service EF migrations as finite Container Apps jobs inside the VNet; deploy the services with internal ingress, including MedicalRecordService on port `5004`; deploy the public Gateway last with internal HTTPS destinations for QueueService and MedicalRecordService; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
