@@ -45,6 +45,7 @@ builder.Services.AddDbContext<NotificationDbContext>(options =>
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<INotificationRecorder, NotificationRecorder>();
+builder.Services.AddScoped<INotificationFeedService, NotificationFeedService>();
 
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 
