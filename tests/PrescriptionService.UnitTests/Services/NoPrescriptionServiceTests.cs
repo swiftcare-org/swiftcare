@@ -217,6 +217,29 @@ public class NoPrescriptionServiceTests
         Assert.Empty(await scope.DbContext.NoPrescriptionDecisions.AsNoTracking().ToListAsync());
     }
 
+    public static TheoryData<Guid?, Guid?, string> IncompleteRequests => new()
+    {
+        { null, Guid.NewGuid(), "Queue ID must be provided." },
+        { Guid.Empty, Guid.NewGuid(), "Queue ID must be provided." },
+        { Guid.NewGuid(), null, "Patient ID must be provided." },
+        { Guid.NewGuid(), Guid.Empty, "Patient ID must be provided." }
+    };
+
+    [Theory]
+    [MemberData(nameof(IncompleteRequests))]
+    public async Task RecordRejectsARequestWithoutAQueueOrPatientId(Guid? queueId, Guid? patientId, string expectedMessage)
+    {
+        await using var scope = await TestScope.CreateAsync();
+        var request = new RecordNoPrescriptionRequest { QueueId = queueId, PatientId = patientId };
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            scope.Service.RecordAsync(ConsultationId, request, DoctorId, "Dr. Amara Chen"));
+
+        Assert.Equal("request", exception.ParamName);
+        Assert.StartsWith(expectedMessage, exception.Message);
+        Assert.Empty(await scope.DbContext.NoPrescriptionDecisions.AsNoTracking().ToListAsync());
+    }
+
     private static RecordNoPrescriptionRequest ValidRequest() => new()
     {
         QueueId = Guid.NewGuid(),
