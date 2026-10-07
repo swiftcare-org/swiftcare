@@ -8,6 +8,7 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
 {
     public DbSet<Prescription> Prescriptions => Set<Prescription>();
     public DbSet<PrescriptionItem> PrescriptionItems => Set<PrescriptionItem>();
+    public DbSet<NoPrescriptionDecision> NoPrescriptionDecisions => Set<NoPrescriptionDecision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,18 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
 
             // Medicine rows are displayed in the order entered by the doctor.
             entity.HasIndex(item => new { item.PrescriptionId, item.ItemOrder }).IsUnique();
+        });
+
+        modelBuilder.Entity<NoPrescriptionDecision>(entity =>
+        {
+            entity.Property(decision => decision.Id).ValueGeneratedNever();
+            entity.Property(decision => decision.DoctorName).HasMaxLength(200).IsRequired();
+
+            // One decision per consultation, enforced here if two requests arrive together.
+            entity.HasIndex(decision => decision.ConsultationId).IsUnique();
+
+            // The reception counter looks a decision up by its queue entry.
+            entity.HasIndex(decision => decision.QueueId);
         });
     }
 
