@@ -378,7 +378,7 @@ Two layers run independently. **Dependency scanning** checks third-party package
 
 ### Code quality (SonarQube Cloud)
 
-The **SonarQube Cloud analysis** job sends the .NET services, API Gateway and frontend to the hosted SonarQube Cloud project `swiftcare-org_swiftcare` on the Free plan. It runs after the .NET build and test job and reuses its coverage through a `SonarQube.xml` report produced by ReportGenerator, so the Cobertura report and the 55% coverage gate are unchanged. Migrations, generated files, dependencies and build or test output are excluded.
+The **SonarQube Cloud analysis** job sends the .NET services, API Gateway and frontend to the hosted SonarQube Cloud project `swiftcare-org_swiftcare` on the Free plan. It runs after the .NET build and test job and reuses its coverage through a `SonarQube.xml` report produced by ReportGenerator, so the Cobertura report and the 55% coverage gate are unchanged. Migrations, generated files, dependencies and build or test output are excluded. The frontend and the service `Data/` folders (ADO.NET repositories and EF `DbContext` classes that only run against MySQL) are excluded from the coverage calculation only, because no CI test produces coverage for them; they are still analyzed for bugs, code smells and security issues.
 
 The Free plan analyzes one branch and pull requests into it. The project's main branch is `develop`, so the job runs on pushes to `develop` and on pull requests into `develop` from this repository; it is skipped on `main`, manual runs and fork pull requests. Results appear as a pull request comment and on the SonarQube Cloud dashboard. The job waits for the built-in **Sonar way** quality gate, which checks only new code, and fails when the gate fails. Custom gates and `main` analysis need a paid plan and are not used.
 
@@ -405,7 +405,7 @@ The token exists only in the repository Actions secret; it is not stored in the 
 
 #### Quality gate behavior
 
-On a pull request, new code is the pull request diff; on `develop` it is everything since the new-code baseline. Sonar way fails when new code introduces issues, leaves security hotspots unreviewed, has coverage below 80% or has more than 3% duplicated lines. Coverage and duplication are not evaluated for very small changes. Frontend files have no coverage report, so frontend coverage is not measured.
+On a pull request, new code is the pull request diff; on `develop` it is everything since the new-code baseline. Sonar way fails when new code introduces issues, leaves security hotspots unreviewed, has coverage below 80% or has more than 3% duplicated lines. Coverage and duplication are not evaluated for very small changes. The coverage condition applies to backend code outside `Data/`; the frontend has no test runner, so its coverage is not measured.
 
 #### Free-plan limitations
 
