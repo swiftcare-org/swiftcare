@@ -163,7 +163,19 @@ public sealed class PrescriptionManagementService(
                 candidate => candidate.QueueId == queueId,
                 cancellationToken);
 
-        return prescription is null ? null : ToResponse(prescription);
+        if (prescription is not null)
+        {
+            return ToResponse(prescription);
+        }
+
+        // With no prescription, the queue entry may still have an outcome: the doctor
+        // recorded that none is needed. It is returned with the NOT_REQUIRED status so
+        // the counter can tell it apart from a prescription that is not written yet.
+        var decision = await dbContext.NoPrescriptionDecisions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.QueueId == queueId, cancellationToken);
+
+        return decision is null ? null : NoPrescriptionResponses.From(decision);
     }
 
     public async Task<DispensePrescriptionResult> DispenseAsync(
