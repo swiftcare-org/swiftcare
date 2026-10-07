@@ -36,7 +36,8 @@ Allergy details remain owned by PatientService. The frontend reads them from Pat
 | `GET` | `/api/prescriptions/patient/{patientId}` | Doctor | Returns the patient's prescriptions newest first, including ordered medicine items. |
 | `GET` | `/api/prescriptions/report/daily?date=yyyy-MM-dd` | Admin | Returns `totalWritten`, `totalDispensed` and `totalPending` for one clinic day. `date` defaults to today. |
 | `GET` | `/api/prescriptions/pending` | Receptionist | Returns all `PENDING` prescriptions oldest first, including ordered medicine items. |
-| `GET` | `/api/prescriptions/queue/{queueId}` | Doctor, Receptionist, Admin | Returns the prescription and ordered medicines for a queue entry. |
+| `GET` | `/api/prescriptions/queue/{queueId}` | Doctor, Receptionist, Admin | Returns the prescription and ordered medicines for a queue entry, or the recorded "no prescription required" decision with status `NOT_REQUIRED`. |
+| `POST` | `/api/consultations/{consultationId}/no-prescription` | Doctor | Records that the consultation needs no prescription. `201`, `400` for a missing ID, `409` when the consultation already has a prescription or the decision is already recorded. |
 | `PUT` | `/api/prescriptions/{prescriptionId}/dispense` | Receptionist | Changes a `PENDING` prescription to `DISPENSED` and records who dispensed it and when. |
 | `GET` | `/health` | Anonymous | Service health check. |
 
@@ -72,6 +73,14 @@ Removing a medicine uses `DELETE /api/prescriptions/{prescriptionId}/items/{medi
 Both operations are limited to the doctor who created the prescription. A prescription with `DISPENSED` status is read-only, and either operation returns HTTP `409` with `Cannot modify a dispensed prescription`.
 
 ## Prescription history and daily report
+
+### No prescription required
+
+A doctor can close a completed consultation without medicine by sending `{ "queueId": "...", "patientId": "..." }` to `POST /api/consultations/{consultationId}/no-prescription`. The doctor comes from the Gateway identity headers. The decision is stored in `NoPrescriptionDecisions`, one row per consultation, with the doctor and the time.
+
+A consultation ends with a prescription or with this decision, never both: recording the decision is refused when a prescription exists, and `POST /api/prescriptions` returns `409` once the decision is recorded. Each table has a unique index on `ConsultationId`. The cross-table rule is checked in the service, so two different requests for the same consultation sent at the same instant are not excluded by the database.
+
+The decision is not a prescription. It is returned only by `GET /api/prescriptions/queue/{queueId}`, shaped like a prescription with status `NOT_REQUIRED`, no medicines, and `createdAt` holding the time it was recorded. It does not appear in the pending list, the patient history or the daily report, and it cannot be dispensed.
 
 `GET /api/prescriptions/patient/{patientId}` is read-only and doctor-only. It returns every prescription for the patient, from any doctor, newest first with its ordered medicines, or an empty list when the patient has none. Patient IDs are GUIDs. The all-zero GUID is rejected with HTTP `400` and `Patient ID must be provided.`.
 

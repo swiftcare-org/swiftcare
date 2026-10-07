@@ -154,6 +154,20 @@ function prescriptionCell(row: QueueDisplayRow) {
     );
   }
 
+  if (row.prescriptionState === 'NOT_REQUIRED') {
+    return (
+      <Link
+        to={`/prescriptions/queue/${row.queueId}`}
+        title="View who recorded this and when"
+        className="inline-flex focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
+      >
+        <StatusBadge tone="neutral" className="underline underline-offset-2" data-testid="no-prescription-required">
+          No prescription required
+        </StatusBadge>
+      </Link>
+    );
+  }
+
   return <span className="text-xs text-slate-500">Status unavailable</span>;
 }
 

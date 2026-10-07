@@ -27,7 +27,9 @@ export interface Prescription {
   patientId: string;
   doctorId: string;
   doctorName: string;
-  status: 'PENDING' | 'DISPENSED';
+  // NOT_REQUIRED is not a prescription: the doctor recorded that the consultation needs
+  // none. It has no medicines, and createdAt is the time the decision was recorded.
+  status: 'PENDING' | 'DISPENSED' | 'NOT_REQUIRED';
   createdAt: string;
   medicines: PrescriptionMedicine[];
   dispensedBy: string | null;
@@ -41,6 +43,16 @@ export function createPrescription(
     method: 'POST',
     body: request,
   });
+}
+
+export function recordNoPrescriptionRequired(
+  consultationId: string,
+  request: { queueId: string; patientId: string },
+): Promise<Prescription> {
+  return apiRequest<Prescription>(
+    `/api/consultations/${encodeURIComponent(consultationId)}/no-prescription`,
+    { method: 'POST', body: request },
+  );
 }
 
 export function getPatientPrescriptions(patientId: string): Promise<Prescription[]> {

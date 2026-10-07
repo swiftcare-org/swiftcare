@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { getPatient } from '../api/patients';
 import {
@@ -99,6 +99,20 @@ function callNextErrorMessage(error: unknown): string {
 
 export function DoctorDashboard() {
   const { user } = useAuth();
+  // A one-off confirmation handed over by the page the doctor just came from.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [arrivalNotice] = useState<string | null>(() => {
+    const notice = (location.state as { notice?: unknown } | null)?.notice;
+    return typeof notice === 'string' ? notice : null;
+  });
+
+  // Shown once: clearing it from the history entry keeps a reload from repeating it.
+  useEffect(() => {
+    if (arrivalNotice) {
+      void navigate('.', { replace: true, state: null });
+    }
+  }, [arrivalNotice, navigate]);
   const [loadState, setLoadState] = useState<WaitingPoolLoadState>('loading');
   const [rows, setRows] = useState<WaitingPoolRow[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -293,6 +307,12 @@ export function DoctorDashboard() {
 
   return (
     <DashboardShell sectionLabel="Doctor Dashboard">
+      {arrivalNotice && (
+        <Banner tone="success" role="status">
+          <span data-testid="dashboard-notice">{arrivalNotice}</span>
+        </Banner>
+      )}
+
       {pendingPrescription && (
         <Banner tone="warning" title="Prescription Pending">
           <p>

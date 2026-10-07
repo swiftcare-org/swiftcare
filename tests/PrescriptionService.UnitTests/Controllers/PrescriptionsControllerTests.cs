@@ -360,4 +360,25 @@ public class PrescriptionsControllerTests
             "PENDING",
             new DateTime(2026, 9, 23, 8, 30, 0, DateTimeKind.Utc),
             []);
+
+    // SWC-130: a consultation recorded as needing no prescription cannot also receive one.
+    [Fact]
+    public async Task CreateForAConsultationMarkedAsNeedingNoneReturnsConflictWithItsOwnMessage()
+    {
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.CreateAsync(
+                It.IsAny<CreatePrescriptionRequest>(),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded));
+        var controller = CreateController(service, "Doctor", Guid.NewGuid(), "Dr. Amara Chen");
+
+        var result = await controller.CreatePrescription(ValidRequest(), CancellationToken.None);
+
+        var response = Assert.IsType<ConflictObjectResult>(result);
+        var message = Assert.IsType<MessageResponse>(response.Value);
+        Assert.Equal("This consultation is recorded as needing no prescription", message.Message);
+    }
 }

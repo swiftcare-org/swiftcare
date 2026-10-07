@@ -1,6 +1,6 @@
 import { getLatestCompletedConsultation } from '../api/consultations';
 import { getPatient } from '../api/patients';
-import { getPatientPrescriptions } from '../api/prescriptions';
+import { getPatientPrescriptions, getPrescriptionByQueueId } from '../api/prescriptions';
 import { getCurrentPatient } from '../api/queue';
 
 export interface PrescriptionContext {
@@ -21,6 +21,17 @@ export function isPrescriptionContext(value: unknown): value is PrescriptionCont
   return Boolean(candidate.consultationId && candidate.queueId && candidate.patientId);
 }
 
+async function hasRecordedOutcome(queueId: string): Promise<boolean> {
+  try {
+    await getPrescriptionByQueueId(queueId);
+    return true;
+  } catch {
+    // 404 means nothing is recorded. Any other failure is treated the same way, because a
+    // temporary lookup problem must not hide unfinished clinical work.
+    return false;
+  }
+}
+
 export async function findPendingPrescriptionContext(): Promise<PrescriptionContext | null> {
   const [consultation, currentPatient] = await Promise.all([
     getLatestCompletedConsultation(),
@@ -39,6 +50,12 @@ export async function findPendingPrescriptionContext(): Promise<PrescriptionCont
 
   const prescriptions = await getPatientPrescriptions(consultation.patientId);
   if (prescriptions.some((item) => item.consultationId === consultation.consultationId)) {
+    return null;
+  }
+
+  // A consultation recorded as needing no prescription is resolved too. That decision is
+  // not in the patient's prescription history, so it is looked up by the queue entry.
+  if (await hasRecordedOutcome(consultation.queueId)) {
     return null;
   }
 

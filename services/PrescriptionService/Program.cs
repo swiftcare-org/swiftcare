@@ -37,6 +37,7 @@ builder.Services.AddDbContext<PrescriptionDbContext>(options =>
         builder.Configuration.GetConnectionString("PrescriptionDb"),
         new MySqlServerVersion(new Version(8, 4, 0))));
 builder.Services.AddScoped<IPrescriptionService, PrescriptionManagementService>();
+builder.Services.AddScoped<INoPrescriptionService, NoPrescriptionService>();
 builder.Services.AddScoped<IPrescriptionReportService, PrescriptionReportService>();
 builder.Services.AddOptions<ClinicOptions>()
     .Bind(builder.Configuration.GetSection(ClinicOptions.SectionName))
