@@ -27,6 +27,7 @@ public sealed class AdoNetConsultationRepository : IConsultationRepository
             connection,
             transaction,
             consultation.TemplateId,
+            consultation.DoctorId,
             cancellationToken);
 
         if (consultation.TemplateId.HasValue && templateName is null)
@@ -68,6 +69,7 @@ public sealed class AdoNetConsultationRepository : IConsultationRepository
         MySqlConnection connection,
         MySqlTransaction transaction,
         Guid? templateId,
+        Guid doctorId,
         CancellationToken cancellationToken)
     {
         if (!templateId.HasValue)
@@ -80,11 +82,14 @@ public sealed class AdoNetConsultationRepository : IConsultationRepository
         command.CommandText = """
             SELECT Name
             FROM ConsultationTemplates
-            WHERE Id = @TemplateId AND IsActive = TRUE
+            WHERE Id = @TemplateId
+              AND IsActive = TRUE
+              AND (CreatedByDoctorId IS NULL OR CreatedByDoctorId = @DoctorId)
             LIMIT 1;
             """;
         command.Parameters.Add("@TemplateId", MySqlDbType.VarChar, 36).Value =
             templateId.Value.ToString();
+        command.Parameters.Add("@DoctorId", MySqlDbType.VarChar, 36).Value = doctorId.ToString();
 
         return await command.ExecuteScalarAsync(cancellationToken) as string;
     }

@@ -39,6 +39,7 @@ builder.Services.AddScoped<IConsultationHistoryRepository, AdoNetConsultationHis
 builder.Services.AddScoped<IConsultationCompletionRepository, AdoNetConsultationCompletionRepository>();
 builder.Services.AddScoped<IVitalSignsRepository, AdoNetVitalSignsRepository>();
 builder.Services.AddScoped<IVitalSignsHistoryRepository, AdoNetVitalSignsHistoryRepository>();
+builder.Services.AddScoped<IConsultationTemplateRepository, AdoNetConsultationTemplateRepository>();
 builder.Services.AddScoped<IConsultationTemplateService, ConsultationTemplateService>();
 builder.Services.AddScoped<IConsultationService, ConsultationService>();
 builder.Services.AddScoped<IConsultationFollowUpService, ConsultationFollowUpService>();

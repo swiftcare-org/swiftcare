@@ -6,6 +6,15 @@ export interface ConsultationTemplate {
   symptoms: string;
   examinationFindings: string;
   notes: string;
+  // False for a template the signed-in doctor saved: only they can see or remove it.
+  isBuiltIn: boolean;
+}
+
+export interface CreateConsultationTemplateRequestBody {
+  name: string;
+  symptoms: string;
+  examinationFindings: string;
+  notes: string;
 }
 
 export interface CreateConsultationRequestBody {
@@ -109,6 +118,19 @@ export function getPatientVitalsHistory(patientId: string): Promise<VitalSigns[]
 
 export function getConsultationTemplates(): Promise<ConsultationTemplate[]> {
   return apiRequest<ConsultationTemplate[]>('/api/templates');
+}
+
+export function createConsultationTemplate(
+  request: CreateConsultationTemplateRequestBody,
+): Promise<ConsultationTemplate> {
+  return apiRequest<ConsultationTemplate>('/api/templates', {
+    method: 'POST',
+    body: request,
+  });
+}
+
+export function removeConsultationTemplate(templateId: string): Promise<void> {
+  return apiRequest<void>(`/api/templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' });
 }
 
 export function getLatestCompletedConsultation(): Promise<

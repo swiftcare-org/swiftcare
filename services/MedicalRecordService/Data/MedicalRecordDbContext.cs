@@ -7,6 +7,8 @@ namespace MedicalRecordService.Data;
 public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbContext> options)
     : DbContext(options)
 {
+    private const string ActiveOwnerScopeColumn = "ActiveOwnerScope";
+
     public DbSet<Consultation> Consultations => Set<Consultation>();
     public DbSet<ConsultationTemplate> ConsultationTemplates => Set<ConsultationTemplate>();
     public DbSet<VitalSigns> VitalSigns => Set<VitalSigns>();
@@ -53,9 +55,22 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
                 .HasColumnType("datetime(6)")
                 .IsRequired();
 
-            entity.HasIndex(template => template.Name)
+            ConfigureOptionalGuid(entity.Property(template => template.CreatedByDoctorId));
+
+            // Scopes name uniqueness to one owner's active templates: empty for a built-in
+            // template, the doctor's ID for their own, and NULL once removed. MySQL never
+            // treats NULLs as equal, so a removed template frees its name for reuse.
+            entity.Property<string?>(ActiveOwnerScopeColumn)
+                .HasColumnType("varchar(36)")
+                .HasCharSet("ascii")
+                .UseCollation("ascii_bin")
+                .HasComputedColumnSql(
+                    "(CASE WHEN `IsActive` THEN IFNULL(`CreatedByDoctorId`, '') ELSE NULL END)",
+                    stored: true);
+
+            entity.HasIndex(ActiveOwnerScopeColumn, nameof(ConsultationTemplate.Name))
                 .IsUnique()
-                .HasDatabaseName("UX_ConsultationTemplates_Name");
+                .HasDatabaseName("UX_ConsultationTemplates_ActiveOwnerScope_Name");
 
             entity.HasData(ConsultationTemplateSeedData.Templates);
         });

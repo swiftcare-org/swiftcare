@@ -1,50 +1,109 @@
 using MedicalRecordService.Data;
 using MedicalRecordService.Models.Dtos;
+using MedicalRecordService.Models.Entities;
+using MedicalRecordService.Models.Enums;
 
 namespace MedicalRecordService.Services;
 
 public sealed class ConsultationTemplateService : IConsultationTemplateService
 {
-    private readonly IMedicalRecordConnectionFactory _connectionFactory;
+    private readonly IConsultationTemplateRepository _templateRepository;
+    private readonly TimeProvider _timeProvider;
 
-    public ConsultationTemplateService(IMedicalRecordConnectionFactory connectionFactory)
+    public ConsultationTemplateService(
+        IConsultationTemplateRepository templateRepository,
+        TimeProvider timeProvider)
     {
-        _connectionFactory = connectionFactory;
+        _templateRepository = templateRepository;
+        _timeProvider = timeProvider;
     }
 
-    public async Task<IReadOnlyList<ConsultationTemplateResponse>> GetActiveTemplatesAsync(
+    public async Task<IReadOnlyList<ConsultationTemplateResponse>> GetTemplatesForDoctorAsync(
+        Guid doctorId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id, Name, Symptoms, ExaminationFindings, Notes
-            FROM ConsultationTemplates
-            WHERE IsActive = TRUE
-            ORDER BY Name;
-            """;
+        RequireDoctorId(doctorId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var templates = new List<ConsultationTemplateResponse>();
+        var templates = await _templateRepository.ListVisibleToDoctorAsync(doctorId, cancellationToken);
+        return templates.Select(ToResponse).ToList();
+    }
 
-        var idOrdinal = reader.GetOrdinal("Id");
-        var nameOrdinal = reader.GetOrdinal("Name");
-        var symptomsOrdinal = reader.GetOrdinal("Symptoms");
-        var examinationFindingsOrdinal = reader.GetOrdinal("ExaminationFindings");
-        var notesOrdinal = reader.GetOrdinal("Notes");
+    public async Task<CreateTemplateResult> CreateAsync(
+        CreateConsultationTemplateRequest request,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireDoctorId(doctorId);
 
-        while (await reader.ReadAsync(cancellationToken))
+        // Only the name is trimmed. The clinical text is stored as typed, because a
+        // template often ends with a prompt such as "- " for the doctor to continue from.
+        var template = new ConsultationTemplate
         {
-            templates.Add(new ConsultationTemplateResponse
-            {
-                Id = reader.GetGuid(idOrdinal),
-                Name = reader.GetString(nameOrdinal),
-                Symptoms = reader.GetString(symptomsOrdinal),
-                ExaminationFindings = reader.GetString(examinationFindingsOrdinal),
-                Notes = reader.GetString(notesOrdinal)
-            });
+            Id = Guid.NewGuid(),
+            Name = request.Name.Trim(),
+            Symptoms = request.Symptoms,
+            ExaminationFindings = request.ExaminationFindings,
+            Notes = request.Notes,
+            CreatedByDoctorId = doctorId,
+            IsActive = true,
+            CreatedAt = _timeProvider.GetUtcNow().UtcDateTime
+        };
+
+        var added = await _templateRepository.TryAddAsync(template, cancellationToken);
+
+        return added
+            ? new CreateTemplateResult { Outcome = CreateTemplateOutcome.Created, Template = ToResponse(template) }
+            : new CreateTemplateResult { Outcome = CreateTemplateOutcome.DuplicateName };
+    }
+
+    public async Task<RemoveTemplateOutcome> RemoveAsync(
+        Guid templateId,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireDoctorId(doctorId);
+
+        if (templateId == Guid.Empty)
+        {
+            throw new ArgumentException("Template ID must be provided.", nameof(templateId));
         }
 
-        return templates;
+        var template = await _templateRepository.FindAsync(templateId, cancellationToken);
+        if (template is null || !template.IsActive)
+        {
+            return RemoveTemplateOutcome.NotFound;
+        }
+
+        if (template.CreatedByDoctorId is null)
+        {
+            return RemoveTemplateOutcome.BuiltIn;
+        }
+
+        // Another doctor's template is reported as missing, so its existence stays private.
+        if (template.CreatedByDoctorId != doctorId)
+        {
+            return RemoveTemplateOutcome.NotFound;
+        }
+
+        var removed = await _templateRepository.DeactivateAsync(templateId, doctorId, cancellationToken);
+        return removed ? RemoveTemplateOutcome.Removed : RemoveTemplateOutcome.NotFound;
     }
+
+    private static void RequireDoctorId(Guid doctorId)
+    {
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
+    }
+
+    private static ConsultationTemplateResponse ToResponse(ConsultationTemplate template) => new()
+    {
+        Id = template.Id,
+        Name = template.Name,
+        Symptoms = template.Symptoms,
+        ExaminationFindings = template.ExaminationFindings,
+        Notes = template.Notes,
+        IsBuiltIn = template.CreatedByDoctorId is null
+    };
 }
