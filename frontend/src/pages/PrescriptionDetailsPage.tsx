@@ -15,7 +15,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmPanel } from '../components/ui/ConfirmPanel';
 import { LoadingText } from '../components/ui/Feedback';
 import { SectionCard } from '../components/ui/SectionCard';
-import { StatusBadge } from '../components/ui/StatusBadge';
+import { StatusBadge, type StatusBadgeTone } from '../components/ui/StatusBadge';
 import { DashboardShell } from '../dashboards/DashboardShell';
 import { formatDate, formatDateTime, formatTime } from '../lib/format';
 
@@ -26,6 +26,12 @@ interface CounterContext {
   queueEntry: TodayQueueEntry;
   patientName: string;
 }
+
+const STATUS_TONES: Record<Prescription['status'], StatusBadgeTone> = {
+  PENDING: 'warning',
+  DISPENSED: 'success',
+  NOT_REQUIRED: 'neutral',
+};
 
 const DETAIL_TERM_CLASS_NAME = 'text-xs font-medium text-slate-500';
 const DETAIL_VALUE_CLASS_NAME = 'mt-0.5 break-words text-slate-900';
@@ -217,13 +223,7 @@ export function PrescriptionDetailsPage() {
               }
               actions={
                 <StatusBadge
-                  tone={
-                    prescription.status === 'DISPENSED'
-                      ? 'success'
-                      : prescription.status === 'NOT_REQUIRED'
-                        ? 'neutral'
-                        : 'warning'
-                  }
+                  tone={STATUS_TONES[prescription.status]}
                   data-testid="prescription-status"
                 >
                   {prescription.status === 'NOT_REQUIRED' ? 'No prescription required' : prescription.status}

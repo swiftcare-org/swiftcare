@@ -110,7 +110,7 @@ export function DoctorDashboard() {
   // Shown once: clearing it from the history entry keeps a reload from repeating it.
   useEffect(() => {
     if (arrivalNotice) {
-      navigate('.', { replace: true, state: null });
+      void navigate('.', { replace: true, state: null });
     }
   }, [arrivalNotice, navigate]);
   const [loadState, setLoadState] = useState<WaitingPoolLoadState>('loading');

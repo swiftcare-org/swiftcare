@@ -73,6 +73,20 @@ function newMedicine(): MedicineDraft {
   };
 }
 
+function noPrescriptionErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return 'You are not authorized to record this.';
+    }
+
+    if (error.status === 409) {
+      return error.message;
+    }
+  }
+
+  return 'Unable to record this. Please try again.';
+}
+
 export function PrescriptionPage() {
   const { user } = useAuth();
   const location = useLocation();
@@ -426,15 +440,9 @@ export function PrescriptionPage() {
         queueId: context!.queueId,
         patientId: context!.patientId,
       });
-      navigate('/doctor', { replace: true, state: { notice: 'No prescription required was recorded.' } });
+      void navigate('/doctor', { replace: true, state: { notice: 'No prescription required was recorded.' } });
     } catch (error) {
-      setNoPrescriptionError(
-        error instanceof ApiError && (error.status === 401 || error.status === 403)
-          ? 'You are not authorized to record this.'
-          : error instanceof ApiError && error.status === 409
-            ? error.message
-            : 'Unable to record this. Please try again.',
-      );
+      setNoPrescriptionError(noPrescriptionErrorMessage(error));
       // Back to the confirm step, so the reason is shown beside the action that failed.
       setNoPrescriptionState('confirming');
     }
@@ -442,6 +450,46 @@ export function PrescriptionPage() {
 
   const isSubmitting = submissionState === 'submitting';
   const itemBusy = itemChangeState !== 'idle';
+
+  // The Add Medicine button of the Medicines card: one for the unsaved draft, one for a
+  // saved prescription that is still pending, and none once the visit has an outcome.
+  function medicinesAction() {
+    if (noPrescription) {
+      return null;
+    }
+
+    if (submissionState !== 'saved') {
+      return (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={isSubmitting}
+          onClick={() => setMedicines((current) => [...current, newMedicine()])}
+        >
+          Add Medicine
+        </Button>
+      );
+    }
+
+    if (savedPrescription?.status === 'PENDING' && !additionDraft) {
+      return (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={itemBusy}
+          onClick={() => {
+            setAdditionDraft(newMedicine());
+            setAdditionValidated(false);
+            setItemMessage(null);
+          }}
+        >
+          Add Medicine
+        </Button>
+      );
+    }
+
+    return null;
+  }
 
   function removalPanel(target: RemovalTarget) {
     return (
@@ -567,31 +615,7 @@ export function PrescriptionPage() {
                 ? undefined
                 : 'Add every medicine included in this prescription, then save it.'
             }
-            actions={
-              noPrescription ? null : submissionState !== 'saved' ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={isSubmitting}
-                  onClick={() => setMedicines((current) => [...current, newMedicine()])}
-                >
-                  Add Medicine
-                </Button>
-              ) : savedPrescription?.status === 'PENDING' && !additionDraft ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={itemBusy}
-                  onClick={() => {
-                    setAdditionDraft(newMedicine());
-                    setAdditionValidated(false);
-                    setItemMessage(null);
-                  }}
-                >
-                  Add Medicine
-                </Button>
-              ) : null
-            }
+            actions={medicinesAction()}
           >
             {noPrescription && (
               <div className="space-y-5" data-testid="no-prescription-recorded">
