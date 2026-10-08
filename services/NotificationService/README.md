@@ -9,12 +9,13 @@ Keeps a record of what is happening in the department and serves it as the live 
 - Idempotent against Kafka's at-least-once delivery: `EventId` has a unique index, so a redelivered event is recognised and skipped. Two instances storing the same event at the same moment are settled by that index.
 - An event that cannot be read (invalid JSON, a missing identifier, text longer than its column) is logged and skipped, because retrying it would never succeed. A storage failure is retried by seeking back to the same offset after `Kafka:RetryDelay`.
 - `GET /api/notifications?limit=50` returns the most recent events, newest first. `limit` defaults to 50 and is clamped to 1 to 200. Receptionist and Admin only.
+- `GET /api/reports/daily?date=yyyy-MM-dd` returns the daily summary for one clinic day: total, new and returning patients (each patient who checked in is counted once), patients called to each room (Rooms 1, 2 and 3 are always listed) and the five most common diagnoses. A day with no activity returns zero totals. A missing or invalid date returns `400`. Admin only.
 - `GET /health` is the liveness and readiness check.
 - Enforces the Gateway trust boundary via `GatewaySecretMiddleware`, matching every other service.
 
 ## What it stores, and what it does not
 
-The Kafka events carry identifiers only, by design, so this service never holds a patient name or any clinical detail. A notification holds the event ID, its type, the patient ID, the event time and, for `patient-called`, the queue number, doctor name and room number.
+The Kafka events carry no patient name, symptoms or clinical notes, so this service never holds them. A notification holds the event ID, its type, the patient ID, the event time, for `patient-called` the queue number, doctor name and room number, and for `consultation-completed` the diagnosis, which the reports count. A diagnosis longer than 200 characters is shortened to fit. Consultations completed before the event carried a diagnosis are stored without one and are left out of the diagnosis counts.
 
 The activity feed page resolves patient names through PatientService's existing patient-profile endpoint and caches successful lookups between polls. This keeps personal information with the service that owns it. NotificationService does not call any other service.
 
@@ -42,7 +43,7 @@ NotificationService fails fast at startup if any of these are missing.
 | `Gateway__InternalSecret` | Shared secret validated on every non-health request | Required, must match the API Gateway's `Gateway__InternalSecret` |
 | `Kafka__BootstrapServers` | Address of the Kafka broker | Required to be configured |
 
-`Kafka:PatientCheckedInTopic` (`patient-checked-in`), `Kafka:PatientCalledTopic` (`patient-called`), `Kafka:ConsultationCompletedTopic` (`consultation-completed`), `Kafka:ConsumerGroupId` (`notification-service`) and `Kafka:RetryDelay` are non-secret settings.
+`Kafka:PatientCheckedInTopic` (`patient-checked-in`), `Kafka:PatientCalledTopic` (`patient-called`), `Kafka:ConsultationCompletedTopic` (`consultation-completed`), `Kafka:ConsumerGroupId` (`notification-service`), `Kafka:RetryDelay`, `Reports:ClinicTimeZone` (`Asia/Colombo`) and `Reports:Rooms` (`1`, `2`, `3`) are non-secret settings.
 
 Never hardcode these values in source or commit them to `.env`.
 
@@ -56,7 +57,7 @@ dotnet run --project services/NotificationService -- --migrate
 
 ## Deployment status
 
-The Dockerfile, Docker Compose entry, CI and CD jobs, infrastructure and the API Gateway route for `/api/notifications` are delivered by SWC-133. Until then the service runs with `dotnet run` and the activity feed page cannot reach it through the Gateway.
+The Dockerfile, Docker Compose entry, CI and CD jobs, infrastructure and the API Gateway routes for `/api/notifications` and `/api/reports/daily` are delivered by SWC-133. Until then the service runs with `dotnet run` and the activity feed page cannot reach it through the Gateway.
 
 ## Tests
 
