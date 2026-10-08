@@ -6,6 +6,7 @@ export type IconName =
   | 'queue'
   | 'clipboard'
   | 'activity'
+  | 'chart'
   | 'display'
   | 'signOut'
   | 'menu'
@@ -38,6 +39,7 @@ const PATHS: Record<IconName, string[]> = {
     'M9 16h6',
   ],
   activity: ['M22 12h-4l-3 9L9 3l-3 9H2'],
+  chart: ['M3 21h18', 'M7 21v-8', 'M12 21V5', 'M17 21v-11'],
   display: ['M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5Z', 'M8 20h8', 'M12 16v4'],
   signOut: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'm16 17 5-5-5-5', 'M21 12H9'],
   menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],

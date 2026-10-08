@@ -3,6 +3,7 @@ import { LoginPage } from './pages/LoginPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { ActivityFeedPage } from './pages/ActivityFeedPage';
+import { DailyReportPage } from './pages/DailyReportPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
 import { PatientProfilePage } from './pages/PatientProfilePage';
@@ -84,6 +85,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="Admin">
             <AuditLogPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/daily"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <DailyReportPage />
           </ProtectedRoute>
         }
       />
