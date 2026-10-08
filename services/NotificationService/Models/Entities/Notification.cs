@@ -2,9 +2,9 @@ using NotificationService.Models.Enums;
 
 namespace NotificationService.Models.Entities;
 
-// One department event, stored as it arrived from Kafka. It holds identifiers and the
-// assignment details the events carry, never patient demographics or clinical notes:
-// a reader that needs the patient's name asks PatientService for it.
+// One department event, stored as it arrived from Kafka. It holds identifiers, the
+// assignment details and the diagnosis the events carry, never patient demographics or
+// clinical notes: a reader that needs the patient's name asks PatientService for it.
 public sealed class Notification
 {
     public Guid Id { get; set; }
@@ -30,6 +30,9 @@ public sealed class Notification
 
     // Consultation-completed events only.
     public Guid? ConsultationId { get; set; }
+
+    // Null for a consultation completed before the event carried a diagnosis.
+    public string? Diagnosis { get; set; }
 
     // When the event happened, in UTC. The consultation-completed event carries no
     // timestamp of its own, so for that type this is when the service received it.

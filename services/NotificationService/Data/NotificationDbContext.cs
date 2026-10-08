@@ -20,6 +20,7 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
             entity.Property(notification => notification.QueueNumber).HasMaxLength(16);
             entity.Property(notification => notification.DoctorName).HasMaxLength(200);
             entity.Property(notification => notification.RoomNumber).HasMaxLength(50);
+            entity.Property(notification => notification.Diagnosis).HasMaxLength(200);
 
             // The final backstop against storing a redelivered event twice.
             entity.HasIndex(notification => notification.EventId).IsUnique();
