@@ -57,7 +57,7 @@ dotnet run --project services/NotificationService -- --migrate
 
 ## Deployment status
 
-The Dockerfile, Docker Compose entry, CI and CD jobs, infrastructure and the API Gateway routes for `/api/notifications` and `/api/reports/daily` are delivered by SWC-133. Until then the service runs with `dotnet run` and the activity feed page cannot reach it through the Gateway.
+The API Gateway routes for `/api/notifications` and `/api/reports/daily` exist and point at `http://localhost:5005` by default. The Dockerfile, Docker Compose entry (including the Gateway's address for this service inside Docker), CI and CD jobs and infrastructure are delivered by SWC-133. Until then the service runs with `dotnet run`.
 
 ## Tests
 

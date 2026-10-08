@@ -46,6 +46,8 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `today-queue-route` | `GET /api/queue/today` | `ReceptionistOnly` | `http://localhost:5003` (QueueService) |
 | `consultations-create-route` | `POST /api/consultations` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 | `consultation-no-prescription-route` | `POST /api/consultations/{consultationId:guid}/no-prescription` | `DoctorOnly` | `http://localhost:5001` (PrescriptionService) |
+| `notifications-route` | `GET /api/notifications` | `ActivityFeedPolicy` | `http://localhost:5005` (NotificationService) |
+| `reports-daily-route` | `GET /api/reports/daily` | `AdminOnly` | `http://localhost:5005` (NotificationService) |
 | `consultation-templates-route` | `GET, POST /api/templates` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 | `consultation-template-item-route` | `DELETE /api/templates/{id:guid}` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 
