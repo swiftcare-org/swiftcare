@@ -58,14 +58,16 @@ public class NotificationEventParserTests
         Guid? consultationId = null,
         Guid? queueId = null,
         Guid? patientId = null,
-        Guid? doctorId = null) =>
+        Guid? doctorId = null,
+        string? diagnosis = "Viral URTI") =>
         JsonSerializer.Serialize(new
         {
             EventId = eventId ?? EventId,
             ConsultationId = consultationId ?? ConsultationId,
             QueueId = queueId ?? QueueId,
             PatientId = patientId ?? PatientId,
-            DoctorId = doctorId ?? DoctorId
+            DoctorId = doctorId ?? DoctorId,
+            Diagnosis = diagnosis
         });
 
     [Theory]
@@ -121,9 +123,81 @@ public class NotificationEventParserTests
         Assert.Equal(QueueId, notification.QueueId);
         Assert.Equal(DoctorId, notification.DoctorId);
         Assert.Equal(ConsultationId, notification.ConsultationId);
+        Assert.Equal("Viral URTI", notification.Diagnosis);
         // The event carries no timestamp of its own.
         Assert.Equal(ReceivedAt, notification.OccurredAt);
         Assert.Equal(ReceivedAt, notification.ReceivedAt);
+    }
+
+    [Fact]
+    public void DiagnosisIsStoredWithoutSurroundingSpaces()
+    {
+        var notification = Parser.Parse("consultation-completed", Completed(diagnosis: "  Viral URTI  "), ReceivedAt);
+
+        Assert.Equal("Viral URTI", notification!.Diagnosis);
+    }
+
+    // Events published before the diagnosis was added carry none, and are still stored.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ConsultationCompletedWithoutADiagnosisIsStoredWithNone(string? diagnosis)
+    {
+        var notification = Parser.Parse("consultation-completed", Completed(diagnosis: diagnosis), ReceivedAt);
+
+        Assert.NotNull(notification);
+        Assert.Null(notification.Diagnosis);
+    }
+
+    [Fact]
+    public void ConsultationCompletedFromBeforeTheDiagnosisWasAddedIsStillStored()
+    {
+        var payload = $$"""
+            {"EventId":"{{EventId}}","ConsultationId":"{{ConsultationId}}","QueueId":"{{QueueId}}","PatientId":"{{PatientId}}","DoctorId":"{{DoctorId}}"}
+            """;
+
+        var notification = Parser.Parse("consultation-completed", payload, ReceivedAt);
+
+        Assert.NotNull(notification);
+        Assert.Null(notification.Diagnosis);
+    }
+
+    // A diagnosis is free text at its source. One longer than the column is shortened, so
+    // the event is stored instead of failing the insert on every retry.
+    [Fact]
+    public void DiagnosisAtItsLimitIsKeptAndALongerOneIsShortened()
+    {
+        var atLimit = new string('D', NotificationEventParser.DiagnosisMaxLength);
+
+        var kept = Parser.Parse("consultation-completed", Completed(diagnosis: atLimit), ReceivedAt);
+        var shortened = Parser.Parse("consultation-completed", Completed(diagnosis: atLimit + "X"), ReceivedAt);
+
+        Assert.Equal(atLimit, kept!.Diagnosis);
+        Assert.Equal(atLimit, shortened!.Diagnosis);
+    }
+
+    [Fact]
+    public void ShortenedDiagnosisDoesNotEndWithASpace()
+    {
+        var text = new string('D', NotificationEventParser.DiagnosisMaxLength - 1) + " tail";
+
+        var notification = Parser.Parse("consultation-completed", Completed(diagnosis: text), ReceivedAt);
+
+        Assert.Equal(new string('D', NotificationEventParser.DiagnosisMaxLength - 1), notification!.Diagnosis);
+    }
+
+    [Fact]
+    public void DiagnosisLimitMatchesTheColumnSize()
+    {
+        Assert.Equal(200, NotificationEventParser.DiagnosisMaxLength);
+    }
+
+    [Fact]
+    public void OtherEventTypesCarryNoDiagnosis()
+    {
+        Assert.Null(Parser.Parse("patient-checked-in", CheckedIn(), ReceivedAt)!.Diagnosis);
+        Assert.Null(Parser.Parse("patient-called", Called(), ReceivedAt)!.Diagnosis);
     }
 
     [Fact]
