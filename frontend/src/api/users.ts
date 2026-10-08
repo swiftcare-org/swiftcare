@@ -44,23 +44,23 @@ export function listUsers(): Promise<UserSummary[]> {
 }
 
 export function updateUser(userId: string, request: UpdateUserRequestBody): Promise<UserSummary> {
-  return apiRequest<UserSummary>(`/api/users/${userId}`, {
+  return apiRequest<UserSummary>(`/api/users/${encodeURIComponent(userId)}`, {
     method: 'PUT',
     body: request,
   });
 }
 
 export function resetUserPassword(userId: string, newPassword: string): Promise<UserSummary> {
-  return apiRequest<UserSummary>(`/api/users/${userId}/reset-password`, {
+  return apiRequest<UserSummary>(`/api/users/${encodeURIComponent(userId)}/reset-password`, {
     method: 'PUT',
     body: { newPassword },
   });
 }
 
 export function deactivateUser(userId: string): Promise<UserSummary> {
-  return apiRequest<UserSummary>(`/api/users/${userId}/deactivate`, { method: 'PUT' });
+  return apiRequest<UserSummary>(`/api/users/${encodeURIComponent(userId)}/deactivate`, { method: 'PUT' });
 }
 
 export function reactivateUser(userId: string): Promise<UserSummary> {
-  return apiRequest<UserSummary>(`/api/users/${userId}/activate`, { method: 'PUT' });
+  return apiRequest<UserSummary>(`/api/users/${encodeURIComponent(userId)}/activate`, { method: 'PUT' });
 }

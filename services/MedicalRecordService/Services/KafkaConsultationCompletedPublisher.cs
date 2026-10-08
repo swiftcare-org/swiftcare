@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Confluent.Kafka;
+using MedicalRecordService.Logging;
 using MedicalRecordService.Models.Events;
 using Microsoft.Extensions.Options;
 
@@ -43,11 +44,16 @@ public sealed class KafkaConsultationCompletedPublisher : IConsultationCompleted
                 _options.ConsultationCompletedTopic, message, linkedSource.Token);
             return true;
         }
-        catch (ProduceException<string, string>)
+        catch (ProduceException<string, string> exception)
         {
+            // The Kafka error code and reason describe the broker failure and hold no
+            // payload. The exception itself is not logged: it carries the message.
             _logger.LogError(
-                "Failed to publish consultation-completed: eventId={EventId}",
-                completedEvent.EventId);
+                "Failed to publish consultation-completed: eventId={EventId} errorType={ErrorType} kafkaErrorCode={KafkaErrorCode} kafkaErrorReason={KafkaErrorReason}",
+                completedEvent.EventId,
+                exception.GetType().Name,
+                exception.Error.Code,
+                LogSanitizer.Sanitize(exception.Error.Reason));
             return false;
         }
         catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)

@@ -79,12 +79,13 @@ public sealed class ConsultationCompletionService : IConsultationCompletionServi
                     CompleteConsultationOutcome.Success, completedEvent.EventId);
             }
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             // The database commit has already happened. Keep the stored ID for retry.
+            // Only the exception type is logged: its message could carry patient data.
             _logger.LogError(
-                "Consultation completion publish failed: consultationId={ConsultationId} eventId={EventId}",
-                consultationId, completedEvent.EventId);
+                "Consultation completion publish failed: consultationId={ConsultationId} eventId={EventId} errorType={ErrorType}",
+                consultationId, completedEvent.EventId, exception.GetType().Name);
         }
 
         return new CompleteConsultationResult(CompleteConsultationOutcome.PublishFailed);
