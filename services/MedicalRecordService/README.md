@@ -56,7 +56,7 @@ Timestamps are returned as UTC. Measurements that were not recorded are `null`, 
 
 ## Completing a consultation
 
-The doctor must save vital signs before completing a consultation. MedicalRecordService checks the trusted doctor identity and returns `409` with `Please save vital signs first` if they are missing. On the first completion request, it commits `Status = COMPLETE` and a new `EventId` in the `Consultations` table, then publishes `consultation-completed` to Kafka with that stored ID. The event contains identifiers only, not clinical notes or patient details.
+The doctor must save vital signs before completing a consultation. MedicalRecordService checks the trusted doctor identity and returns `409` with `Please save vital signs first` if they are missing. On the first completion request, it commits `Status = COMPLETE` and a new `EventId` in the `Consultations` table, then publishes `consultation-completed` to Kafka with that stored ID. The event contains identifiers and the diagnosis, which the department reports count. It never contains symptoms, clinical notes or patient details.
 
 If publishing fails, the endpoint returns `503` with `Consultation could not be completed. Please try again.` The database still contains `COMPLETE` and the stored `EventId`, while QueueService leaves the queue entry `IN_CONSULTATION` until it receives the event. The doctor can retry Complete; the service skips the database write and republishes with the same `EventId`. The doctor-scoped `by-queue` endpoint lets the consultation page recover the saved consultation and vital-sign state after a refresh so this retry remains available. A successful publish does not by itself prove that QueueService has processed the event yet.
 

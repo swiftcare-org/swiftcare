@@ -85,13 +85,14 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
         Guid? queueId = null;
         Guid? patientId = null;
         string? status = null;
+        var diagnosis = string.Empty;
         Guid? storedEventId;
 
         await using (var lookup = connection.CreateCommand())
         {
             lookup.Transaction = transaction;
             lookup.CommandText = """
-                SELECT QueueId, PatientId, Status, EventId
+                SELECT QueueId, PatientId, Status, EventId, Diagnosis
                 FROM Consultations
                 WHERE Id = @ConsultationId AND DoctorId = @DoctorId
                 FOR UPDATE;
@@ -110,6 +111,7 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
                 storedEventId = reader.IsDBNull(3)
                     ? null
                     : Guid.Parse(reader.GetValue(3).ToString()!);
+                diagnosis = reader.GetString(4).Trim();
             }
             else
             {
@@ -135,7 +137,7 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
             return new CompletionPreparationResult(
                 CompletionPreparationOutcome.Ready,
                 new ConsultationCompletedEvent(
-                    storedEventId.Value, consultationId, queueId.Value, patientId.Value, doctorId));
+                    storedEventId.Value, consultationId, queueId.Value, patientId.Value, doctorId, diagnosis));
         }
 
         if (status != Consultation.InProgressStatus || storedEventId is not null)
@@ -195,6 +197,7 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
         await transaction.CommitAsync(cancellationToken);
         return new CompletionPreparationResult(
             CompletionPreparationOutcome.Ready,
-            new ConsultationCompletedEvent(eventId, consultationId, queueId.Value, patientId.Value, doctorId));
+            new ConsultationCompletedEvent(
+                eventId, consultationId, queueId.Value, patientId.Value, doctorId, diagnosis));
     }
 }
