@@ -5,64 +5,56 @@ using NotificationService.Models.Dtos;
 
 namespace NotificationService.Middleware;
 
-// Services trust the Gateway, not the client. Every non-health request must carry
-// the shared X-Gateway-Secret header, proving it was forwarded by the API Gateway
-// rather than reaching this service directly.
-public sealed class GatewaySecretMiddleware
+// Services trust the Gateway, not the client. Every request except the public paths must
+// carry the shared X-Gateway-Secret header, proving the API Gateway forwarded it.
+public sealed class GatewaySecretMiddleware(
+    RequestDelegate next,
+    IConfiguration configuration,
+    ILogger<GatewaySecretMiddleware> logger)
 {
-    private const string GatewaySecretHeaderName = "X-Gateway-Secret";
+    public const string HeaderName = "X-Gateway-Secret";
 
-    private readonly RequestDelegate _next;
-    private readonly ILogger<GatewaySecretMiddleware> _logger;
+    // /openapi and /scalar are only mapped in Development, so exempting them has no
+    // effect in Production.
+    private static readonly string[] PublicPrefixes = ["/openapi", "/scalar"];
 
-    public GatewaySecretMiddleware(RequestDelegate next, ILogger<GatewaySecretMiddleware> logger)
+    public Task InvokeAsync(HttpContext context)
     {
-        _next = next;
-        _logger = logger;
+        var request = context.Request;
+
+        return IsPublic(request.Path) || CarriesTheSecret(request)
+            ? next(context)
+            : RejectAsync(context);
     }
 
-    public async Task InvokeAsync(HttpContext context, IConfiguration configuration)
-    {
-        if (IsUnauthenticatedPath(context.Request.Path))
-        {
-            await _next(context);
-            return;
-        }
-
-        var expectedSecret = configuration["Gateway:InternalSecret"];
-        var providedSecret = context.Request.Headers[GatewaySecretHeaderName].FirstOrDefault();
-
-        if (string.IsNullOrEmpty(expectedSecret) ||
-            string.IsNullOrEmpty(providedSecret) ||
-            !SecretsMatch(expectedSecret, providedSecret))
-        {
-            // Sanitized because the request path is client-supplied: without stripping
-            // CR/LF here, a crafted path could forge additional, fake log lines.
-            _logger.LogWarning(
-                "Rejected request without a valid gateway secret: path={Path}",
-                LogSanitizer.Sanitize(context.Request.Path.Value));
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new MessageResponse("Unauthorized"), context.RequestAborted);
-            return;
-        }
-
-        await _next(context);
-    }
-
-    // /openapi and /scalar are only ever mapped inside the Development environment guard in
-    // Program.cs, so this exemption has no effect in Production.
-    private static bool IsUnauthenticatedPath(PathString path) =>
+    private static bool IsPublic(PathString path) =>
         path.Equals("/health", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase);
+        || PublicPrefixes.Any(prefix => path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase));
 
-    // Constant-time comparison so response timing cannot be used to brute-force the secret.
-    private static bool SecretsMatch(string expected, string provided)
+    private bool CarriesTheSecret(HttpRequest request)
     {
-        var expectedBytes = Encoding.UTF8.GetBytes(expected);
-        var providedBytes = Encoding.UTF8.GetBytes(provided);
+        var expected = configuration["Gateway:InternalSecret"];
+        if (string.IsNullOrEmpty(expected))
+        {
+            return false;
+        }
 
-        return expectedBytes.Length == providedBytes.Length
-            && CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
+        // FixedTimeEquals takes the same time whatever the content, so response timing
+        // cannot be used to guess the secret. Values of different lengths never match.
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(expected),
+            Encoding.UTF8.GetBytes(request.Headers[HeaderName].ToString()));
+    }
+
+    private Task RejectAsync(HttpContext context)
+    {
+        // The path is client-supplied: without stripping CR/LF a crafted path could
+        // forge extra log lines.
+        logger.LogWarning(
+            "Rejected request without a valid gateway secret: path={Path}",
+            LogSanitizer.Sanitize(context.Request.Path.Value));
+
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return context.Response.WriteAsJsonAsync(new MessageResponse("Unauthorized"), context.RequestAborted);
     }
 }

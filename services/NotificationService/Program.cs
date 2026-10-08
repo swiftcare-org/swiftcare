@@ -22,15 +22,6 @@ if (maintenanceCommand != MaintenanceCommand.None)
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
-if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-{
-    builder.Services.AddOpenTelemetry()
-        .UseAzureMonitor()
-        .ConfigureResource(resource => resource.AddService("swiftcare-notification"))
-        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
-}
-
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
@@ -67,31 +58,21 @@ builder.Services.AddSingleton<IConsumer<string, string>>(services =>
 });
 builder.Services.AddHostedService<ActivityEventConsumer>();
 
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-notification"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
+
 var app = builder.Build();
 
 // Fail fast before serving any request if required configuration is missing. Checked
 // against app.Configuration (post-Build) so that test hosts which inject configuration
 // during Build() (for example WebApplicationFactory) are honored.
-if (string.IsNullOrEmpty(app.Configuration.GetConnectionString("NotificationDb")))
-{
-    throw new InvalidOperationException(
-        "Connection string 'ConnectionStrings:NotificationDb' is not configured. Set it via the " +
-        "ConnectionStrings__NotificationDb environment variable.");
-}
-
-if (string.IsNullOrEmpty(app.Configuration["Gateway:InternalSecret"]))
-{
-    throw new InvalidOperationException(
-        "Gateway:InternalSecret is not configured. Set it via the Gateway__InternalSecret environment variable.");
-}
-
-// Checked for presence only, never reachability: the service must start and serve
-// /health even when Kafka is down. The consumer retries instead of blocking startup.
-if (string.IsNullOrEmpty(app.Configuration["Kafka:BootstrapServers"]))
-{
-    throw new InvalidOperationException(
-        "Kafka:BootstrapServers is not configured. Set it via the Kafka__BootstrapServers environment variable.");
-}
+RequiredSettings.EnsurePresent(app.Configuration);
 
 if (app.Environment.IsDevelopment())
 {
@@ -101,8 +82,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<GatewaySecretMiddleware>();
-
-app.UseAuthorization();
 
 app.MapHealthChecks("/health");
 app.MapControllers();

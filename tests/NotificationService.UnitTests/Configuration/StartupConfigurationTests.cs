@@ -7,17 +7,19 @@ namespace NotificationService.UnitTests.Configuration;
 public class StartupConfigurationTests
 {
     [Theory]
-    [InlineData("ConnectionStrings:NotificationDb", "Connection string 'ConnectionStrings:NotificationDb' is not configured.")]
-    [InlineData("Gateway:InternalSecret", "Gateway:InternalSecret is not configured.")]
-    [InlineData("Kafka:BootstrapServers", "Kafka:BootstrapServers is not configured.")]
-    public void StartupFailsFastWhenARequiredSettingIsMissing(string setting, string expectedMessage)
+    [InlineData("ConnectionStrings:NotificationDb", "ConnectionStrings__NotificationDb")]
+    [InlineData("Gateway:InternalSecret", "Gateway__InternalSecret")]
+    [InlineData("Kafka:BootstrapServers", "Kafka__BootstrapServers")]
+    public void StartupFailsFastWhenARequiredSettingIsMissing(string setting, string environmentVariable)
     {
         using var factory = new NotificationServiceWebApplicationFactory(
             new Dictionary<string, string?> { [setting] = string.Empty });
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.StartsWith(expectedMessage, exception.Message);
+        Assert.Equal(
+            $"{setting} is not configured. Set it via the {environmentVariable} environment variable.",
+            exception.Message);
     }
 
     [Fact]

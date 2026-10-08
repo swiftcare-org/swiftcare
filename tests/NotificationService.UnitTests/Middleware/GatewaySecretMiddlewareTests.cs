@@ -71,15 +71,6 @@ public class GatewaySecretMiddlewareTests
         string? providedSecret,
         string? configuredSecret = Secret)
     {
-        var nextCalled = false;
-        var middleware = new GatewaySecretMiddleware(
-            _ =>
-            {
-                nextCalled = true;
-                return Task.CompletedTask;
-            },
-            NullLogger<GatewaySecretMiddleware>.Instance);
-
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -87,15 +78,25 @@ public class GatewaySecretMiddlewareTests
             })
             .Build();
 
+        var nextCalled = false;
+        var middleware = new GatewaySecretMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            configuration,
+            NullLogger<GatewaySecretMiddleware>.Instance);
+
         var context = new DefaultHttpContext();
         context.Request.Path = path;
         context.Response.Body = new MemoryStream();
         if (providedSecret is not null)
         {
-            context.Request.Headers["X-Gateway-Secret"] = providedSecret;
+            context.Request.Headers[GatewaySecretMiddleware.HeaderName] = providedSecret;
         }
 
-        await middleware.InvokeAsync(context, configuration);
+        await middleware.InvokeAsync(context);
 
         return new InvocationResult(context, nextCalled);
     }
