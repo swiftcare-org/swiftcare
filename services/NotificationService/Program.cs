@@ -37,8 +37,10 @@ builder.Services.AddDbContext<NotificationDbContext>(options =>
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<INotificationRecorder, NotificationRecorder>();
 builder.Services.AddScoped<INotificationFeedService, NotificationFeedService>();
+builder.Services.AddScoped<IDailyReportService, DailyReportService>();
 
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection("Reports"));
 
 // Registered as a singleton: IConsumer is not thread-safe for concurrent Consume() calls,
 // but only ActivityEventConsumer's single loop ever calls it. Keeping it injectable lets
