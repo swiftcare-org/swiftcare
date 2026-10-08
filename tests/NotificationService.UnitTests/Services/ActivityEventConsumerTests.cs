@@ -19,6 +19,10 @@ public class ActivityEventConsumerTests
 
     private static readonly DateTimeOffset Now = new(2026, 10, 8, 5, 0, 0, TimeSpan.Zero);
 
+    private static readonly string[] StoreThenCommit = ["store", "commit"];
+
+    private static readonly string[] AllTopics = ["patient-checked-in", "patient-called", "consultation-completed"];
+
     private sealed class FixedTimeProvider : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => Now;
@@ -49,7 +53,7 @@ public class ActivityEventConsumerTests
 
         await RunOnceAsync(consumer, recorder, signal);
 
-        Assert.Equal(new[] { "store", "commit" }, order);
+        Assert.Equal(StoreThenCommit, order);
         Assert.NotNull(stored);
         Assert.Equal(eventId, stored.EventId);
         Assert.Equal(NotificationType.PatientCheckedIn, stored.Type);
@@ -89,8 +93,7 @@ public class ActivityEventConsumerTests
         await RunOnceAsync(consumer, RecorderReturning(RecordNotificationOutcome.Recorded), signal);
 
         consumer.Verify(
-            item => item.Subscribe(It.Is<IEnumerable<string>>(topics => topics.SequenceEqual(
-                new[] { "patient-checked-in", "patient-called", "consultation-completed" }))),
+            item => item.Subscribe(It.Is<IEnumerable<string>>(topics => topics.SequenceEqual(AllTopics))),
             Times.Once);
     }
 
