@@ -7,20 +7,11 @@ import {
   type DailyPrescriptionReport,
 } from '../api/reports';
 import { Banner } from '../components/ui/Banner';
+import { CountTable } from '../components/ui/CountTable';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
 import { Field } from '../components/ui/Field';
-import { numericClassName } from '../components/ui/fieldStyles';
 import { SectionCard } from '../components/ui/SectionCard';
 import { StatCard, StatGrid } from '../components/ui/StatCard';
-import {
-  tableBodyClassName,
-  tableCellClassName,
-  tableClassName,
-  tableHeadClassName,
-  tableHeaderCellClassName,
-  tableKeyCellClassName,
-  tableWrapperClassName,
-} from '../components/ui/table';
 import { clinicTodayForDateInput, formatDate } from '../lib/format';
 
 // What one service returned for one date. `data` is null when the request failed.
@@ -119,56 +110,32 @@ export function DailyReportPage() {
               </StatGrid>
 
               <SectionCard title="Patients per Room" description="Patients called to each room.">
-                <div className={tableWrapperClassName}>
-                  <table className={tableClassName} data-testid="daily-report-rooms">
-                    <thead className={tableHeadClassName}>
-                      <tr>
-                        <th scope="col" className={tableHeaderCellClassName}>
-                          Room
-                        </th>
-                        <th scope="col" className={tableHeaderCellClassName}>
-                          Patients
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className={tableBodyClassName}>
-                      {activityReport.patientsPerRoom.map((room) => (
-                        <tr key={room.roomNumber}>
-                          <td className={tableKeyCellClassName}>Room {room.roomNumber}</td>
-                          <td className={`${tableCellClassName} ${numericClassName}`}>{room.patients}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <CountTable
+                  labelHeading="Room"
+                  countHeading="Patients"
+                  testId="daily-report-rooms"
+                  rows={activityReport.patientsPerRoom.map((room) => ({
+                    key: room.roomNumber,
+                    label: `Room ${room.roomNumber}`,
+                    count: room.patients,
+                  }))}
+                />
               </SectionCard>
 
               <SectionCard title="Top Diagnoses" description="The five most common diagnoses of completed consultations.">
                 {activityReport.topDiagnoses.length === 0 ? (
                   <EmptyState>No diagnoses recorded for this date.</EmptyState>
                 ) : (
-                  <div className={tableWrapperClassName}>
-                    <table className={tableClassName} data-testid="daily-report-diagnoses">
-                      <thead className={tableHeadClassName}>
-                        <tr>
-                          <th scope="col" className={tableHeaderCellClassName}>
-                            Diagnosis
-                          </th>
-                          <th scope="col" className={tableHeaderCellClassName}>
-                            Consultations
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className={tableBodyClassName}>
-                        {activityReport.topDiagnoses.map((diagnosis) => (
-                          <tr key={diagnosis.diagnosis}>
-                            <td className={`${tableKeyCellClassName} break-words`}>{diagnosis.diagnosis}</td>
-                            <td className={`${tableCellClassName} ${numericClassName}`}>{diagnosis.count}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <CountTable
+                    labelHeading="Diagnosis"
+                    countHeading="Consultations"
+                    testId="daily-report-diagnoses"
+                    rows={activityReport.topDiagnoses.map((diagnosis) => ({
+                      key: diagnosis.diagnosis,
+                      label: diagnosis.diagnosis,
+                      count: diagnosis.count,
+                    }))}
+                  />
                 )}
               </SectionCard>
             </>
