@@ -41,3 +41,42 @@ export function getDailyActivityReport(date: string): Promise<DailyActivityRepor
 export function getDailyPrescriptionReport(date: string): Promise<DailyPrescriptionReport> {
   return apiRequest<DailyPrescriptionReport>(`/api/prescriptions/report/daily?date=${encodeURIComponent(date)}`);
 }
+
+export interface WeekPatientCount {
+  // 1 to 4. Week 4 runs from day 22 to the end of the month.
+  week: number;
+  patients: number;
+}
+
+// One calendar month of department activity, from NotificationService. Each patient is
+// counted once, so totalPatients === newPatients + returningPatients, and the four
+// weekly counts add up to it too.
+export interface MonthlyActivityReport {
+  month: string;
+  totalPatients: number;
+  newPatients: number;
+  returningPatients: number;
+  // At most five, most common first.
+  topDiagnoses: DiagnosisCount[];
+  // Always four weeks, with 0 for a week with no patients.
+  weeklyBreakdown: WeekPatientCount[];
+}
+
+// The same month of prescriptions, from PrescriptionService.
+export interface MonthlyPrescriptionReport {
+  month: string;
+  totalWritten: number;
+  totalDispensed: number;
+}
+
+/** `month` is "yyyy-MM". */
+export function getMonthlyActivityReport(month: string): Promise<MonthlyActivityReport> {
+  return apiRequest<MonthlyActivityReport>(`/api/reports/monthly?month=${encodeURIComponent(month)}`);
+}
+
+/** `month` is "yyyy-MM". */
+export function getMonthlyPrescriptionReport(month: string): Promise<MonthlyPrescriptionReport> {
+  return apiRequest<MonthlyPrescriptionReport>(
+    `/api/prescriptions/report/monthly?month=${encodeURIComponent(month)}`,
+  );
+}

@@ -63,12 +63,17 @@ export function AdminDashboard() {
       />
 
       <SectionCard
-        title="Daily Report"
-        description="Patients seen, patients per room, top diagnoses and prescriptions for any date."
+        title="Reports"
+        description="Patients, top diagnoses and prescriptions for any date or month."
         actions={
-          <ButtonLink to="/admin/reports/daily" variant="secondary">
-            Open Daily Report
-          </ButtonLink>
+          <>
+            <ButtonLink to="/admin/reports/daily" variant="secondary">
+              Open Daily Report
+            </ButtonLink>
+            <ButtonLink to="/admin/reports/monthly" variant="secondary">
+              Open Monthly Report
+            </ButtonLink>
+          </>
         }
       />
 
