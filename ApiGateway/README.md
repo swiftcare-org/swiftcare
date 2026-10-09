@@ -48,6 +48,8 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `consultation-no-prescription-route` | `POST /api/consultations/{consultationId:guid}/no-prescription` | `DoctorOnly` | `http://localhost:5001` (PrescriptionService) |
 | `notifications-route` | `GET /api/notifications` | `ActivityFeedPolicy` | `http://localhost:5005` (NotificationService) |
 | `reports-daily-route` | `GET /api/reports/daily` | `AdminOnly` | `http://localhost:5005` (NotificationService) |
+| `reports-monthly-route` | `GET /api/reports/monthly` | `AdminOnly` | `http://localhost:5005` (NotificationService) |
+| `prescription-monthly-report-route` | `GET /api/prescriptions/report/monthly` | `AdminOnly` | `http://localhost:5001` (PrescriptionService) |
 | `consultation-templates-route` | `GET, POST /api/templates` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 | `consultation-template-item-route` | `DELETE /api/templates/{id:guid}` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 
