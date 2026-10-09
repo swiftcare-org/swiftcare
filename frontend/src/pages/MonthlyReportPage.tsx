@@ -1,11 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import {
-  getMonthlyActivityReport,
-  getMonthlyPrescriptionReport,
-  type MonthlyActivityReport,
-  type MonthlyPrescriptionReport,
-} from '../api/reports';
+import { getMonthlyActivityReport, getMonthlyPrescriptionReport } from '../api/reports';
 import { Banner } from '../components/ui/Banner';
 import { CountTable } from '../components/ui/CountTable';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
@@ -13,6 +8,7 @@ import { Field } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { StatCard, StatGrid } from '../components/ui/StatCard';
 import { clinicTodayForDateInput } from '../lib/format';
+import { useReportSections } from '../lib/useReportSections';
 
 const MONTH_NAMES = [
   'January',
@@ -40,13 +36,6 @@ const WEEK_RANGES: Record<number, string> = {
   4: 'day 22 to month end',
 };
 
-// What one service returned for one month. `data` is null when the request failed.
-// A section is "loading" whenever its result is for a different month than the one selected.
-interface SectionResult<TData> {
-  month: string;
-  data: TData | null;
-}
-
 export function MonthlyReportPage() {
   // "yyyy-MM-dd" for today at the clinic: the newest month that can have any activity.
   const [today] = useState(clinicTodayForDateInput);
@@ -55,29 +44,15 @@ export function MonthlyReportPage() {
 
   const [year, setYear] = useState(currentYear);
   const [monthNumber, setMonthNumber] = useState(currentMonth);
-  const [activity, setActivity] = useState<SectionResult<MonthlyActivityReport> | null>(null);
-  const [prescriptions, setPrescriptions] = useState<SectionResult<MonthlyPrescriptionReport> | null>(null);
 
   const month = `${year}-${String(monthNumber).padStart(2, '0')}`;
   const monthLabel = `${MONTH_NAMES[monthNumber - 1]} ${year}`;
 
-  // The two services are asked separately, so one being down never hides the other section.
-  useEffect(() => {
-    let disposed = false;
-
-    void getMonthlyActivityReport(month).then(
-      (data) => !disposed && setActivity({ month, data }),
-      () => !disposed && setActivity({ month, data: null }),
-    );
-    void getMonthlyPrescriptionReport(month).then(
-      (data) => !disposed && setPrescriptions({ month, data }),
-      () => !disposed && setPrescriptions({ month, data: null }),
-    );
-
-    return () => {
-      disposed = true;
-    };
-  }, [month]);
+  const {
+    loading,
+    activity: activityReport,
+    prescriptions: prescriptionReport,
+  } = useReportSections(month, getMonthlyActivityReport, getMonthlyPrescriptionReport);
 
   function handleYearChange(nextYear: number) {
     setYear(nextYear);
@@ -87,12 +62,6 @@ export function MonthlyReportPage() {
     }
   }
 
-  const activityResult = activity?.month === month ? activity : null;
-  const prescriptionResult = prescriptions?.month === month ? prescriptions : null;
-  const loading = !activityResult || !prescriptionResult;
-
-  const activityReport = activityResult?.data ?? null;
-  const prescriptionReport = prescriptionResult?.data ?? null;
   const nothingRecorded =
     activityReport !== null &&
     prescriptionReport !== null &&

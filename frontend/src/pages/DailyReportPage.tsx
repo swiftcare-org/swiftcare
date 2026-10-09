@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DashboardShell } from '../dashboards/DashboardShell';
 import {
   getDailyActivityReport,
   getDailyPrescriptionReport,
   type DailyActivityReport,
-  type DailyPrescriptionReport,
 } from '../api/reports';
 import { Banner } from '../components/ui/Banner';
 import { CountTable } from '../components/ui/CountTable';
@@ -13,14 +12,7 @@ import { Field } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { StatCard, StatGrid } from '../components/ui/StatCard';
 import { clinicTodayForDateInput, formatDate } from '../lib/format';
-
-// What one service returned for one date. `data` is null when the request failed.
-// Keeping the date with the result means a section is "loading" whenever its result is
-// for a different date than the one selected, with no extra state to keep in step.
-interface SectionResult<TData> {
-  date: string;
-  data: TData | null;
-}
+import { useReportSections } from '../lib/useReportSections';
 
 function hasNoActivity(report: DailyActivityReport): boolean {
   return (
@@ -33,37 +25,12 @@ function hasNoActivity(report: DailyActivityReport): boolean {
 export function DailyReportPage() {
   const [today] = useState(clinicTodayForDateInput);
   const [date, setDate] = useState(today);
-  const [activity, setActivity] = useState<SectionResult<DailyActivityReport> | null>(null);
-  const [prescriptions, setPrescriptions] = useState<SectionResult<DailyPrescriptionReport> | null>(null);
+  const {
+    loading,
+    activity: activityReport,
+    prescriptions: prescriptionReport,
+  } = useReportSections(date, getDailyActivityReport, getDailyPrescriptionReport);
 
-  // The two services are asked separately, so one being down never hides the other's section.
-  useEffect(() => {
-    if (!date) {
-      return;
-    }
-
-    let disposed = false;
-
-    void getDailyActivityReport(date).then(
-      (data) => !disposed && setActivity({ date, data }),
-      () => !disposed && setActivity({ date, data: null }),
-    );
-    void getDailyPrescriptionReport(date).then(
-      (data) => !disposed && setPrescriptions({ date, data }),
-      () => !disposed && setPrescriptions({ date, data: null }),
-    );
-
-    return () => {
-      disposed = true;
-    };
-  }, [date]);
-
-  const activityResult = activity?.date === date ? activity : null;
-  const prescriptionResult = prescriptions?.date === date ? prescriptions : null;
-  const loading = Boolean(date) && (!activityResult || !prescriptionResult);
-
-  const activityReport = activityResult?.data ?? null;
-  const prescriptionReport = prescriptionResult?.data ?? null;
   const nothingRecorded =
     activityReport !== null &&
     prescriptionReport !== null &&
@@ -95,7 +62,7 @@ export function DailyReportPage() {
 
       {!loading && date && !nothingRecorded && (
         <>
-          {activityResult && !activityReport && (
+          {!activityReport && (
             <Banner tone="warning" title="Activity data currently unavailable." role="status">
               Patient, room and diagnosis figures could not be loaded. Prescription figures are not affected.
             </Banner>
@@ -141,7 +108,7 @@ export function DailyReportPage() {
             </>
           )}
 
-          {prescriptionResult && !prescriptionReport && (
+          {!prescriptionReport && (
             <Banner tone="warning" title="Prescription data currently unavailable." role="status">
               Prescription figures could not be loaded. Activity figures are not affected.
             </Banner>
