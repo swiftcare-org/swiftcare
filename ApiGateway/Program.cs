@@ -96,6 +96,10 @@ builder.Services.AddAuthorization(options =>
         .RequireRole("Doctor", "Receptionist", "Admin"));
     options.AddPolicy("PrescriptionReadPolicy", policy => policy.RequireAuthenticatedUser()
         .RequireRole("Doctor", "Receptionist", "Admin"));
+    // The activity feed is the front desk's view of the department, so reception and
+    // administrators may read it. Doctors work from their own dashboard.
+    options.AddPolicy("ActivityFeedPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Receptionist", "Admin"));
     // Admin is read-only for allergies by stakeholder decision - only Doctor and
     // Receptionist may record, update, or remove one.
     options.AddPolicy("AllergyWritePolicy", policy => policy.RequireAuthenticatedUser()

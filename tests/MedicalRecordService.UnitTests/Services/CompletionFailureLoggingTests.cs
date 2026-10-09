@@ -98,7 +98,7 @@ public class CompletionFailureLoggingTests
     }
 
     private static ConsultationCompletedEvent NewEvent(Guid consultationId, Guid doctorId) =>
-        new(Guid.NewGuid(), consultationId, Guid.NewGuid(), Guid.NewGuid(), doctorId);
+        new(Guid.NewGuid(), consultationId, Guid.NewGuid(), Guid.NewGuid(), doctorId, "Viral URTI");
 
     private sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
 

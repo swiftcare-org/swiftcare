@@ -36,6 +36,9 @@ public class KafkaConsultationCompletedPublisherTests
         Assert.Equal("consultation-completed", topic);
         Assert.Equal(completedEvent.QueueId.ToString(), message!.Key);
         Assert.Equal(completedEvent, JsonSerializer.Deserialize<ConsultationCompletedEvent>(message.Value));
+        // The department reports count diagnoses, so the event must carry it under this name.
+        using var payload = JsonDocument.Parse(message.Value);
+        Assert.Equal("Viral URTI", payload.RootElement.GetProperty("Diagnosis").GetString());
     }
 
     [Fact]
@@ -95,5 +98,5 @@ public class KafkaConsultationCompletedPublisherTests
             NullLogger<KafkaConsultationCompletedPublisher>.Instance);
 
     private static ConsultationCompletedEvent NewEvent() =>
-        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Viral URTI");
 }

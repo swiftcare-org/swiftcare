@@ -127,7 +127,7 @@ public class ConsultationCompletionServiceTests
     }
 
     private static ConsultationCompletedEvent NewEvent(Guid consultationId, Guid doctorId) =>
-        new(Guid.NewGuid(), consultationId, Guid.NewGuid(), Guid.NewGuid(), doctorId);
+        new(Guid.NewGuid(), consultationId, Guid.NewGuid(), Guid.NewGuid(), doctorId, "Viral URTI");
 
     private static ConsultationCompletionService CreateService(
         Mock<IConsultationCompletionRepository> repository,

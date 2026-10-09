@@ -16,6 +16,10 @@ public sealed class NotificationEventParser
     public const int DoctorNameMaxLength = 200;
     public const int RoomNumberMaxLength = 50;
 
+    // A diagnosis is free text of any length at its source. The reports only group and
+    // count it, so a longer one is shortened to fit the column instead of being refused.
+    public const int DiagnosisMaxLength = 200;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly KafkaOptions _options;
@@ -126,10 +130,22 @@ public sealed class NotificationEventParser
             QueueId = completed.QueueId,
             DoctorId = completed.DoctorId,
             ConsultationId = completed.ConsultationId,
+            Diagnosis = ShortenedDiagnosis(completed.Diagnosis),
             // The event has no timestamp, so the time it arrived is the best record there is.
             OccurredAt = receivedAtUtc,
             ReceivedAt = receivedAtUtc
         };
+    }
+
+    private static string? ShortenedDiagnosis(string? diagnosis)
+    {
+        var trimmed = diagnosis?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return null;
+        }
+
+        return trimmed.Length <= DiagnosisMaxLength ? trimmed : trimmed[..DiagnosisMaxLength].TrimEnd();
     }
 
     private static bool AnyEmpty(params Guid[] ids) => ids.Any(id => id == Guid.Empty);
