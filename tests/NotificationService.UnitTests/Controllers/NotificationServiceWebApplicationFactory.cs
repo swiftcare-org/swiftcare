@@ -33,6 +33,8 @@ public sealed class NotificationServiceWebApplicationFactory : WebApplicationFac
 
     public Mock<IDailyReportService> DailyReportServiceMock { get; } = new();
 
+    public Mock<IMonthlyReportService> MonthlyReportServiceMock { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -62,6 +64,8 @@ public sealed class NotificationServiceWebApplicationFactory : WebApplicationFac
             services.AddScoped(_ => FeedServiceMock.Object);
             services.RemoveAll<IDailyReportService>();
             services.AddScoped(_ => DailyReportServiceMock.Object);
+            services.RemoveAll<IMonthlyReportService>();
+            services.AddScoped(_ => MonthlyReportServiceMock.Object);
         });
     }
 }
