@@ -74,6 +74,75 @@ public class PrescriptionReportsControllerTests
         service.VerifyNoOtherCalls();
     }
 
+    // SWC-145: the monthly prescription totals.
+    [Fact]
+    public async Task MonthlyReportAsAdminReturnsTotalsForTheRequestedMonth()
+    {
+        var report = new PrescriptionMonthlyReportResponse("2026-10", 5, 2);
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+        service.Setup(item => item.GetMonthlyReportAsync(new DateOnly(2026, 10, 1), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(report);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport("Admin", "2026-10", CancellationToken.None);
+
+        Assert.Same(report, Assert.IsType<OkObjectResult>(result).Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("October")]
+    [InlineData("2026-13")]
+    [InlineData("2026-00")]
+    [InlineData("2026-10-02")]
+    [InlineData("2026")]
+    public async Task MonthlyReportWithAMissingOrInvalidMonthReturns400(string? month)
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport("Admin", month, CancellationToken.None);
+
+        var response = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(
+            "Month is required in the format yyyy-MM",
+            Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("admin")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task MonthlyReportAsNonAdminReturnsForbidden(string? role)
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport(role, "2026-10", CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        Assert.Equal("Forbidden", Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    // The role is checked before the month, so a caller without access learns nothing about the input.
+    [Fact]
+    public async Task MonthlyReportChecksTheRoleBeforeTheMonth()
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport("Doctor", "October", CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
     private static PrescriptionReportsController CreateReportController(
         Mock<IPrescriptionReportService> service,
         string role) => WithRole(new PrescriptionReportsController(service.Object), role);
