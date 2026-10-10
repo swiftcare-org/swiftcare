@@ -1,6 +1,7 @@
 using MedicalRecordService.Models.Dtos;
 using MedicalRecordService.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace MedicalRecordService.Controllers;
 
@@ -11,9 +12,9 @@ public sealed class CompletedConsultationsController(IConsultationCompletionServ
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] int page = 0, CancellationToken cancellationToken = default)
     {
-        if (Request.Headers["X-User-Role"].FirstOrDefault() != "Doctor")
+        if (!User.IsInRole("Doctor"))
             return StatusCode(403, new MessageResponse("Forbidden"));
-        if (!Guid.TryParse(Request.Headers["X-User-Id"].FirstOrDefault(), out var doctor) || doctor == Guid.Empty)
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var doctor) || doctor == Guid.Empty)
             return Unauthorized(new MessageResponse("Doctor identity is unavailable"));
         if (page < 0 || page > int.MaxValue / 50)
             return BadRequest(new MessageResponse("Page is outside the supported range"));
