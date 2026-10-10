@@ -34,7 +34,7 @@ public sealed class ClinicalVisitValidationMiddleware(RequestDelegate next, ILog
             return;
         }
 
-        Identifiers? identifiers;
+        Identifiers? identifiers = null;
         context.Request.EnableBuffering(30 * 1024, 1024 * 1024);
         try
         {
@@ -93,7 +93,7 @@ public sealed class ClinicalVisitValidationMiddleware(RequestDelegate next, ILog
     private static Task RejectAsync(HttpContext context, int status, string message)
     {
         context.Response.StatusCode = status;
-        return context.Response.WriteAsJsonAsync(new MessageResponse(message));
+        return context.Response.WriteAsJsonAsync(new MessageResponse(message), context.RequestAborted);
     }
 
     private sealed record Identifiers(Guid PatientId, Guid QueueId, Guid? ConsultationId);

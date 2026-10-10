@@ -16,7 +16,8 @@ public sealed class InternalVisitsController(QueueDbContext context) : Controlle
         var visit = await context.QueueEntries.AsNoTracking().Where(entry => entry.Id == id)
             .Select(entry => new { entry.PatientId, QueueId = entry.Id, entry.DoctorId, entry.Status })
             .SingleOrDefaultAsync(cancellationToken);
-        return visit is null ? NotFound() : Ok(new
+        if (visit is null) return NotFound();
+        return Ok(new
         {
             visit.PatientId,
             visit.QueueId,
