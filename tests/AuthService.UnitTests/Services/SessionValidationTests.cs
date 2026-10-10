@@ -223,8 +223,11 @@ public sealed class SessionValidationTests
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
             await using var other = new AuthDbContext(options);
-            other.RevokedSessions.Add(new RevokedSession { TokenId = request.TokenId,
-                ExpiresAtUtc = DateTimeOffset.FromUnixTimeSeconds(request.ExpiresAtUnixSeconds).UtcDateTime });
+            other.RevokedSessions.Add(new RevokedSession
+            {
+                TokenId = request.TokenId,
+                ExpiresAtUtc = DateTimeOffset.FromUnixTimeSeconds(request.ExpiresAtUnixSeconds).UtcDateTime
+            });
             await other.SaveChangesAsync(cancellationToken);
             throw new DbUpdateException("A competing logout committed first");
         }

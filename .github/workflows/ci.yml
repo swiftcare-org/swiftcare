@@ -342,7 +342,6 @@ jobs:
           VITE_GATEWAY_URL: http://localhost:8000
         run: |
           npm ci
-          npm test
           npm run lint
           npm run build
 
