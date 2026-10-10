@@ -20,6 +20,7 @@ public sealed class CallNextPatientService : ICallNextPatientService
     private readonly TimeZoneInfo _clinicTimeZone;
     private readonly ILogger<CallNextPatientService> _logger;
     private readonly int _maxAttempts;
+    private readonly TimeSpan _retryDelay;
 
     public CallNextPatientService(
         QueueDbContext dbContext,
@@ -34,6 +35,7 @@ public sealed class CallNextPatientService : ICallNextPatientService
         _clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.ClinicTimeZone);
         _logger = logger;
         _maxAttempts = Math.Max(1, options.Value.MaxCallNextAttempts);
+        _retryDelay = options.Value.CallNextRetryDelay;
     }
 
     public async Task<CallNextPatientResult> CallNextAsync(
@@ -115,6 +117,7 @@ public sealed class CallNextPatientService : ICallNextPatientService
                         "Call-next collided with another call and is retried: doctorId={DoctorId} attempt={Attempt}",
                         doctorId,
                         attempt);
+                    await Task.Delay(RetryDelayFor(attempt, doctorId, _retryDelay), cancellationToken);
                     continue;
                 }
 
@@ -134,6 +137,20 @@ public sealed class CallNextPatientService : ICallNextPatientService
                 new Assignment(doctorId, normalizedDoctorName, normalizedRoomNumber, utcNow, correlationId),
                 cancellationToken);
         }
+    }
+
+    // How long a collided call waits before its next attempt. The wait grows with each
+    // attempt, and the part taken from the doctor's ID spreads doctors up to one extra base
+    // delay apart. It is derived, not random, so the same doctor always waits the same time.
+    public static TimeSpan RetryDelayFor(int attempt, Guid doctorId, TimeSpan baseDelay)
+    {
+        if (baseDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var spread = doctorId.ToByteArray()[0] / (double)byte.MaxValue;
+        return baseDelay * attempt * (1 + spread);
     }
 
     private async Task<CallNextPatientResult?> FindRefusalAsync(
