@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using PatientService.Services;
 
 namespace PatientService.Models.Validation;
 
@@ -9,14 +10,18 @@ public sealed class PastDateAttribute : ValidationAttribute
 {
     private const int MaximumAgeYears = 130;
 
-    public override bool IsValid(object? value)
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         if (value is not DateOnly dateOfBirth)
         {
-            return true;
+            return ValidationResult.Success;
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        return dateOfBirth <= today && dateOfBirth >= today.AddYears(-MaximumAgeYears);
+        var provider = validationContext.GetService(typeof(IClinicDateProvider)) as IClinicDateProvider
+            ?? throw new InvalidOperationException("IClinicDateProvider is required for birth-date validation.");
+        var today = provider.Today;
+        return dateOfBirth <= today && dateOfBirth >= today.AddYears(-MaximumAgeYears)
+            ? ValidationResult.Success
+            : new ValidationResult(ErrorMessage, [validationContext.MemberName!]);
     }
 }
