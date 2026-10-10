@@ -43,6 +43,28 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
             Guid.Parse(reader.GetValue(2).ToString()!));
     }
 
+    public async Task<IReadOnlyList<CompletedConsultationContextResponse>> FindCompletedPageAsync(
+        Guid doctorId, int page, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, QueueId, PatientId FROM Consultations
+            WHERE DoctorId = @DoctorId AND Status = @CompleteStatus
+            ORDER BY ConsultationDate ASC, CreatedAt ASC, Id ASC
+            LIMIT 50 OFFSET @Offset;
+            """;
+        command.Parameters.AddWithValue("@DoctorId", doctorId.ToString());
+        command.Parameters.AddWithValue("@CompleteStatus", Consultation.CompleteStatus);
+        command.Parameters.AddWithValue("@Offset", checked(page * 50));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<CompletedConsultationContextResponse>();
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new CompletedConsultationContextResponse(Guid.Parse(reader.GetValue(0).ToString()!),
+                Guid.Parse(reader.GetValue(1).ToString()!), Guid.Parse(reader.GetValue(2).ToString()!)));
+        return result;
+    }
+
     public async Task<ConsultationProgressResponse?> FindByQueueAsync(
         Guid queueId,
         Guid doctorId,
