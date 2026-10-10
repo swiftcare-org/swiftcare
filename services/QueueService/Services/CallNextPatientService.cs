@@ -1,10 +1,12 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using QueueService.Data;
 using QueueService.Logging;
 using QueueService.Models.Configuration;
 using QueueService.Models.Dtos;
+using QueueService.Models.Entities;
 using QueueService.Models.Enums;
 using QueueService.Models.Events;
 
@@ -17,6 +19,8 @@ public sealed class CallNextPatientService : ICallNextPatientService
     private readonly TimeProvider _timeProvider;
     private readonly TimeZoneInfo _clinicTimeZone;
     private readonly ILogger<CallNextPatientService> _logger;
+    private readonly int _maxAttempts;
+    private readonly TimeSpan _retryDelay;
 
     public CallNextPatientService(
         QueueDbContext dbContext,
@@ -30,6 +34,8 @@ public sealed class CallNextPatientService : ICallNextPatientService
         _timeProvider = timeProvider;
         _clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.ClinicTimeZone);
         _logger = logger;
+        _maxAttempts = Math.Max(1, options.Value.MaxCallNextAttempts);
+        _retryDelay = options.Value.CallNextRetryDelay;
     }
 
     public async Task<CallNextPatientResult> CallNextAsync(
@@ -58,51 +64,132 @@ public sealed class CallNextPatientService : ICallNextPatientService
         var queueDate = DateOnly.FromDateTime(clinicNow.DateTime);
 
         // Serializable isolation prevents two simultaneous call-next requests from both
-        // observing the same room as free or selecting the same first waiting patient.
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
+        // observing the same room as free or selecting the same first waiting patient. The
+        // price is that MySQL resolves such a collision by rolling one of them back as a
+        // deadlock. That attempt is simply run again: by then the other doctor's call has
+        // committed, so the retry sees their patient as taken and calls the next one.
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
 
+            QueueEntry? nextEntry;
+            try
+            {
+                var refusal = await FindRefusalAsync(doctorId, normalizedRoomNumber, queueDate, cancellationToken);
+                if (refusal is not null)
+                {
+                    return refusal;
+                }
+
+                nextEntry = await _dbContext.QueueEntries
+                    .Where(entry => entry.QueueDate == queueDate && entry.Status == QueueStatus.Waiting)
+                    .OrderBy(entry => entry.QueueNumber.Length)
+                    .ThenBy(entry => entry.QueueNumber)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (nextEntry is null)
+                {
+                    return new CallNextPatientResult
+                    {
+                        Outcome = CallNextPatientOutcome.NoPatientsWaiting
+                    };
+                }
+
+                nextEntry.Status = QueueStatus.InConsultation;
+                nextEntry.DoctorId = doctorId;
+                nextEntry.DoctorName = normalizedDoctorName;
+                nextEntry.RoomNumber = normalizedRoomNumber;
+                nextEntry.CalledAt = utcNow;
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception exception) when (LockConflictDetector.IsLockConflict(exception))
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                // The rolled-back assignment must not be saved by the next attempt.
+                _dbContext.ChangeTracker.Clear();
+
+                if (attempt < _maxAttempts)
+                {
+                    _logger.LogInformation(
+                        "Call-next collided with another call and is retried: doctorId={DoctorId} attempt={Attempt}",
+                        doctorId,
+                        attempt);
+                    await Task.Delay(RetryDelayFor(attempt, doctorId, _retryDelay), cancellationToken);
+                    continue;
+                }
+
+                _logger.LogWarning(
+                    "Call-next gave up after repeated collisions: doctorId={DoctorId} attempts={Attempts}",
+                    doctorId,
+                    attempt);
+                return new CallNextPatientResult
+                {
+                    Outcome = CallNextPatientOutcome.ConcurrentCallConflict
+                };
+            }
+
+            return await PublishAndCommitAsync(
+                transaction,
+                nextEntry,
+                new Assignment(doctorId, normalizedDoctorName, normalizedRoomNumber, utcNow, correlationId),
+                cancellationToken);
+        }
+    }
+
+    // How long a collided call waits before its next attempt. The wait grows with each
+    // attempt, and the part taken from the doctor's ID spreads doctors up to one extra base
+    // delay apart. It is derived, not random, so the same doctor always waits the same time.
+    public static TimeSpan RetryDelayFor(int attempt, Guid doctorId, TimeSpan baseDelay)
+    {
+        if (baseDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var spread = doctorId.ToByteArray()[0] / (double)byte.MaxValue;
+        return baseDelay * attempt * (1 + spread);
+    }
+
+    private async Task<CallNextPatientResult?> FindRefusalAsync(
+        Guid doctorId,
+        string roomNumber,
+        DateOnly queueDate,
+        CancellationToken cancellationToken)
+    {
         var doctorOrRoomOccupied = await _dbContext.QueueEntries
             .AnyAsync(
                 entry => entry.QueueDate == queueDate
                     && entry.Status == QueueStatus.InConsultation
-                    && (entry.DoctorId == doctorId || entry.RoomNumber == normalizedRoomNumber),
+                    && (entry.DoctorId == doctorId || entry.RoomNumber == roomNumber),
                 cancellationToken);
 
-        if (doctorOrRoomOccupied)
+        if (!doctorOrRoomOccupied)
         {
-            _logger.LogInformation(
-                "Call-next rejected because doctor or room is occupied: doctorId={DoctorId} roomNumber={RoomNumber}",
-                doctorId,
-                LogSanitizer.Sanitize(normalizedRoomNumber));
-            return new CallNextPatientResult
-            {
-                Outcome = CallNextPatientOutcome.DoctorOrRoomOccupied
-            };
+            return null;
         }
 
-        var nextEntry = await _dbContext.QueueEntries
-            .Where(entry => entry.QueueDate == queueDate && entry.Status == QueueStatus.Waiting)
-            .OrderBy(entry => entry.QueueNumber.Length)
-            .ThenBy(entry => entry.QueueNumber)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (nextEntry is null)
+        _logger.LogInformation(
+            "Call-next rejected because doctor or room is occupied: doctorId={DoctorId} roomNumber={RoomNumber}",
+            doctorId,
+            LogSanitizer.Sanitize(roomNumber));
+        return new CallNextPatientResult
         {
-            return new CallNextPatientResult
-            {
-                Outcome = CallNextPatientOutcome.NoPatientsWaiting
-            };
-        }
+            Outcome = CallNextPatientOutcome.DoctorOrRoomOccupied
+        };
+    }
 
-        nextEntry.Status = QueueStatus.InConsultation;
-        nextEntry.DoctorId = doctorId;
-        nextEntry.DoctorName = normalizedDoctorName;
-        nextEntry.RoomNumber = normalizedRoomNumber;
-        nextEntry.CalledAt = utcNow;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
+    // The assignment is saved but not committed: it only becomes real once the
+    // patient-called event is out, so the waiting room and the queue never disagree.
+    private async Task<CallNextPatientResult> PublishAndCommitAsync(
+        IDbContextTransaction transaction,
+        QueueEntry nextEntry,
+        Assignment assignment,
+        CancellationToken cancellationToken)
+    {
+        var (doctorId, normalizedDoctorName, normalizedRoomNumber, utcNow, correlationId) = assignment;
 
         var patientCalledEvent = new PatientCalledEvent
         {
@@ -157,4 +244,11 @@ public sealed class CallNextPatientService : ICallNextPatientService
             }
         };
     }
+
+    private sealed record Assignment(
+        Guid DoctorId,
+        string DoctorName,
+        string RoomNumber,
+        DateTime CalledAtUtc,
+        string CorrelationId);
 }

@@ -137,6 +137,22 @@ public class QueueControllerEdgeCaseTests
             "Unable to call next patient. Please try again.");
     }
 
+    // SWC-128: other doctors kept calling at the same moment; nothing changed and the doctor can retry.
+    [Fact]
+    public async Task CallNextThatKeptCollidingReturnsServiceUnavailable()
+    {
+        var mocks = new ServiceMocks();
+        CaptureCorrelationId(mocks, CallNextPatientOutcome.ConcurrentCallConflict);
+
+        var result = await CreateController(mocks, "Doctor", DoctorId, "Dr. Amara Chen", "R-204")
+            .CallNext(CancellationToken.None);
+
+        AssertMessage(
+            result,
+            StatusCodes.Status503ServiceUnavailable,
+            "Another doctor is calling a patient at the same moment. Please try again.");
+    }
+
     [Fact]
     public async Task CallNextSuccessWithoutPatientIsAnInvariantViolation()
     {

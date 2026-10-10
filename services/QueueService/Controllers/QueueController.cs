@@ -157,6 +157,9 @@ public sealed class QueueController : ControllerBase
             CallNextPatientOutcome.EventPublishFailed => StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
                 new MessageResponse("Unable to call next patient. Please try again.")),
+            CallNextPatientOutcome.ConcurrentCallConflict => StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new MessageResponse("Another doctor is calling a patient at the same moment. Please try again.")),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(result),
                 result.Outcome,
