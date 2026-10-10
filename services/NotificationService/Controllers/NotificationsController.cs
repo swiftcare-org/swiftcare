@@ -21,7 +21,22 @@ public sealed class NotificationsController(INotificationFeedService feedService
     public async Task<IActionResult> GetNotifications(
         [FromHeader(Name = UserRoleHeaderName)] string? userRole,
         [FromQuery] int? limit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        await GetFeedAsync(userRole, limit, false, cancellationToken);
+
+    [HttpGet("today")]
+    [ProducesResponseType(typeof(IReadOnlyList<NotificationResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetTodayNotifications(
+        [FromHeader(Name = UserRoleHeaderName)] string? userRole,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken) =>
+        await GetFeedAsync(userRole, limit, true, cancellationToken);
+
+    private async Task<IActionResult> GetFeedAsync(
+        string? userRole, int? limit, bool today, CancellationToken cancellationToken)
     {
         // The role header is trusted because GatewaySecretMiddleware has already rejected
         // any request that did not come through the API Gateway.
@@ -35,9 +50,10 @@ public sealed class NotificationsController(INotificationFeedService feedService
             return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse("Forbidden"));
         }
 
-        var notifications = await feedService.GetRecentAsync(
-            limit ?? NotificationFeedService.DefaultLimit,
-            cancellationToken);
+        var requestedLimit = limit ?? NotificationFeedService.DefaultLimit;
+        var notifications = today
+            ? await feedService.GetTodayAsync(requestedLimit, cancellationToken)
+            : await feedService.GetRecentAsync(requestedLimit, cancellationToken);
 
         return Ok(notifications);
     }

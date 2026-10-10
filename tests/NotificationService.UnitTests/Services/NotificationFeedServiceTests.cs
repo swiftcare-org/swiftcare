@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using NotificationService.Models.Configuration;
 using NotificationService.Models.Enums;
 using NotificationService.Services;
 
@@ -17,7 +19,7 @@ public class NotificationFeedServiceTests
         var middle = TestDatabase.NewNotification(occurredAt: BaseTime.AddMinutes(2));
         await database.SeedAsync(oldest, newest, middle);
 
-        var feed = await new NotificationFeedService(database.DbContext).GetRecentAsync(50);
+        var feed = await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50);
 
         Assert.Equal(new[] { newest.Id, middle.Id, oldest.Id }, feed.Select(entry => entry.Id).ToArray());
     }
@@ -30,7 +32,7 @@ public class NotificationFeedServiceTests
         var arrivedLast = TestDatabase.NewNotification(occurredAt: BaseTime, receivedAt: BaseTime.AddSeconds(2));
         await database.SeedAsync(arrivedFirst, arrivedLast);
 
-        var feed = await new NotificationFeedService(database.DbContext).GetRecentAsync(50);
+        var feed = await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50);
 
         Assert.Equal(new[] { arrivedLast.Id, arrivedFirst.Id }, feed.Select(entry => entry.Id).ToArray());
     }
@@ -44,7 +46,7 @@ public class NotificationFeedServiceTests
             .ToArray();
         await database.SeedAsync(notifications);
 
-        var feed = await new NotificationFeedService(database.DbContext).GetRecentAsync(2);
+        var feed = await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(2);
 
         Assert.Equal(new[] { notifications[4].Id, notifications[3].Id }, feed.Select(entry => entry.Id).ToArray());
     }
@@ -63,7 +65,7 @@ public class NotificationFeedServiceTests
             .Select(second => TestDatabase.NewNotification(occurredAt: BaseTime.AddSeconds(second)))
             .ToArray());
 
-        var feed = await new NotificationFeedService(database.DbContext).GetRecentAsync(requested);
+        var feed = await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(requested);
 
         Assert.Equal(expectedCount, feed.Count);
     }
@@ -80,7 +82,7 @@ public class NotificationFeedServiceTests
     {
         await using var database = await TestDatabase.CreateAsync();
 
-        Assert.Empty(await new NotificationFeedService(database.DbContext).GetRecentAsync(50));
+        Assert.Empty(await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50));
     }
 
     [Fact]
@@ -90,7 +92,7 @@ public class NotificationFeedServiceTests
         var notification = TestDatabase.NewNotification(type: NotificationType.PatientCheckedIn, occurredAt: BaseTime);
         await database.SeedAsync(notification);
 
-        var entry = Assert.Single(await new NotificationFeedService(database.DbContext).GetRecentAsync(50));
+        var entry = Assert.Single(await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50));
 
         Assert.Equal(notification.Id, entry.Id);
         Assert.Equal("PatientCheckedIn", entry.Type);
@@ -107,7 +109,7 @@ public class NotificationFeedServiceTests
         await using var database = await TestDatabase.CreateAsync();
         await database.SeedAsync(TestDatabase.NewNotification(type: NotificationType.PatientCalled));
 
-        var entry = Assert.Single(await new NotificationFeedService(database.DbContext).GetRecentAsync(50));
+        var entry = Assert.Single(await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50));
 
         Assert.Equal("PatientCalled", entry.Type);
         Assert.Equal("Q-007", entry.QueueNumber);
@@ -122,7 +124,7 @@ public class NotificationFeedServiceTests
         await using var database = await TestDatabase.CreateAsync();
         await database.SeedAsync(TestDatabase.NewNotification(type: NotificationType.ConsultationCompleted));
 
-        var entry = Assert.Single(await new NotificationFeedService(database.DbContext).GetRecentAsync(50));
+        var entry = Assert.Single(await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50));
 
         Assert.Equal("ConsultationCompleted", entry.Type);
     }
@@ -134,7 +136,7 @@ public class NotificationFeedServiceTests
         await using var database = await TestDatabase.CreateAsync();
         await database.SeedAsync(TestDatabase.NewNotification(occurredAt: BaseTime));
 
-        var entry = Assert.Single(await new NotificationFeedService(database.DbContext).GetRecentAsync(50));
+        var entry = Assert.Single(await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50));
 
         Assert.Equal(DateTimeKind.Utc, entry.OccurredAt.Kind);
         Assert.Equal(BaseTime, entry.OccurredAt);
@@ -146,7 +148,7 @@ public class NotificationFeedServiceTests
         await using var database = await TestDatabase.CreateAsync();
         await database.SeedAsync(TestDatabase.NewNotification());
 
-        await new NotificationFeedService(database.DbContext).GetRecentAsync(50);
+        await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50);
 
         Assert.Empty(database.DbContext.ChangeTracker.Entries());
     }
