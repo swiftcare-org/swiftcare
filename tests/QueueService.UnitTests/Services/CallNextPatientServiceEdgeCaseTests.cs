@@ -133,7 +133,7 @@ public class CallNextPatientServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task FailedPublishLeavesNoStaleAssignmentInTheContext()
+    public async Task FailedPublishLeavesDurableAssignmentAndEventForRetry()
     {
         using var connection = OpenConnection();
         await using var dbContext = await CreateDbContextAsync(connection);
@@ -151,11 +151,12 @@ public class CallNextPatientServiceEdgeCaseTests
             "R-204",
             "corr");
 
-        Assert.Equal(CallNextPatientOutcome.EventPublishFailed, result.Outcome);
-        Assert.Empty(dbContext.ChangeTracker.Entries());
+        Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
+        Assert.True(result.CalledPatient!.NotificationPending);
+        Assert.Single(dbContext.OutboxMessages);
         var reloaded = await dbContext.QueueEntries.SingleAsync(entry => entry.Id == waiting.Id);
-        Assert.Equal(QueueStatus.Waiting, reloaded.Status);
-        Assert.Null(reloaded.DoctorId);
+        Assert.Equal(QueueStatus.InConsultation, reloaded.Status);
+        Assert.Equal(result.CalledPatient.DoctorId, reloaded.DoctorId);
     }
 
     private static CallNextPatientService CreateService(

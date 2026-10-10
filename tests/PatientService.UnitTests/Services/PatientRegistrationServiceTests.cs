@@ -5,6 +5,7 @@ using PatientService.Data;
 using PatientService.Models.Dtos;
 using PatientService.Models.Entities;
 using PatientService.Models.Enums;
+using PatientService.Models.Events;
 using PatientService.Services;
 
 namespace PatientService.UnitTests.Services;
@@ -41,8 +42,7 @@ public class PatientRegistrationServiceTests
         await using var dbContext = CreateDbContext();
         var publisherMock = new Mock<IPatientEventPublisher>();
         publisherMock
-            .Setup(p => p.PublishPatientCheckedInAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<PatientCheckedInEvent>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         var service = CreateService(dbContext, publisherMock);
 
@@ -54,8 +54,11 @@ public class PatientRegistrationServiceTests
         Assert.Equal(result.Patient!.PatientId, persisted.Id);
 
         publisherMock.Verify(
-            p => p.PublishPatientCheckedInAsync(persisted.Id, true, CorrelationId, It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.Is<PatientCheckedInEvent>(message => message.PatientId == persisted.Id
+                && message.IsNewPatient && message.CorrelationId == CorrelationId), It.IsAny<CancellationToken>()),
             Times.Once);
+        Assert.Empty(dbContext.OutboxMessages);
+        Assert.False(result.Patient.QueueDeliveryPending);
     }
 
     [Fact]
@@ -83,8 +86,7 @@ public class PatientRegistrationServiceTests
         Assert.Null(result.Patient);
         Assert.Single(dbContext.Patients);
         publisherMock.Verify(
-            p => p.PublishPatientCheckedInAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.IsAny<PatientCheckedInEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -146,8 +148,7 @@ public class PatientRegistrationServiceTests
         await using var dbContext = CreateDbContext();
         var publisherMock = new Mock<IPatientEventPublisher>();
         publisherMock
-            .Setup(p => p.PublishPatientCheckedInAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<PatientCheckedInEvent>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var service = CreateService(dbContext, publisherMock);
 
@@ -155,5 +156,7 @@ public class PatientRegistrationServiceTests
 
         Assert.Equal(RegisterPatientOutcome.Success, result.Outcome);
         Assert.Single(dbContext.Patients);
+        Assert.True(result.Patient!.QueueDeliveryPending);
+        Assert.Single(dbContext.OutboxMessages);
     }
 }
