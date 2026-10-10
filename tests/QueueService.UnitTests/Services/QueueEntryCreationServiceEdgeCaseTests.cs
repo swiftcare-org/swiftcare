@@ -43,20 +43,53 @@ public class QueueEntryCreationServiceEdgeCaseTests
     [Fact]
     public async Task StopsAfterTheConfiguredNumberOfAttemptsWithoutQueueingThePatient()
     {
-        // Only the attempt count and the absence of an entry are asserted. The outcome the
-        // service reports here is the subject of the bug raised from this analysis.
+        // Issue #124: losing the counter race on every attempt is a failure the consumer
+        // must retry. It used to be reported as "already queued", which lost the check-in.
         var interceptor = new SaveInterceptor((_, _) =>
             throw new DbUpdateConcurrencyException("Another consumer updated the counter."));
         using var connection = OpenConnection();
         await SeedCounterAsync(connection, lastNumber: 4);
         await using var dbContext = CreateDbContext(connection, interceptor);
+        var eventId = Guid.NewGuid();
 
-        await Record.ExceptionAsync(() => CreateService(dbContext)
-            .CreateQueueEntryAsync(Guid.NewGuid(), Guid.NewGuid(), CheckedInAtUtc));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(dbContext)
+            .CreateQueueEntryAsync(eventId, Guid.NewGuid(), CheckedInAtUtc));
 
+        Assert.Equal(
+            $"Failed to allocate a queue number for {ClinicDate:yyyy-MM-dd} after 3 attempts due to concurrent contention.",
+            exception.Message);
         Assert.Equal(3, interceptor.Calls);
         await using var verify = CreateDbContext(connection);
         Assert.Equal(0, await verify.QueueEntries.CountAsync());
+        // Nothing marks the event as handled, so a redelivery is processed, not skipped.
+        Assert.False(await verify.ProcessedEvents.AnyAsync(processed => processed.EventId == eventId));
+        Assert.Equal(4, (await verify.DailyQueueCounters.SingleAsync()).LastNumber);
+    }
+
+    // The same event redelivered after the contention has passed is queued normally.
+    [Fact]
+    public async Task CheckInThatFailedToAllocateIsQueuedWhenItIsRedelivered()
+    {
+        var failing = true;
+        var interceptor = new SaveInterceptor((_, _) => failing
+            ? throw new DbUpdateConcurrencyException("Another consumer updated the counter.")
+            : Task.CompletedTask);
+        using var connection = OpenConnection();
+        await SeedCounterAsync(connection, lastNumber: 4);
+        await using var dbContext = CreateDbContext(connection, interceptor);
+        var eventId = Guid.NewGuid();
+        var patientId = Guid.NewGuid();
+        var service = CreateService(dbContext);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CreateQueueEntryAsync(eventId, patientId, CheckedInAtUtc));
+        failing = false;
+
+        var result = await service.CreateQueueEntryAsync(eventId, patientId, CheckedInAtUtc);
+
+        Assert.Equal(QueueEntryCreationOutcome.Created, result.Outcome);
+        Assert.Equal("Q-005", result.QueueNumber);
+        await using var verify = CreateDbContext(connection);
+        Assert.Equal(patientId, (await verify.QueueEntries.SingleAsync()).PatientId);
     }
 
     [Fact]
