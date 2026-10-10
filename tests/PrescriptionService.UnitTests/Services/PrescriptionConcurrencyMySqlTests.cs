@@ -36,6 +36,48 @@ public class PrescriptionConcurrencyMySqlTests
     [MySqlPrescriptionTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task LosingOutcomeRequestReturnsConflictForEitherWinner(bool prescriptionWins)
+    {
+        await using var database = await DatabaseScope.CreateAsync();
+        var pause = new SavePause();
+        await using var winner = database.Context();
+        await using var loser = database.Context(pause);
+        var request = Request();
+        var prescriptionService = new PrescriptionManagementService(prescriptionWins ? winner : loser, TimeProvider.System);
+        var decisionService = new NoPrescriptionService(prescriptionWins ? loser : winner, TimeProvider.System);
+        var decision = new RecordNoPrescriptionRequest { QueueId = request.QueueId, PatientId = request.PatientId };
+        Task<CreatePrescriptionResult> prescriptionTask;
+        Task<RecordNoPrescriptionResult> decisionTask;
+        if (prescriptionWins)
+        {
+            decisionTask = decisionService.RecordAsync(request.ConsultationId, decision, Guid.NewGuid(), "Dr. Test");
+            await pause.Reached.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            prescriptionTask = prescriptionService.CreateAsync(request, Guid.NewGuid(), "Dr. Test");
+            await prescriptionTask;
+        }
+        else
+        {
+            prescriptionTask = prescriptionService.CreateAsync(request, Guid.NewGuid(), "Dr. Test");
+            await pause.Reached.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            decisionTask = decisionService.RecordAsync(request.ConsultationId, decision, Guid.NewGuid(), "Dr. Test");
+            await decisionTask;
+        }
+        pause.Resume.SetResult();
+        await Task.WhenAll(prescriptionTask, decisionTask).WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.Equal(prescriptionWins ? CreatePrescriptionOutcome.Success : CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded,
+            prescriptionTask.Result.Outcome);
+        Assert.Equal(prescriptionWins ? RecordNoPrescriptionOutcome.ConsultationAlreadyHasPrescription : RecordNoPrescriptionOutcome.Recorded,
+            decisionTask.Result.Outcome);
+        await using var verify = database.Context();
+        Assert.Equal(1, await verify.ConsultationOutcomes.CountAsync());
+        Assert.Equal(prescriptionWins ? 1 : 0, await verify.Prescriptions.CountAsync());
+        Assert.Equal(prescriptionWins ? 0 : 1, await verify.NoPrescriptionDecisions.CountAsync());
+    }
+
+    [MySqlPrescriptionTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task StaleMedicineEditCannotCommitAfterDispensing(bool remove)
     {
         await using var database = await DatabaseScope.CreateAsync();

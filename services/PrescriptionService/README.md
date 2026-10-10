@@ -173,4 +173,4 @@ Prescription and no-prescription writes claim one shared ConsultationOutcomes ke
 
 Apply EnforcePrescriptionOutcomeConcurrency with prescription writes paused before deploying this version. Check for consultations present in both Prescriptions and NoPrescriptionDecisions and reconcile them first; the migration deliberately refuses contradictory history. It backfills claims for existing outcomes. Do not run old writers alongside the new version.
 
-Set SWIFTCARE_TEST_MYSQL to an isolated MySQL 8.4 server to run the opt-in tests for simultaneous outcome creation, edit-versus-dispense and two dispensers. Each test uses a separate temporary database and separate request connections.
+Set SWIFTCARE_TEST_MYSQL to an isolated MySQL 8.4 server to run the opt-in tests for simultaneous outcome creation, both possible outcome winners, edit-versus-dispense and two dispensers. Each test uses a separate temporary database and separate request connections. CI provisions an ephemeral MySQL service and runs these tests with the coverage collection.
