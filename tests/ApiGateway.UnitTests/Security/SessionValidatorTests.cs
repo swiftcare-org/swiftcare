@@ -12,7 +12,7 @@ namespace ApiGateway.UnitTests.Security;
 public sealed class SessionValidatorTests
 {
     private static readonly Guid UserId = Guid.NewGuid(), Version = Guid.NewGuid();
-    private static ClaimsPrincipal Principal(string? omitted = null, string? changed = null)
+    private static ClaimsPrincipal Principal(string? omitted = null, string? changed = null, string changedClaim = "sessionVersion")
     {
         var claims = new List<Claim>();
         foreach (var pair in new Dictionary<string, string>
@@ -22,7 +22,7 @@ public sealed class SessionValidatorTests
             ["jti"] = "session-id",
             ["exp"] = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString()
         })
-            if (pair.Key != omitted) claims.Add(new Claim(pair.Key, changed is not null && pair.Key == "sessionVersion" ? changed : pair.Value));
+            if (pair.Key != omitted) claims.Add(new Claim(pair.Key, changed is not null && pair.Key == changedClaim ? changed : pair.Value));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
     }
 
@@ -69,6 +69,26 @@ public sealed class SessionValidatorTests
         using var handler = new Handler("true");
         Assert.False(await Create(handler).ValidateAsync(Principal(changed: version), false, CancellationToken.None));
         Assert.Null(handler.Url);
+    }
+
+    [Theory]
+    [InlineData("invalid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task InvalidUserIdentityIsRejectedWithoutAnAuthorityCall(string userId)
+    {
+        using var handler = new Handler("true");
+        Assert.False(await Create(handler).ValidateAsync(Principal(changed: userId, changedClaim: "sub"), false, CancellationToken.None));
+        Assert.Null(handler.Url);
+    }
+
+    [Theory]
+    [InlineData(128, true)]
+    [InlineData(129, false)]
+    public async Task TokenIdentifiersRespectThePersistenceLengthLimit(int length, bool valid)
+    {
+        using var handler = new Handler("true");
+        Assert.Equal(valid, await Create(handler).ValidateAsync(Principal(changed: new string('x', length), changedClaim: "jti"), false, CancellationToken.None));
+        Assert.Equal(valid, handler.Url is not null);
     }
 
     [Fact]

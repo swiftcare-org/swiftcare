@@ -87,6 +87,17 @@ public sealed class SessionValidationTests
                 NullLogger<SessionValidationMiddleware>.Instance).InvokeAsync(context, new Validator { Failure = new OperationCanceledException() }));
     }
 
+    [Fact]
+    public async Task UnexpectedProgrammingErrorsAreNotReportedAsAnAuthorityOutage()
+    {
+        var context = Context();
+        var failure = new ArgumentException("Unexpected validator failure");
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            new SessionValidationMiddleware(_ => throw new InvalidOperationException("Must not forward"),
+                NullLogger<SessionValidationMiddleware>.Instance).InvokeAsync(context, new Validator { Failure = failure }));
+        Assert.Same(failure, error);
+    }
+
     private static async Task RejectAsync(DefaultHttpContext context, Validator sessions, int status, string text)
     {
         var forwarded = false;
