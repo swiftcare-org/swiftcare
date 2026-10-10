@@ -130,6 +130,17 @@ Record the run IDs and results; the workflow definition alone does not establish
 Full per-service results, the tests added, the defect found and the classification of every
 remaining mutant: [`results/RESULT-mutation-20261005.md`](results/RESULT-mutation-20261005.md).
 
+NotificationService was added on 2026-10-11 with the same method:
+
+| | Baseline | Final |
+|---|---:|---:|
+| Mutation score | 86.67% | **88.57%** |
+| Covered score | 95.79% | **97.89%** |
+| Undetected mutants | 28 | 24, all classified |
+| Unit test cases | 197 | 201 |
+
+Details: [`results/RESULT-mutation-notificationservice-20261011.md`](results/RESULT-mutation-notificationservice-20261011.md).
+
 Stop the Docker Compose stack before a run: one ApiGateway route test fails while a real
 PrescriptionService is listening on port 5001, and Stryker will not start unless every test
 passes.
