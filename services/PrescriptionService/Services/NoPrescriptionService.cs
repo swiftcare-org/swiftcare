@@ -66,6 +66,7 @@ public sealed class NoPrescriptionService(
         }
         catch (DbUpdateException)
         {
+            dbContext.ChangeTracker.Clear();
             // A matching request can commit between the check above and this save. The
             // unique index on ConsultationId rejects the second one.
             if (await FindConflictAsync(consultationId, cancellationToken) is not { } lateConflict)
