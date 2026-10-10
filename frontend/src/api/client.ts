@@ -25,6 +25,7 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  signal?: AbortSignal;
 }
 
 // Requests only ever go to the Gateway API. Callers encode their path parameters, but
@@ -58,6 +59,7 @@ export async function apiRequest<TResponse>(path: string, options: RequestOption
   const response = await fetch(`${GATEWAY_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
+    signal: options.signal,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 

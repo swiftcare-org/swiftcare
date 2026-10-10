@@ -1,5 +1,15 @@
 # AuthService
 
+## Durable sessions (SWC-157)
+
+Apply AddDurableSessions before deploying AuthService, then update every gateway replica. Existing accounts receive a unique session version. Newly issued JWTs include that version; legacy tokens without it require a new login.
+
+The gateway validates each authenticated request against the current active account, session version and durable token revocation. Deactivation, reactivation, password reset, role changes, room changes and soft deletion rotate the account version. Reactivation never restores an old session. Logout persists the token ID and expiry before forwarding the audit request; other tokens for the same unchanged account remain valid.
+
+Expired revocations are removed in indexed batches of at most 500 on subsequent validation requests. Tokens and secrets are never logged. The internal session endpoint requires the gateway secret and has no public proxy route. An unavailable authority fails closed with 503; the frontend retains the session and offers a retry until logout is confirmed or the token is already rejected.
+
+Retain RevokedSessions and account session versions during rollback. Returning a gateway to a version without durable checks would restore the original security gap. Deploy the AuthService endpoint before updating the gateways. Tests use SWIFTCARE_TEST_MYSQL only for isolated temporary databases.
+
 Issues and validates the credentials for SwiftCare staff accounts. AuthService owns the `swiftcare_auth` database exclusively — no other service may query or write to it.
 
 ## What it does

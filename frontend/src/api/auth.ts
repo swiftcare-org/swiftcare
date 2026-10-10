@@ -16,5 +16,6 @@ export function login(credentials: LoginCredentials): Promise<LoginResponseBody>
 export function logout(): Promise<void> {
   return apiRequest<void>('/api/auth/logout', {
     method: 'POST',
+    signal: AbortSignal.timeout(12000),
   });
 }

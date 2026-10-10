@@ -107,6 +107,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddSingleton<RevokedTokenStore>();
+builder.Services.AddHttpClient<ISessionValidator, SessionValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
 
 var app = builder.Build();
 
@@ -164,6 +165,7 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseMiddleware<SessionValidationMiddleware>();
 app.UseMiddleware<TokenRevocationMiddleware>();
 app.UseAuthorization();
 

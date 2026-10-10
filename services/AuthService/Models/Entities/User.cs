@@ -5,6 +5,7 @@ namespace AuthService.Models.Entities;
 public sealed class User : IHasTimestamps
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid SessionVersion { get; set; } = Guid.NewGuid();
     public required string Username { get; set; }
     public required string PasswordHash { get; set; }
     public required string FullName { get; set; }
