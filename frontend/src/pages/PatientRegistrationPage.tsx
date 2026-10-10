@@ -183,7 +183,7 @@ export function PatientRegistrationPage() {
       <div aria-live="polite" className="empty:hidden">
         {status === 'created' && registeredPatient && (
           <Banner tone="success" title="Patient Registered">
-            <p>Patient registered successfully. Patient ID: {registeredPatient.patientId}</p>
+            <p>Patient registered successfully.</p>
             <p className="mt-1">
               <Link to={`/patients/${registeredPatient.patientId}`} className={textLinkClassName}>
                 Open patient profile
