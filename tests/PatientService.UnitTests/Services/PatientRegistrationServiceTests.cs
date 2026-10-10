@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using PatientService.Data;
@@ -158,5 +159,57 @@ public class PatientRegistrationServiceTests
         Assert.Single(dbContext.Patients);
         Assert.True(result.Patient!.QueueDeliveryPending);
         Assert.Single(dbContext.OutboxMessages);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SaveFailureOnlyReportsDuplicateNicWhenThatNicWasActuallyPersisted(bool competingNic)
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var readerOptions = new DbContextOptionsBuilder<PatientDbContext>().UseInMemoryDatabase(databaseName).Options;
+        var failedSave = new CompetingRegistration(readerOptions, competingNic);
+        await using var context = new PatientDbContext(new DbContextOptionsBuilder<PatientDbContext>()
+            .UseInMemoryDatabase(databaseName).AddInterceptors(failedSave).Options);
+        var publisher = new Mock<IPatientEventPublisher>(MockBehavior.Strict);
+        var service = CreateService(context, publisher);
+        if (competingNic)
+        {
+            var result = await service.RegisterPatientAsync(CreateValidRequest(), CorrelationId, ActingUserId);
+            Assert.Equal(RegisterPatientOutcome.DuplicateNic, result.Outcome);
+            Assert.Null(result.Patient);
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<DbUpdateException>(() =>
+                service.RegisterPatientAsync(CreateValidRequest(), CorrelationId, ActingUserId));
+            Assert.Equal("Database save failed", exception.Message);
+        }
+        Assert.Empty(context.ChangeTracker.Entries());
+        await using var reader = new PatientDbContext(readerOptions);
+        Assert.Equal(competingNic ? "199012345678" : "198012345678", (await reader.Patients.SingleAsync()).Nic);
+        Assert.Empty(await reader.OutboxMessages.ToListAsync());
+        publisher.VerifyNoOtherCalls();
+    }
+
+    private sealed class CompetingRegistration(DbContextOptions<PatientDbContext> options, bool competingNic) : SaveChangesInterceptor
+    {
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await using var competitor = new PatientDbContext(options);
+            competitor.Patients.Add(new Patient
+            {
+                Nic = competingNic ? "199012345678" : "198012345678",
+                FullName = "Competing Patient",
+                DateOfBirth = new DateOnly(1990, 1, 1),
+                Gender = Gender.Male,
+                Address = "Test Address",
+                PhoneNumber = "0771234567",
+                BloodGroup = BloodGroup.APositive
+            });
+            await competitor.SaveChangesAsync(cancellationToken);
+            throw new DbUpdateException("Database save failed");
+        }
     }
 }
