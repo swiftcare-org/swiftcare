@@ -70,11 +70,15 @@ public sealed class QueueEntryCreationService : IQueueEntryCreationService
                 await transaction.CommitAsync(cancellationToken);
                 return result;
             }
-            catch (DbUpdateConcurrencyException) when (attempt < _options.MaxAllocationAttempts)
+            catch (DbUpdateConcurrencyException)
             {
                 // Another consumer instance won the compare-and-swap on today's
                 // DailyQueueCounter row. Retry from a clean read rather than surfacing this
                 // as a failure - it is expected under concurrent check-ins, not an error.
+                // This must catch the conflict on the last attempt too: it is a subclass of
+                // DbUpdateException, so letting it fall through would report a check-in that
+                // was never queued as "already queued". After the last attempt the loop ends
+                // and the throw below makes the consumer leave the message for redelivery.
                 await transaction.RollbackAsync(cancellationToken);
             }
             catch (DbUpdateException)
