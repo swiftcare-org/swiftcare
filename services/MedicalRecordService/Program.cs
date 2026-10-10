@@ -34,6 +34,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<IMedicalRecordConnectionFactory, MySqlMedicalRecordConnectionFactory>();
 builder.Services.AddScoped<IConsultationRepository, AdoNetConsultationRepository>();
+builder.Services.AddScoped<IVisitContextRepository, AdoNetVisitContextRepository>();
 builder.Services.AddScoped<IConsultationFollowUpRepository, AdoNetConsultationFollowUpRepository>();
 builder.Services.AddScoped<IConsultationHistoryRepository, AdoNetConsultationHistoryRepository>();
 builder.Services.AddScoped<IConsultationCompletionRepository, AdoNetConsultationCompletionRepository>();
