@@ -9,14 +9,22 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
     public DbSet<Prescription> Prescriptions => Set<Prescription>();
     public DbSet<PrescriptionItem> PrescriptionItems => Set<PrescriptionItem>();
     public DbSet<NoPrescriptionDecision> NoPrescriptionDecisions => Set<NoPrescriptionDecision>();
+    public DbSet<ConsultationOutcome> ConsultationOutcomes => Set<ConsultationOutcome>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ConsultationOutcome>(entity =>
+        {
+            entity.HasKey(outcome => outcome.ConsultationId);
+            entity.Property(outcome => outcome.ConsultationId).ValueGeneratedNever();
+            entity.Property(outcome => outcome.Outcome).HasMaxLength(16).IsRequired();
+        });
         modelBuilder.Entity<Prescription>(entity =>
         {
             entity.Property(prescription => prescription.Id).ValueGeneratedNever();
             entity.Property(prescription => prescription.DoctorName).HasMaxLength(200).IsRequired();
             entity.Property(prescription => prescription.DispensedBy).HasMaxLength(200);
+            entity.Property(prescription => prescription.Version).IsConcurrencyToken();
             entity.Property(prescription => prescription.Status)
                 .HasMaxLength(16)
                 .HasDefaultValue(Prescription.PendingStatus)
@@ -64,6 +72,12 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
+        var claims = ChangeTracker.Entries<Prescription>().Where(entry => entry.State == EntityState.Added)
+            .Select(entry => new ConsultationOutcome { ConsultationId = entry.Entity.ConsultationId, Outcome = "PRESCRIPTION" })
+            .Concat(ChangeTracker.Entries<NoPrescriptionDecision>().Where(entry => entry.State == EntityState.Added)
+                .Select(entry => new ConsultationOutcome { ConsultationId = entry.Entity.ConsultationId, Outcome = "NOT_REQUIRED" }))
+            .ToList();
+        ConsultationOutcomes.AddRange(claims);
 
         foreach (var entry in ChangeTracker.Entries<Prescription>())
         {
@@ -82,6 +96,7 @@ public sealed class PrescriptionDbContext(DbContextOptions<PrescriptionDbContext
             else if (entry.State == EntityState.Modified)
             {
                 entry.Entity.UpdatedAt = now;
+                entry.Entity.Version = Guid.NewGuid();
             }
         }
 

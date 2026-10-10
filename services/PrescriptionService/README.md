@@ -166,3 +166,11 @@ Backend coverage includes request validation, required linkage, trusted doctor i
 - SWC-41 adds the dispensing application workflow but does not add PrescriptionService to Docker Compose or Azure deployment.
 - SWC-30 adds the counter viewing workflow but does not add PrescriptionService infrastructure or cross-service database access.
 - PrescriptionService does not query PatientService, MedicalRecordService, or QueueService databases.
+
+### Concurrent outcome and dispensing writes
+
+Prescription and no-prescription writes claim one shared ConsultationOutcomes key in their save transaction. Prescription versions protect dispensing and medicine edits; a stale writer receives HTTP 409 and must reload before retrying. The successful dispenser and timestamp cannot be overwritten by a stale request.
+
+Apply EnforcePrescriptionOutcomeConcurrency with prescription writes paused before deploying this version. Check for consultations present in both Prescriptions and NoPrescriptionDecisions and reconcile them first; the migration deliberately refuses contradictory history. It backfills claims for existing outcomes. Do not run old writers alongside the new version.
+
+Set SWIFTCARE_TEST_MYSQL to an isolated MySQL 8.4 server to run the opt-in tests for simultaneous outcome creation, both possible outcome winners, edit-versus-dispense and two dispensers. Each test uses a separate temporary database and separate request connections. CI provisions an ephemeral MySQL service and runs these tests with the coverage collection.

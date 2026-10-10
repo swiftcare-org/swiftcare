@@ -179,6 +179,7 @@ public class PrescriptionsControllerEdgeCaseTests
     [InlineData(PrescriptionItemChangeOutcome.MedicineNotFound, StatusCodes.Status404NotFound, "Medicine was not found")]
     [InlineData(PrescriptionItemChangeOutcome.MinimumOneMedicineRequired, StatusCodes.Status409Conflict, "Prescription must have at least one medicine")]
     [InlineData(PrescriptionItemChangeOutcome.PrescriptionDispensed, StatusCodes.Status409Conflict, "Cannot modify a dispensed prescription")]
+    [InlineData(PrescriptionItemChangeOutcome.ConcurrentModification, StatusCodes.Status409Conflict, "Prescription changed. Reload before retrying")]
     public async Task AddMedicineMapsEveryFailureOutcome(
         PrescriptionItemChangeOutcome outcome,
         int statusCode,
@@ -270,16 +271,18 @@ public class PrescriptionsControllerEdgeCaseTests
         AssertMessage(result, StatusCodes.Status404NotFound, "Prescription was not found");
     }
 
-    [Fact]
-    public async Task DispenseAlreadyDispensedReturnsConflictWithMessage()
+    [Theory]
+    [InlineData(DispensePrescriptionOutcome.AlreadyDispensed, "Prescription has already been dispensed")]
+    [InlineData(DispensePrescriptionOutcome.ConcurrentModification, "Prescription changed. Reload before retrying")]
+    public async Task DispenseConflictReturnsMessage(DispensePrescriptionOutcome outcome, string message)
     {
         var service = DispenseServiceReturning(
-            new DispensePrescriptionResult(DispensePrescriptionOutcome.AlreadyDispensed));
+            new DispensePrescriptionResult(outcome));
 
         var result = await CreateReceptionistController(service)
             .DispensePrescription(Guid.NewGuid(), CancellationToken.None);
 
-        AssertMessage(result, StatusCodes.Status409Conflict, "Prescription has already been dispensed");
+        AssertMessage(result, StatusCodes.Status409Conflict, message);
     }
 
     [Fact]

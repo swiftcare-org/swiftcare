@@ -251,6 +251,8 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
                 new MessageResponse("Prescription was not found")),
             DispensePrescriptionOutcome.AlreadyDispensed => Conflict(
                 new MessageResponse("Prescription has already been dispensed")),
+            DispensePrescriptionOutcome.ConcurrentModification => Conflict(
+                new MessageResponse("Prescription changed. Reload before retrying")),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(result),
                 result.Outcome,
@@ -293,6 +295,8 @@ public sealed class PrescriptionsController(IPrescriptionService prescriptionSer
                 new MessageResponse("Prescription must have at least one medicine")),
             PrescriptionItemChangeOutcome.PrescriptionDispensed => Conflict(
                 new MessageResponse("Cannot modify a dispensed prescription")),
+            PrescriptionItemChangeOutcome.ConcurrentModification => Conflict(
+                new MessageResponse("Prescription changed. Reload before retrying")),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(result),
                 result.Outcome,
