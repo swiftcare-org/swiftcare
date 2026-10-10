@@ -299,8 +299,13 @@ public class DailyReportServiceTests
         var completedAt = new DateTime(2026, 9, 30, 18, 29, 0, DateTimeKind.Utc);
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
-            EventId = Guid.NewGuid(), ConsultationId = Guid.NewGuid(), QueueId = Guid.NewGuid(),
-            PatientId = Guid.NewGuid(), DoctorId = Guid.NewGuid(), Diagnosis = "Synthetic", CompletedAt = completedAt
+            EventId = Guid.NewGuid(),
+            ConsultationId = Guid.NewGuid(),
+            QueueId = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(),
+            DoctorId = Guid.NewGuid(),
+            Diagnosis = "Synthetic",
+            CompletedAt = completedAt
         });
         var notification = new NotificationEventParser(new KafkaOptions { BootstrapServers = "localhost:9092" })
             .Parse("consultation-completed", payload, completedAt.AddHours(2));

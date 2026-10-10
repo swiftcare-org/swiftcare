@@ -24,9 +24,16 @@ public class CompletionTimestampMySqlTests
             await context.Database.MigrateAsync();
             var consultation = new Consultation
             {
-                Id = Guid.NewGuid(), QueueId = Guid.NewGuid(), PatientId = Guid.NewGuid(), DoctorId = Guid.NewGuid(),
-                DoctorName = "Dr. Test", RoomNumber = "1", Symptoms = "Synthetic", Diagnosis = "Synthetic",
-                ConsultationDate = DateTime.UtcNow, CreatedAt = DateTime.UtcNow
+                Id = Guid.NewGuid(),
+                QueueId = Guid.NewGuid(),
+                PatientId = Guid.NewGuid(),
+                DoctorId = Guid.NewGuid(),
+                DoctorName = "Dr. Test",
+                RoomNumber = "1",
+                Symptoms = "Synthetic",
+                Diagnosis = "Synthetic",
+                ConsultationDate = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
             };
             context.Consultations.Add(consultation);
             context.VitalSigns.Add(new VitalSigns { Id = Guid.NewGuid(), ConsultationId = consultation.Id, RecordedAt = DateTime.UtcNow });
