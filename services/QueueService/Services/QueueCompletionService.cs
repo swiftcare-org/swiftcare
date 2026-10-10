@@ -60,7 +60,9 @@ public sealed class QueueCompletionService : IQueueCompletionService
         {
             entry.Status = QueueStatus.Completed;
             entry.CompletedAt = DateTime.SpecifyKind(
-                _timeProvider.GetUtcNow().UtcDateTime,
+                completedEvent.CompletedAt is { } completedAt
+                    ? (completedAt.Kind == DateTimeKind.Local ? completedAt.ToUniversalTime() : completedAt)
+                    : _timeProvider.GetUtcNow().UtcDateTime,
                 DateTimeKind.Utc);
         }
 

@@ -122,6 +122,24 @@ public class QueueCompletionServiceTests
         CheckedInAt = new DateTime(2026, 9, 20, 5, 0, 0, DateTimeKind.Utc)
     };
 
+    [Fact]
+    public async Task DelayedCompletionUsesProducerTimeAndPreservesItOnRedelivery()
+    {
+        using var connection = OpenConnection();
+        await using var db = await CreateDbContextAsync(connection);
+        var entry = NewActiveEntry();
+        db.QueueEntries.Add(entry);
+        await db.SaveChangesAsync();
+        var originalTime = CompletionTime.UtcDateTime.AddDays(-1);
+        var message = NewEvent(entry) with { CompletedAt = originalTime };
+        var service = new QueueCompletionService(db, new MutableTimeProvider(CompletionTime));
+
+        await service.CompleteAsync(message);
+        await service.CompleteAsync(message);
+
+        Assert.Equal(originalTime, entry.CompletedAt);
+    }
+
     private static ConsultationCompletedEvent NewEvent(QueueEntry entry) =>
         new(Guid.NewGuid(), Guid.NewGuid(), entry.Id, entry.PatientId, entry.DoctorId!.Value);
 
