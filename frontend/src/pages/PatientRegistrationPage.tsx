@@ -184,6 +184,7 @@ export function PatientRegistrationPage() {
         {status === 'created' && registeredPatient && (
           <Banner tone="success" title="Patient Registered">
             <p>Patient registered successfully. Patient ID: {registeredPatient.patientId}</p>
+            {registeredPatient.queueDeliveryPending && <p>Queue entry is pending. It will be added automatically when the connection is restored.</p>}
             <p className="mt-1">
               <Link to={`/patients/${registeredPatient.patientId}`} className={textLinkClassName}>
                 Open patient profile

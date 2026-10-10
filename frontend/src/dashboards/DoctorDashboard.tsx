@@ -369,6 +369,7 @@ export function DoctorDashboard() {
                 </Link>
               </p>
               <p className="mt-1 text-xs text-slate-600">Room {currentPatient.roomNumber}</p>
+              {currentPatient.notificationPending && <p className="mt-1 text-xs text-slate-600">The patient is assigned to you. The call notification is pending and will retry automatically.</p>}
               <ButtonLink to="/doctor/consultation" size="sm" className="mt-3">
                 Record Consultation
               </ButtonLink>

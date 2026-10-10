@@ -164,7 +164,7 @@ public class CallNextPatientServiceTests
     }
 
     [Fact]
-    public async Task EventPublishFailureRollsBackQueueAssignment()
+    public async Task EventPublishFailureKeepsAssignmentAndPendingEvent()
     {
         using var connection = OpenConnection();
         await using var dbContext = await CreateDbContextAsync(connection);
@@ -184,15 +184,17 @@ public class CallNextPatientServiceTests
             "R-204",
             "corr-failure");
 
-        Assert.Equal(CallNextPatientOutcome.EventPublishFailed, result.Outcome);
+        Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
+        Assert.True(result.CalledPatient!.NotificationPending);
+        Assert.Single(dbContext.OutboxMessages);
         var persisted = await dbContext.QueueEntries
             .AsNoTracking()
             .SingleAsync(entry => entry.Id == waitingEntry.Id);
-        Assert.Equal(QueueStatus.Waiting, persisted.Status);
-        Assert.Null(persisted.DoctorId);
-        Assert.Null(persisted.DoctorName);
-        Assert.Null(persisted.RoomNumber);
-        Assert.Null(persisted.CalledAt);
+        Assert.Equal(QueueStatus.InConsultation, persisted.Status);
+        Assert.Equal(result.CalledPatient.DoctorId, persisted.DoctorId);
+        Assert.Equal("Dr. Amara Chen", persisted.DoctorName);
+        Assert.Equal("R-204", persisted.RoomNumber);
+        Assert.NotNull(persisted.CalledAt);
     }
 
     private static CallNextPatientService CreateService(

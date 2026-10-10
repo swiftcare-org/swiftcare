@@ -4,6 +4,7 @@ using PatientService.Logging;
 using PatientService.Models.Dtos;
 using PatientService.Models.Entities;
 using PatientService.Models.Enums;
+using PatientService.Models.Events;
 
 namespace PatientService.Services;
 
@@ -55,7 +56,17 @@ public sealed class PatientRegistrationService : IPatientRegistrationService
             BloodGroup = request.BloodGroup!.Value
         };
 
+        var checkedInEvent = new PatientCheckedInEvent
+        {
+            EventId = Guid.NewGuid(),
+            PatientId = patient.Id,
+            IsNewPatient = true,
+            CheckedInAt = DateTime.UtcNow,
+            CorrelationId = correlationId
+        };
+        var pending = OutboxMessage.Create(checkedInEvent.EventId, checkedInEvent, checkedInEvent.CheckedInAt);
         _dbContext.Patients.Add(patient);
+        _dbContext.OutboxMessages.Add(pending);
 
         try
         {
@@ -63,17 +74,17 @@ public sealed class PatientRegistrationService : IPatientRegistrationService
         }
         catch (DbUpdateException)
         {
+            _dbContext.ChangeTracker.Clear();
+            if (!await _dbContext.Patients.AsNoTracking().AnyAsync(existing => existing.Nic == normalizedNic, cancellationToken))
+                throw;
             // Two receptionists submitting the same NIC concurrently can both pass the
             // AnyAsync check above; the unique index is the final backstop.
             LogRejection(RegisterPatientOutcome.DuplicateNic, actingUserId);
             return new RegisterPatientResult { Outcome = RegisterPatientOutcome.DuplicateNic };
         }
 
-        // A failed publish is logged but does not fail the request: the patient record is
-        // the source of truth and already committed. The patient exists but was never
-        // queued in this case - reconciliation via a transactional outbox is a future story.
-        var published = await _eventPublisher.PublishPatientCheckedInAsync(
-            patient.Id, isNewPatient: true, correlationId, cancellationToken);
+        // Patient and pending event have committed together before anything is published.
+        var published = await OutboxDelivery.TryDeliverAsync(_dbContext, _eventPublisher, pending, _logger, cancellationToken);
 
         if (!published)
         {
@@ -97,7 +108,8 @@ public sealed class PatientRegistrationService : IPatientRegistrationService
             Patient = new RegisteredPatientResponse
             {
                 PatientId = patient.Id,
-                CreatedAt = patient.CreatedAt
+                CreatedAt = patient.CreatedAt,
+                QueueDeliveryPending = !published
             }
         };
     }
