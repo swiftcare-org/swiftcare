@@ -179,6 +179,7 @@ public class PrescriptionsControllerEdgeCaseTests
     [InlineData(PrescriptionItemChangeOutcome.MedicineNotFound, StatusCodes.Status404NotFound, "Medicine was not found")]
     [InlineData(PrescriptionItemChangeOutcome.MinimumOneMedicineRequired, StatusCodes.Status409Conflict, "Prescription must have at least one medicine")]
     [InlineData(PrescriptionItemChangeOutcome.PrescriptionDispensed, StatusCodes.Status409Conflict, "Cannot modify a dispensed prescription")]
+    [InlineData(PrescriptionItemChangeOutcome.ConcurrentModification, StatusCodes.Status409Conflict, "Prescription changed. Reload before retrying")]
     public async Task AddMedicineMapsEveryFailureOutcome(
         PrescriptionItemChangeOutcome outcome,
         int statusCode,
