@@ -8,4 +8,5 @@ public sealed record ConsultationCompletedEvent(
     Guid QueueId,
     Guid PatientId,
     Guid DoctorId,
-    string Diagnosis);
+    string Diagnosis,
+    DateTime? CompletedAt = null);
