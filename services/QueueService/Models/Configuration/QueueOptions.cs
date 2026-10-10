@@ -8,4 +8,8 @@ public sealed class QueueOptions
     public required string ClinicTimeZone { get; set; }
 
     public int MaxAllocationAttempts { get; set; } = 3;
+
+    // How many times call-next is tried when MySQL rolls it back because another doctor
+    // called a patient at the same moment.
+    public int MaxCallNextAttempts { get; set; } = 3;
 }
