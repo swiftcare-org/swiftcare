@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Field, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { textLinkClassName } from '../components/ui/table';
-import { formatDate } from '../lib/format';
+import { clinicTodayForDateInput, formatDate } from '../lib/format';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'created' | 'failed';
 
@@ -60,7 +60,7 @@ function applyServerFieldErrors(prev: FieldErrors, serverErrors: Readonly<Record
 }
 
 function todayAsDateInputValue(): string {
-  return new Date().toISOString().slice(0, 10);
+  return clinicTodayForDateInput();
 }
 
 export function PatientRegistrationPage() {

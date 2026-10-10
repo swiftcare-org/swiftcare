@@ -77,7 +77,7 @@ public sealed class CallNextPatientService : ICallNextPatientService
             QueueEntry? nextEntry;
             try
             {
-                var refusal = await FindRefusalAsync(doctorId, normalizedRoomNumber, queueDate, cancellationToken);
+                var refusal = await FindRefusalAsync(doctorId, normalizedRoomNumber, cancellationToken);
                 if (refusal is not null)
                 {
                     return refusal;
@@ -156,13 +156,11 @@ public sealed class CallNextPatientService : ICallNextPatientService
     private async Task<CallNextPatientResult?> FindRefusalAsync(
         Guid doctorId,
         string roomNumber,
-        DateOnly queueDate,
         CancellationToken cancellationToken)
     {
         var doctorOrRoomOccupied = await _dbContext.QueueEntries
             .AnyAsync(
-                entry => entry.QueueDate == queueDate
-                    && entry.Status == QueueStatus.InConsultation
+                entry => entry.Status == QueueStatus.InConsultation
                     && (entry.DoctorId == doctorId || entry.RoomNumber == roomNumber),
                 cancellationToken);
 

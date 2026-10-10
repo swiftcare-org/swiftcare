@@ -96,7 +96,7 @@ public class CallNextPatientServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task ConsultationLeftOpenOnAnEarlierDayDoesNotBlockTheDoctorToday()
+    public async Task ConsultationLeftOpenOnAnEarlierDayStillBlocksTheDoctorToday()
     {
         using var connection = OpenConnection();
         await using var dbContext = await CreateDbContextAsync(connection);
@@ -112,8 +112,8 @@ public class CallNextPatientServiceEdgeCaseTests
         var result = await CreateService(dbContext, SuccessfulPublisher())
             .CallNextAsync(doctorId, "Dr. Amara Chen", "R-204", "corr");
 
-        Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
-        Assert.Equal("Q-001", result.CalledPatient!.QueueNumber);
+        Assert.Equal(CallNextPatientOutcome.DoctorOrRoomOccupied, result.Outcome);
+        Assert.Null(result.CalledPatient);
     }
 
     [Fact]
