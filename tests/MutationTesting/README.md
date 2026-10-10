@@ -16,11 +16,12 @@ test still passes. Each surviving mutant points to a behaviour the tests do not 
 | ApiGateway | `tests/ApiGateway.UnitTests` | `configs/stryker-apigateway.json` |
 | AuthService | `tests/AuthService.UnitTests` | `configs/stryker-authservice.json` |
 | MedicalRecordService | `tests/MedicalRecordService.UnitTests` | `configs/stryker-medicalrecordservice.json` |
+| NotificationService | `tests/NotificationService.UnitTests` | `configs/stryker-notificationservice.json` |
 | PatientService | `tests/PatientService.UnitTests` | `configs/stryker-patientservice.json` |
 | PrescriptionService | `tests/PrescriptionService.UnitTests` | `configs/stryker-prescriptionservice.json` |
 | QueueService | `tests/QueueService.UnitTests` | `configs/stryker-queueservice.json` |
 
-NotificationService has no code or unit tests yet and is added when it does.
+NotificationService was added after the other six, once its code and unit tests were merged.
 
 Every hand-written source file is mutated: controllers, services, middleware, models,
 validation, logging helpers, maintenance commands and Kafka publishers and consumers.
@@ -33,7 +34,7 @@ Excluded, with the reason:
 | `Program.cs` | Composition root. A mutant there breaks startup for every test at once, which says nothing about the tests. |
 | Logging calls (`ignore-methods`) | Mutating log messages produces survivors that do not change behaviour. |
 
-Settings shared by all six configs:
+Settings shared by all seven configs:
 
 | Setting | Value | Why |
 |---|---|---|
@@ -54,7 +55,7 @@ No database, Kafka or Docker is needed. Only unit tests run.
 From `tests/MutationTesting/`:
 
 ```powershell
-# All six services
+# All seven services
 ./run-mutation-tests.ps1
 
 # One or more services (quote a comma-separated list when using powershell -File)
@@ -104,7 +105,7 @@ justification in the result report instead of being "fixed".
 ## CI handoff (DevOps)
 
 The `mutation-testing` job in `.github/workflows/ci.yml` runs after the existing .NET build and test job on pull requests to `main` or `develop`, and on manual `workflow_dispatch` runs.
-One matrix leg runs `run-mutation-tests.ps1` for each of the six services above.
+One matrix leg runs `run-mutation-tests.ps1` for each of the seven services above.
 Push and reusable workflow calls do not run mutation testing.
 
 Pull request legs fetch full Git history and pass `-Since origin/<base branch>` to mutate only changed code.
@@ -113,8 +114,8 @@ Each leg writes its score table to the GitHub Actions job summary and uploads it
 Upload runs even when the mutation step fails.
 The script returns a failure if the configured service break threshold is missed or no report is produced.
 
-After the workflow is merged, inspect a pull request CI run for six matrix results, score tables and downloadable reports.
-Use the CI workflow's manual Run workflow option on the intended ref to verify a full six-service run.
+After the workflow is merged, inspect a pull request CI run for seven matrix results, score tables and downloadable reports.
+Use the CI workflow's manual Run workflow option on the intended ref to verify a full seven-service run.
 Record the run IDs and results; the workflow definition alone does not establish that either mode or the failure threshold passed in GitHub Actions.
 
 ## Results
