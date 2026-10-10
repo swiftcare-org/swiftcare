@@ -86,7 +86,9 @@ public class PrescriptionConcurrencyMySqlTests
 
     private static CreatePrescriptionRequest Request() => new()
     {
-        ConsultationId = Guid.NewGuid(), QueueId = Guid.NewGuid(), PatientId = Guid.NewGuid(),
+        ConsultationId = Guid.NewGuid(),
+        QueueId = Guid.NewGuid(),
+        PatientId = Guid.NewGuid(),
         Medicines = [Medicine("First"), Medicine("Second")]
     };
 
