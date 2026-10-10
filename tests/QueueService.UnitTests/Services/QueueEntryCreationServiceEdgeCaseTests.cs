@@ -95,21 +95,28 @@ public class QueueEntryCreationServiceEdgeCaseTests
     // Issue #124: the "already queued" answer is kept for what it was written for, a second
     // check-in for the same patient that the unique constraint rejects. It is not retried.
     [Fact]
-    public async Task SecondCheckInRejectedByTheUniqueConstraintIsReportedAsAlreadyQueuedWithoutARetry()
+    public async Task SecondCheckInRejectedBecauseAnotherConsumerQueuedThePatientIsReportedAsAlreadyQueued()
     {
         var patientId = Guid.NewGuid();
-        var interceptor = new SaveInterceptor(async (context, _) =>
-        {
-            // Another consumer queues the same patient just before this save.
-            await context.Database.ExecuteSqlAsync(
-                $"""
-                INSERT INTO QueueEntries (Id, PatientId, QueueDate, QueueNumber, Status, CheckedInAt, CreatedAt, UpdatedAt)
-                VALUES ({Guid.NewGuid()}, {patientId}, {ClinicDate}, {"Q-099"}, {"Waiting"}, {CheckedInAtUtc}, {CheckedInAtUtc}, {CheckedInAtUtc})
-                """);
-        });
         using var connection = OpenConnection();
         await SeedCounterAsync(connection, lastNumber: 4);
-        await using var dbContext = CreateDbContext(connection, interceptor);
+        var interceptor = new SaveInterceptor((_, _) =>
+            throw new DbUpdateException("Duplicate entry for the patient and date."));
+        // Mirrors MySQL: the save fails because the other consumer's entry has just committed.
+        var otherConsumer = new AfterRollbackInterceptor(() =>
+        {
+            using var other = CreateDbContext(connection);
+            other.QueueEntries.Add(new QueueEntry
+            {
+                PatientId = patientId,
+                QueueDate = ClinicDate,
+                QueueNumber = "Q-005",
+                Status = QueueStatus.Waiting,
+                CheckedInAt = CheckedInAtUtc
+            });
+            other.SaveChanges();
+        });
+        await using var dbContext = CreateDbContext(connection, interceptor, otherConsumer);
 
         var result = await CreateService(dbContext)
             .CreateQueueEntryAsync(Guid.NewGuid(), patientId, CheckedInAtUtc);
@@ -118,7 +125,85 @@ public class QueueEntryCreationServiceEdgeCaseTests
         Assert.Null(result.QueueNumber);
         Assert.Equal(1, interceptor.Calls);
         await using var verify = CreateDbContext(connection);
+        Assert.Equal("Q-005", (await verify.QueueEntries.SingleAsync()).QueueNumber);
+    }
+
+    // A save can fail for reasons that have nothing to do with a duplicate: a deadlock, a
+    // lock timeout, a lost connection. The patient is not queued, so the failure must reach
+    // the consumer, which then leaves the message for redelivery.
+    [Fact]
+    public async Task SaveFailureWhenThePatientIsNotQueuedIsRethrownSoTheCheckInIsRetried()
+    {
+        var failure = new DbUpdateException("Deadlock found when trying to get lock.");
+        var interceptor = new SaveInterceptor((_, _) => throw failure);
+        using var connection = OpenConnection();
+        await SeedCounterAsync(connection, lastNumber: 4);
+        await using var dbContext = CreateDbContext(connection, interceptor);
+        var eventId = Guid.NewGuid();
+
+        var thrown = await Assert.ThrowsAsync<DbUpdateException>(() => CreateService(dbContext)
+            .CreateQueueEntryAsync(eventId, Guid.NewGuid(), CheckedInAtUtc));
+
+        Assert.Same(failure, thrown);
+        Assert.Equal(1, interceptor.Calls);
+        Assert.Empty(dbContext.ChangeTracker.Entries());
+        await using var verify = CreateDbContext(connection);
+        Assert.Equal(0, await verify.QueueEntries.CountAsync());
+        Assert.False(await verify.ProcessedEvents.AnyAsync(processed => processed.EventId == eventId));
         Assert.Equal(4, (await verify.DailyQueueCounters.SingleAsync()).LastNumber);
+    }
+
+    // Another patient queued today does not make this patient "already queued".
+    [Fact]
+    public async Task SaveFailureIsRethrownEvenWhenOtherPatientsAreQueuedToday()
+    {
+        using var connection = OpenConnection();
+        await SeedCounterAsync(connection, lastNumber: 4);
+        await using (var seed = CreateDbContext(connection))
+        {
+            seed.QueueEntries.Add(new QueueEntry
+            {
+                PatientId = Guid.NewGuid(),
+                QueueDate = ClinicDate,
+                QueueNumber = "Q-004",
+                Status = QueueStatus.Waiting,
+                CheckedInAt = CheckedInAtUtc
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var interceptor = new SaveInterceptor((_, _) => throw new DbUpdateException("Lock wait timeout exceeded."));
+        await using var dbContext = CreateDbContext(connection, interceptor);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => CreateService(dbContext)
+            .CreateQueueEntryAsync(Guid.NewGuid(), Guid.NewGuid(), CheckedInAtUtc));
+    }
+
+    // The same patient queued on another day does not count either.
+    [Fact]
+    public async Task SaveFailureIsRethrownWhenThePatientWasOnlyQueuedOnAnotherDay()
+    {
+        var patientId = Guid.NewGuid();
+        using var connection = OpenConnection();
+        await SeedCounterAsync(connection, lastNumber: 4);
+        await using (var seed = CreateDbContext(connection))
+        {
+            seed.QueueEntries.Add(new QueueEntry
+            {
+                PatientId = patientId,
+                QueueDate = ClinicDate.AddDays(-1),
+                QueueNumber = "Q-001",
+                Status = QueueStatus.Completed,
+                CheckedInAt = CheckedInAtUtc.AddDays(-1)
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var interceptor = new SaveInterceptor((_, _) => throw new DbUpdateException("Deadlock found."));
+        await using var dbContext = CreateDbContext(connection, interceptor);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => CreateService(dbContext)
+            .CreateQueueEntryAsync(Guid.NewGuid(), patientId, CheckedInAtUtc));
     }
 
     [Fact]
@@ -212,6 +297,23 @@ public class QueueEntryCreationServiceEdgeCaseTests
             Calls++;
             await beforeSave(eventData.Context!, Calls);
             return result;
+        }
+    }
+
+    // Runs once, right after the first rollback, when no transaction is open any more.
+    private sealed class AfterRollbackInterceptor(Action action) : DbTransactionInterceptor
+    {
+        private Action? _action = action;
+
+        public override Task TransactionRolledBackAsync(
+            System.Data.Common.DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            var pending = _action;
+            _action = null;
+            pending?.Invoke();
+            return Task.CompletedTask;
         }
     }
 }
