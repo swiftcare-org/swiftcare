@@ -296,7 +296,7 @@ public class TodayQueueServiceTests
     }
 
     [Fact]
-    public async Task GetCurrentForDoctorExcludesPreviousClinicDayAtLocalMidnight()
+    public async Task GetCurrentForDoctorPreservesActiveAssignmentAtLocalMidnight()
     {
         using var connection = OpenConnection();
         await using var dbContext = await CreateDbContextAsync(connection);
@@ -319,7 +319,7 @@ public class TodayQueueServiceTests
             .GetCurrentForDoctorAsync(doctorId);
 
         Assert.Equal(previousDay.Id, beforeMidnight?.QueueId);
-        Assert.Null(afterMidnight);
+        Assert.Equal(previousDay.Id, afterMidnight?.QueueId);
     }
 
     [Fact]
