@@ -36,7 +36,8 @@ public class PatientProfilePage
 
     // --- Demographics and access mode (SWC-92) ---
 
-    public string PatientId => DemographicValue("Patient ID");
+    public bool HasPatientIdField =>
+        _driver.FindElements(By.XPath("//dt[normalize-space()='Patient ID']")).Count > 0;
 
     public string Nic => DemographicValue("NIC");
 
