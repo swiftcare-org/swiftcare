@@ -11,6 +11,42 @@ namespace MedicalRecordService.UnitTests.Services;
 public class ConsultationCompletionServiceTests
 {
     [Fact]
+    public async Task CompletedPageLookupUsesDoctorPageAndCancellationToken()
+    {
+        var doctor = Guid.NewGuid();
+        using var cancellation = new CancellationTokenSource();
+        IReadOnlyList<CompletedConsultationContextResponse> visits = [new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())];
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        repository.Setup(item => item.FindCompletedPageAsync(doctor, 1, cancellation.Token)).ReturnsAsync(visits);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+
+        Assert.Same(visits, await CreateService(repository, publisher).FindCompletedPageAsync(doctor, 1, cancellation.Token));
+
+        repository.VerifyAll();
+        publisher.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CompletedPageWithoutDoctorIsRejected()
+    {
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+        await Assert.ThrowsAsync<ArgumentException>(() => CreateService(repository, publisher).FindCompletedPageAsync(Guid.Empty, 0));
+        repository.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MaxValue)]
+    public async Task CompletedPageOutsideSupportedRangeIsRejected(int page)
+    {
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CreateService(repository, publisher).FindCompletedPageAsync(Guid.NewGuid(), page));
+        repository.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task LatestCompletedLookupUsesAuthenticatedDoctorId()
     {
         var doctorId = Guid.NewGuid();
