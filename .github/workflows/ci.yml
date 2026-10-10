@@ -78,6 +78,20 @@ jobs:
     timeout-minutes: 25
     env:
       MINIMUM_LINE_COVERAGE: "55"
+      SWIFTCARE_TEST_MYSQL: "Server=127.0.0.1;Port=3306;User ID=root;Password=swiftcare-ci-tests"
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: swiftcare-ci-tests
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -328,6 +342,7 @@ jobs:
           VITE_GATEWAY_URL: http://localhost:8000
         run: |
           npm ci
+          npm test
           npm run lint
           npm run build
 
