@@ -748,10 +748,6 @@ export function PatientProfilePage() {
           >
             <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <dt className={DETAIL_TERM_CLASS_NAME}>Patient ID</dt>
-                <dd className="mt-0.5 break-all text-slate-900">{patient.patientId}</dd>
-              </div>
-              <div>
                 <dt className={DETAIL_TERM_CLASS_NAME}>NIC</dt>
                 <dd className="mt-0.5 text-slate-900">{patient.nic}</dd>
               </div>
