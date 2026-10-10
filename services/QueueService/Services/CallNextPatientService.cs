@@ -1,6 +1,5 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using QueueService.Data;
 using QueueService.Logging;
@@ -75,6 +74,7 @@ public sealed class CallNextPatientService : ICallNextPatientService
                 cancellationToken);
 
             QueueEntry? nextEntry;
+            OutboxMessage pending;
             try
             {
                 var refusal = await FindRefusalAsync(doctorId, normalizedRoomNumber, queueDate, cancellationToken);
@@ -103,7 +103,22 @@ public sealed class CallNextPatientService : ICallNextPatientService
                 nextEntry.RoomNumber = normalizedRoomNumber;
                 nextEntry.CalledAt = utcNow;
 
+                var patientCalledEvent = new PatientCalledEvent
+                {
+                    EventId = Guid.NewGuid(),
+                    QueueId = nextEntry.Id,
+                    PatientId = nextEntry.PatientId,
+                    QueueNumber = nextEntry.QueueNumber,
+                    DoctorId = doctorId,
+                    DoctorName = normalizedDoctorName,
+                    RoomNumber = normalizedRoomNumber,
+                    CalledAt = utcNow,
+                    CorrelationId = correlationId
+                };
+                pending = OutboxMessage.Create(patientCalledEvent.EventId, patientCalledEvent, utcNow);
+                _dbContext.OutboxMessages.Add(pending);
                 await _dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
             }
             catch (Exception exception) when (LockConflictDetector.IsLockConflict(exception))
             {
@@ -131,9 +146,10 @@ public sealed class CallNextPatientService : ICallNextPatientService
                 };
             }
 
-            return await PublishAndCommitAsync(
-                transaction,
+            await transaction.DisposeAsync();
+            return await PublishCommittedAsync(
                 nextEntry,
+                pending,
                 new Assignment(doctorId, normalizedDoctorName, normalizedRoomNumber, utcNow, correlationId),
                 cancellationToken);
         }
@@ -181,44 +197,17 @@ public sealed class CallNextPatientService : ICallNextPatientService
         };
     }
 
-    // The assignment is saved but not committed: it only becomes real once the
-    // patient-called event is out, so the waiting room and the queue never disagree.
-    private async Task<CallNextPatientResult> PublishAndCommitAsync(
-        IDbContextTransaction transaction,
+    // The assignment and its pending event have already committed before publishing.
+    private async Task<CallNextPatientResult> PublishCommittedAsync(
         QueueEntry nextEntry,
+        OutboxMessage pending,
         Assignment assignment,
         CancellationToken cancellationToken)
     {
         var (doctorId, normalizedDoctorName, normalizedRoomNumber, utcNow, correlationId) = assignment;
 
-        var patientCalledEvent = new PatientCalledEvent
-        {
-            EventId = Guid.NewGuid(),
-            QueueId = nextEntry.Id,
-            PatientId = nextEntry.PatientId,
-            QueueNumber = nextEntry.QueueNumber,
-            DoctorId = doctorId,
-            DoctorName = normalizedDoctorName,
-            RoomNumber = normalizedRoomNumber,
-            CalledAt = utcNow,
-            CorrelationId = correlationId
-        };
-
-        var published = await _eventPublisher.PublishPatientCalledAsync(
-            patientCalledEvent,
-            cancellationToken);
-
-        if (!published)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            _dbContext.ChangeTracker.Clear();
-            return new CallNextPatientResult
-            {
-                Outcome = CallNextPatientOutcome.EventPublishFailed
-            };
-        }
-
-        await transaction.CommitAsync(cancellationToken);
+        var published = await OutboxDelivery.TryDeliverAsync(_dbContext,
+            _eventPublisher, pending, _logger, cancellationToken);
 
         _logger.LogInformation(
             "Patient called from waiting pool: queueId={QueueId} patientId={PatientId} doctorId={DoctorId} roomNumber={RoomNumber} correlationId={CorrelationId}",
@@ -240,7 +229,8 @@ public sealed class CallNextPatientService : ICallNextPatientService
                 DoctorId = doctorId,
                 DoctorName = normalizedDoctorName,
                 RoomNumber = normalizedRoomNumber,
-                CalledAt = DateTime.SpecifyKind(utcNow, DateTimeKind.Utc)
+                CalledAt = DateTime.SpecifyKind(utcNow, DateTimeKind.Utc),
+                NotificationPending = !published
             }
         };
     }

@@ -42,6 +42,14 @@ public sealed class KafkaPatientEventPublisher : IPatientEventPublisher
             CorrelationId = correlationId
         };
 
+        return await PublishAsync(checkedInEvent, cancellationToken);
+    }
+
+    public async Task<bool> PublishAsync(PatientCheckedInEvent checkedInEvent, CancellationToken cancellationToken = default)
+    {
+        var patientId = checkedInEvent.PatientId;
+        var correlationId = checkedInEvent.CorrelationId;
+
         var message = new Message<string, string>
         {
             Key = patientId.ToString(),

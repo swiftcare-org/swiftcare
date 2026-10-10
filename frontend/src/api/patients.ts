@@ -17,6 +17,7 @@ export interface RegisterPatientRequestBody {
 export interface RegisteredPatient {
   patientId: string;
   createdAt: string;
+  queueDeliveryPending?: boolean;
 }
 
 export function registerPatient(request: RegisterPatientRequestBody): Promise<RegisteredPatient> {

@@ -65,6 +65,7 @@ builder.Services.AddSingleton<IProducer<string, string>>(sp =>
     }).Build();
 });
 builder.Services.AddSingleton<IQueueEventPublisher, KafkaQueueEventPublisher>();
+builder.Services.AddHostedService<OutboxRelay>();
 
 // Registered as a singleton - IConsumer is not thread-safe for concurrent Consume() calls,
 // but this app only ever has one loop calling it (PatientCheckedInConsumer), so a single

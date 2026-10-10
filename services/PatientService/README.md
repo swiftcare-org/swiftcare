@@ -1,5 +1,13 @@
 # PatientService
 
+## Durable event delivery (SWC-156)
+
+Apply the AddPatientEventOutbox migration before deploying this version. Pending events are stored in this service's own database with the business change. Publication follows a successful commit; an acknowledgement removes the event. A hosted worker scans pending events every five seconds and resumes after process restarts.
+
+Delivery is at least once. Retries preserve the original event ID, timestamp, correlation ID and payload, so consumers must deduplicate by event ID. A broker outage returns a successful registration with queueDeliveryPending=true; the frontend displays that delivery is pending. A failed database commit publishes no event.
+
+No additional shared library or deployable service is required. Roll back application code without deleting OutboxMessages or pending rows, and resume a compatible worker to drain them. Tests use an isolated temporary MySQL database when SWIFTCARE_TEST_MYSQL is set; the regular unit suite requires no broker.
+
 Registers and stores patient records for SwiftCare. PatientService owns the `swiftcare_patient` database exclusively — no other service may query or write to it.
 
 ## What it does
