@@ -92,6 +92,35 @@ public class QueueEntryCreationServiceEdgeCaseTests
         Assert.Equal(patientId, (await verify.QueueEntries.SingleAsync()).PatientId);
     }
 
+    // Issue #124: the "already queued" answer is kept for what it was written for, a second
+    // check-in for the same patient that the unique constraint rejects. It is not retried.
+    [Fact]
+    public async Task SecondCheckInRejectedByTheUniqueConstraintIsReportedAsAlreadyQueuedWithoutARetry()
+    {
+        var patientId = Guid.NewGuid();
+        var interceptor = new SaveInterceptor(async (context, _) =>
+        {
+            // Another consumer queues the same patient just before this save.
+            await context.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO QueueEntries (Id, PatientId, QueueDate, QueueNumber, Status, CheckedInAt, CreatedAt, UpdatedAt)
+                VALUES ({Guid.NewGuid()}, {patientId}, {ClinicDate}, {"Q-099"}, {"Waiting"}, {CheckedInAtUtc}, {CheckedInAtUtc}, {CheckedInAtUtc})
+                """);
+        });
+        using var connection = OpenConnection();
+        await SeedCounterAsync(connection, lastNumber: 4);
+        await using var dbContext = CreateDbContext(connection, interceptor);
+
+        var result = await CreateService(dbContext)
+            .CreateQueueEntryAsync(Guid.NewGuid(), patientId, CheckedInAtUtc);
+
+        Assert.Equal(QueueEntryCreationOutcome.AlreadyQueuedToday, result.Outcome);
+        Assert.Null(result.QueueNumber);
+        Assert.Equal(1, interceptor.Calls);
+        await using var verify = CreateDbContext(connection);
+        Assert.Equal(4, (await verify.DailyQueueCounters.SingleAsync()).LastNumber);
+    }
+
     [Fact]
     public async Task CounterCreatedConcurrentlyForTheFirstCheckInOfTheDayIsRetriedNotSkipped()
     {
