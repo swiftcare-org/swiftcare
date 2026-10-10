@@ -100,9 +100,78 @@ public class CallNextPatientLockConflictTests
     }
 
     [Fact]
-    public void ThreeAttemptsAreMadeByDefault()
+    public void FiveAttemptsWithAShortPauseAreTheDefault()
     {
-        Assert.Equal(3, new QueueOptions { ClinicTimeZone = "Asia/Colombo" }.MaxCallNextAttempts);
+        var options = new QueueOptions { ClinicTimeZone = "Asia/Colombo" };
+
+        Assert.Equal(5, options.MaxCallNextAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(40), options.CallNextRetryDelay);
+    }
+
+    // Guid bytes start with the first group reversed, so these IDs have first byte 0x00 and 0xFF.
+    private static readonly Guid DoctorWithNoSpread = Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private static readonly Guid DoctorWithFullSpread = Guid.Parse("000000ff-0000-0000-0000-000000000001");
+
+    [Theory]
+    [InlineData(1, 40)]
+    [InlineData(2, 80)]
+    [InlineData(4, 160)]
+    public void RetryPauseGrowsWithEachAttempt(int attempt, int expectedMilliseconds)
+    {
+        var pause = CallNextPatientService.RetryDelayFor(attempt, DoctorWithNoSpread, TimeSpan.FromMilliseconds(40));
+
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMilliseconds), pause);
+    }
+
+    // Doctors that collided must not all come back at the same instant.
+    [Fact]
+    public void RetryPauseDiffersBetweenDoctorsByUpToOneBaseDelay()
+    {
+        var baseDelay = TimeSpan.FromMilliseconds(40);
+
+        var shortest = CallNextPatientService.RetryDelayFor(1, DoctorWithNoSpread, baseDelay);
+        var longest = CallNextPatientService.RetryDelayFor(1, DoctorWithFullSpread, baseDelay);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(40), shortest);
+        Assert.Equal(TimeSpan.FromMilliseconds(80), longest);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-40)]
+    public void NoPauseWhenTheConfiguredDelayIsZeroOrNegative(int baseMilliseconds)
+    {
+        var pause = CallNextPatientService.RetryDelayFor(3, DoctorWithFullSpread, TimeSpan.FromMilliseconds(baseMilliseconds));
+
+        Assert.Equal(TimeSpan.Zero, pause);
+    }
+
+    [Fact]
+    public async Task CollidedCallWaitsBeforeItsNextAttempt()
+    {
+        using var connection = OpenConnection();
+        var conflicts = new LockConflictInterceptor(MySqlErrorCode.LockDeadlock, failures: 1);
+        await using var dbContext = await CreateDbContextAsync(connection, conflicts);
+        dbContext.QueueEntries.Add(NewEntry("Q-001"));
+        await dbContext.SaveChangesAsync();
+        conflicts.Arm();
+        var service = new CallNextPatientService(
+            dbContext,
+            SuccessfulPublisher().Object,
+            Options.Create(new QueueOptions
+            {
+                ClinicTimeZone = "Asia/Colombo",
+                CallNextRetryDelay = TimeSpan.FromMilliseconds(150)
+            }),
+            new FixedTimeProvider(),
+            NullLogger<CallNextPatientService>.Instance);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await service.CallNextAsync(DoctorWithNoSpread, "Dr. Amara Chen", "R-204", "corr");
+
+        Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
+        // Lower bound only, with slack for timer resolution: a slow machine can only take longer.
+        Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(120), $"Waited only {stopwatch.Elapsed}.");
     }
 
     // Only lock conflicts are retried. Any other database failure is a real fault.
@@ -164,7 +233,13 @@ public class CallNextPatientLockConflictTests
         int maxAttempts = 3) => new(
             dbContext,
             publisher.Object,
-            Options.Create(new QueueOptions { ClinicTimeZone = "Asia/Colombo", MaxCallNextAttempts = maxAttempts }),
+            Options.Create(new QueueOptions
+            {
+                ClinicTimeZone = "Asia/Colombo",
+                MaxCallNextAttempts = maxAttempts,
+                // No pause between attempts, so the tests do not wait.
+                CallNextRetryDelay = TimeSpan.Zero
+            }),
             new FixedTimeProvider(),
             NullLogger<CallNextPatientService>.Instance);
 
