@@ -83,12 +83,26 @@ public sealed class QueueEntryCreationService : IQueueEntryCreationService
             }
             catch (DbUpdateException)
             {
+                await transaction.RollbackAsync(cancellationToken);
+                _dbContext.ChangeTracker.Clear();
+
+                // A failed save does not by itself mean the patient is queued: a deadlock, a
+                // lock timeout or any other database error fails the same way. Only when the
+                // patient really has an entry for today is this a skip. Anything else is
+                // rethrown, so the consumer leaves the message for redelivery and the
+                // check-in is not lost.
+                var queuedByAnotherConsumer = await _dbContext.QueueEntries
+                    .AnyAsync(e => e.PatientId == patientId && e.QueueDate == queueDate, cancellationToken);
+                if (!queuedByAnotherConsumer)
+                {
+                    throw;
+                }
+
                 // Scenario 4's final backstop: UNIQUE(PatientId, QueueDate) rejected a second
                 // entry for a patient already queued today that the AnyAsync check above
                 // raced past (e.g. two distinct events for the same patient processed close
                 // together). The patient is already queued either way, so this is a skip,
                 // not a failure.
-                await transaction.RollbackAsync(cancellationToken);
                 _logger.LogInformation(
                     "Skipped check-in rejected by the unique constraint: eventId={EventId} patientId={PatientId} queueDate={QueueDate}",
                     eventId,
