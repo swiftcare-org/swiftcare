@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PrescriptionService.Data;
@@ -9,6 +10,8 @@ namespace PrescriptionService.Services;
 
 public sealed class PrescriptionReportService : IPrescriptionReportService
 {
+    public const string MonthFormat = "yyyy-MM";
+
     private readonly PrescriptionDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
     private readonly TimeZoneInfo _clinicTimeZone;
@@ -55,6 +58,28 @@ public sealed class PrescriptionReportService : IPrescriptionReportService
             TotalWritten: countsByStatus.Sum(entry => entry.Count),
             TotalDispensed: dispensed,
             TotalPending: pending);
+    }
+
+    public async Task<PrescriptionMonthlyReportResponse> GetMonthlyReportAsync(
+        DateOnly month,
+        CancellationToken cancellationToken = default)
+    {
+        // The month runs from clinic midnight on its first day to clinic midnight on the
+        // first day of the next month, turned into the UTC range that CreatedAt is stored in.
+        var firstDay = new DateOnly(month.Year, month.Month, 1);
+        var startUtc = ToUtc(firstDay);
+        var endUtc = ToUtc(firstDay.AddMonths(1));
+
+        var writtenInMonth = _dbContext.Prescriptions
+            .AsNoTracking()
+            .Where(prescription => prescription.CreatedAt >= startUtc && prescription.CreatedAt < endUtc);
+
+        return new PrescriptionMonthlyReportResponse(
+            firstDay.ToString(MonthFormat, CultureInfo.InvariantCulture),
+            TotalWritten: await writtenInMonth.CountAsync(cancellationToken),
+            TotalDispensed: await writtenInMonth.CountAsync(
+                prescription => prescription.Status == Prescription.DispensedStatus,
+                cancellationToken));
     }
 
     private DateTime ToUtc(DateOnly clinicDate) => TimeZoneInfo.ConvertTimeToUtc(

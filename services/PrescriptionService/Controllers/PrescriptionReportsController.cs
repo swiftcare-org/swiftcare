@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using PrescriptionService.Models.Dtos;
 using PrescriptionService.Services;
@@ -34,5 +35,36 @@ public sealed class PrescriptionReportsController(IPrescriptionReportService rep
         }
 
         return Ok(await reportService.GetDailyReportAsync(date, cancellationToken));
+    }
+
+    // The month is a clinic calendar month (yyyy-MM). It is read as text and parsed here,
+    // so a missing or impossible month gets one clear message.
+    [HttpGet("monthly")]
+    [ProducesResponseType(typeof(PrescriptionMonthlyReportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMonthlyReport(
+        [FromHeader(Name = UserRoleHeaderName)] string? userRole,
+        [FromQuery] string? month,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(userRole, "Admin", StringComparison.Ordinal))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new MessageResponse("Forbidden"));
+        }
+
+        if (!DateOnly.TryParseExact(
+                month,
+                PrescriptionReportService.MonthFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var reportMonth))
+        {
+            return BadRequest(new MessageResponse("Month is required in the format yyyy-MM"));
+        }
+
+        return Ok(await reportService.GetMonthlyReportAsync(reportMonth, cancellationToken));
     }
 }

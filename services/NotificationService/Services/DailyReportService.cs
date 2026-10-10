@@ -15,21 +15,21 @@ public sealed class DailyReportService : IDailyReportService
     public const int TopDiagnosesLimit = 5;
 
     private readonly NotificationDbContext _dbContext;
-    private readonly TimeZoneInfo _clinicTimeZone;
+    private readonly ClinicCalendar _calendar;
     private readonly IReadOnlyList<string> _rooms;
 
     public DailyReportService(NotificationDbContext dbContext, IOptions<ReportOptions> options)
     {
         _dbContext = dbContext;
-        _clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Value.ClinicTimeZone);
+        _calendar = new ClinicCalendar(options.Value.ClinicTimeZone);
         _rooms = options.Value.Rooms;
     }
 
     public async Task<DailyReportResponse> GetAsync(DateOnly date, CancellationToken cancellationToken = default)
     {
         // Events are stored in UTC, so the clinic day is turned into the UTC span it covers.
-        var fromUtc = ClinicMidnightAsUtc(date);
-        var toUtc = ClinicMidnightAsUtc(date.AddDays(1));
+        var fromUtc = _calendar.StartOfDayUtc(date);
+        var toUtc = _calendar.StartOfDayUtc(date.AddDays(1));
 
         var events = await _dbContext.Notifications
             .AsNoTracking()
@@ -57,11 +57,12 @@ public sealed class DailyReportService : IDailyReportService
             newPatients,
             totalPatients - newPatients,
             CountPatientsPerRoom(events),
-            CountTopDiagnoses(events));
+            DiagnosisRanking.Top(
+                events
+                    .Where(item => item.Type == NotificationType.ConsultationCompleted)
+                    .Select(item => item.Diagnosis),
+                TopDiagnosesLimit));
     }
-
-    private DateTime ClinicMidnightAsUtc(DateOnly date) =>
-        TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(TimeOnly.MinValue), _clinicTimeZone);
 
     // A patient called to the same room twice is one patient for that room.
     private List<RoomPatientCount> CountPatientsPerRoom(IEnumerable<DayEvent> events)
@@ -84,18 +85,6 @@ public sealed class DailyReportService : IDailyReportService
             .Select(room => new RoomPatientCount(room, patientsByRoom.GetValueOrDefault(room)))
             .ToList();
     }
-
-    // "Viral URTI" and "viral urti" are one diagnosis. Equal counts are ordered by name,
-    // so the same data always gives the same five.
-    private static List<DiagnosisCount> CountTopDiagnoses(IEnumerable<DayEvent> events) =>
-        events
-            .Where(item => item.Type == NotificationType.ConsultationCompleted && item.Diagnosis is not null)
-            .GroupBy(item => item.Diagnosis!, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new DiagnosisCount(group.Select(item => item.Diagnosis!).Min(StringComparer.Ordinal)!, group.Count()))
-            .OrderByDescending(diagnosis => diagnosis.Count)
-            .ThenBy(diagnosis => diagnosis.Diagnosis, StringComparer.OrdinalIgnoreCase)
-            .Take(TopDiagnosesLimit)
-            .ToList();
 
     private sealed record DayEvent(
         NotificationType Type,

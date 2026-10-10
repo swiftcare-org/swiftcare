@@ -38,6 +38,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<INotificationRecorder, NotificationRecorder>();
 builder.Services.AddScoped<INotificationFeedService, NotificationFeedService>();
 builder.Services.AddScoped<IDailyReportService, DailyReportService>();
+builder.Services.AddScoped<IMonthlyReportService, MonthlyReportService>();
 
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection("Reports"));

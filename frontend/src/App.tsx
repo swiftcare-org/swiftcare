@@ -4,6 +4,7 @@ import { UserManagementPage } from './pages/UserManagementPage';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { ActivityFeedPage } from './pages/ActivityFeedPage';
 import { DailyReportPage } from './pages/DailyReportPage';
+import { MonthlyReportPage } from './pages/MonthlyReportPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
 import { PatientProfilePage } from './pages/PatientProfilePage';
@@ -93,6 +94,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="Admin">
             <DailyReportPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/monthly"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <MonthlyReportPage />
           </ProtectedRoute>
         }
       />

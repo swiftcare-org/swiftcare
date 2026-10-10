@@ -35,6 +35,7 @@ Allergy details remain owned by PatientService. The frontend reads them from Pat
 | `DELETE` | `/api/prescriptions/{prescriptionId}/items/{medicineId}` | Doctor | Removes a medicine when at least one other medicine remains. |
 | `GET` | `/api/prescriptions/patient/{patientId}` | Doctor | Returns the patient's prescriptions newest first, including ordered medicine items. |
 | `GET` | `/api/prescriptions/report/daily?date=yyyy-MM-dd` | Admin | Returns `totalWritten`, `totalDispensed` and `totalPending` for one clinic day. `date` defaults to today. |
+| `GET` | `/api/prescriptions/report/monthly?month=yyyy-MM` | Admin | Returns `totalWritten` and `totalDispensed` for one calendar month of clinic days. A missing or invalid `month` returns `400`. |
 | `GET` | `/api/prescriptions/pending` | Receptionist | Returns all `PENDING` prescriptions oldest first, including ordered medicine items. |
 | `GET` | `/api/prescriptions/queue/{queueId}` | Doctor, Receptionist, Admin | Returns the prescription and ordered medicines for a queue entry, or the recorded "no prescription required" decision with status `NOT_REQUIRED`. |
 | `POST` | `/api/consultations/{consultationId}/no-prescription` | Doctor | Records that the consultation needs no prescription. `201`, `400` for a missing ID, `409` when the consultation already has a prescription or the decision is already recorded. |

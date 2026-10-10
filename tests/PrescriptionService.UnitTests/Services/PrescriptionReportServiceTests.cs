@@ -114,6 +114,117 @@ public class PrescriptionReportServiceTests
         Assert.Equal(0, report.TotalPending);
     }
 
+    // SWC-145: the monthly prescription totals used by the SWC-45 monthly summary.
+    [Fact]
+    public async Task MonthlyReportCountsWrittenAndDispensedForTheMonth()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.Prescriptions.AddRange(
+            NewPrescription(Utc(2026, 10, 2, 3, 0), Pending),
+            NewPrescription(Utc(2026, 10, 9, 3, 0), Pending),
+            NewPrescription(Utc(2026, 10, 16, 3, 0), Pending),
+            NewPrescription(Utc(2026, 10, 23, 3, 0), Dispensed),
+            NewPrescription(Utc(2026, 10, 30, 3, 0), Dispensed));
+        await dbContext.SaveChangesAsync();
+
+        var report = await CreateService(dbContext).GetMonthlyReportAsync(new DateOnly(2026, 10, 1));
+
+        Assert.Equal("2026-10", report.Month);
+        Assert.Equal(5, report.TotalWritten);
+        Assert.Equal(2, report.TotalDispensed);
+    }
+
+    [Fact]
+    public async Task MonthlyReportIsAllZeroWhenNothingWasWritten()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+
+        var report = await CreateService(dbContext).GetMonthlyReportAsync(new DateOnly(2026, 10, 1));
+
+        Assert.Equal("2026-10", report.Month);
+        Assert.Equal(0, report.TotalWritten);
+        Assert.Equal(0, report.TotalDispensed);
+    }
+
+    [Fact]
+    public async Task MonthlyReportUsesTheClinicMonthNotTheUtcMonth()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.Prescriptions.AddRange(
+            // 30 Sep 18:29 UTC is 23:59 on 30 Sep in the clinic: the month before.
+            NewPrescription(Utc(2026, 9, 30, 18, 29), Dispensed),
+            // 30 Sep 18:30 UTC is 00:00 on 1 Oct in the clinic: the first moment of the month.
+            NewPrescription(Utc(2026, 9, 30, 18, 30), Dispensed),
+            // 31 Oct 18:29 UTC is 23:59 on 31 Oct in the clinic: still the month.
+            NewPrescription(Utc(2026, 10, 31, 18, 29), Pending),
+            // 31 Oct 18:30 UTC is 00:00 on 1 Nov in the clinic: the month after.
+            NewPrescription(Utc(2026, 10, 31, 18, 30), Dispensed));
+        await dbContext.SaveChangesAsync();
+
+        var report = await CreateService(dbContext).GetMonthlyReportAsync(new DateOnly(2026, 10, 1));
+
+        Assert.Equal(2, report.TotalWritten);
+        Assert.Equal(1, report.TotalDispensed);
+    }
+
+    [Fact]
+    public async Task MonthlyReportForAnyDayOfTheMonthCoversTheWholeMonth()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.Prescriptions.AddRange(
+            NewPrescription(Utc(2026, 10, 1, 3, 0), Pending),
+            NewPrescription(Utc(2026, 10, 31, 3, 0), Dispensed),
+            NewPrescription(Utc(2026, 11, 1, 3, 0), Dispensed));
+        await dbContext.SaveChangesAsync();
+
+        var report = await CreateService(dbContext).GetMonthlyReportAsync(new DateOnly(2026, 10, 19));
+
+        Assert.Equal("2026-10", report.Month);
+        Assert.Equal(2, report.TotalWritten);
+        Assert.Equal(1, report.TotalDispensed);
+    }
+
+    [Fact]
+    public async Task MonthlyReportForDecemberEndsAtTheNewYear()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.Prescriptions.AddRange(
+            NewPrescription(Utc(2026, 12, 31, 3, 0), Dispensed),
+            NewPrescription(Utc(2027, 1, 1, 3, 0), Dispensed));
+        await dbContext.SaveChangesAsync();
+
+        var report = await CreateService(dbContext).GetMonthlyReportAsync(new DateOnly(2026, 12, 1));
+
+        Assert.Equal("2026-12", report.Month);
+        Assert.Equal(1, report.TotalWritten);
+        Assert.Equal(1, report.TotalDispensed);
+    }
+
+    [Fact]
+    public async Task MonthlyReportTracksAndChangesNothing()
+    {
+        using var connection = OpenConnection();
+        await using var dbContext = await CreateDbContextAsync(connection);
+        dbContext.Prescriptions.Add(NewPrescription(Utc(2026, 10, 2, 3, 0), Pending));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await CreateService(dbContext).GetMonthlyReportAsync(new DateOnly(2026, 10, 1));
+
+        Assert.Empty(dbContext.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public void MonthFormatIsYearAndMonth()
+    {
+        Assert.Equal("yyyy-MM", PrescriptionReportService.MonthFormat);
+    }
+
     private static PrescriptionReportService CreateService(
         PrescriptionDbContext dbContext,
         DateTimeOffset? now = null) => new(

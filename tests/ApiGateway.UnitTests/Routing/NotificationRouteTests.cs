@@ -5,12 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ApiGateway.UnitTests.Routing;
 
-// SWC-143 and SWC-140: gateway authorization for the two NotificationService endpoints,
-// the activity feed and the daily report.
+// SWC-143, SWC-140 and SWC-145: gateway authorization for the NotificationService
+// endpoints: the activity feed, the daily report and the monthly report.
 public class NotificationRouteTests
 {
     private const string FeedPath = "/api/notifications";
     private const string DailyReportPath = "/api/reports/daily?date=2026-10-08";
+    private const string MonthlyReportPath = "/api/reports/monthly?month=2026-10";
 
     private static async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, string? role)
     {
@@ -33,6 +34,7 @@ public class NotificationRouteTests
     [InlineData(FeedPath, "Receptionist")]
     [InlineData(FeedPath, "Admin")]
     [InlineData(DailyReportPath, "Admin")]
+    [InlineData(MonthlyReportPath, "Admin")]
     public async Task RouteWithAnAllowedRolePassesGatewayAuthorization(string path, string role)
     {
         using var response = await SendAsync(HttpMethod.Get, path, role);
@@ -47,6 +49,8 @@ public class NotificationRouteTests
     [InlineData(FeedPath, "Doctor")]
     [InlineData(DailyReportPath, "Doctor")]
     [InlineData(DailyReportPath, "Receptionist")]
+    [InlineData(MonthlyReportPath, "Doctor")]
+    [InlineData(MonthlyReportPath, "Receptionist")]
     public async Task RouteWithARoleItDoesNotAllowReturns403(string path, string role)
     {
         using var response = await SendAsync(HttpMethod.Get, path, role);
@@ -57,6 +61,7 @@ public class NotificationRouteTests
     [Theory]
     [InlineData(FeedPath)]
     [InlineData(DailyReportPath)]
+    [InlineData(MonthlyReportPath)]
     public async Task RouteWithoutABearerTokenReturns401(string path)
     {
         using var response = await SendAsync(HttpMethod.Get, path, role: null);
@@ -68,6 +73,7 @@ public class NotificationRouteTests
     [Theory]
     [InlineData(FeedPath)]
     [InlineData(DailyReportPath)]
+    [InlineData(MonthlyReportPath)]
     public async Task RouteDoesNotAcceptWrites(string path)
     {
         using var response = await SendAsync(HttpMethod.Post, path, "Admin");
@@ -78,6 +84,7 @@ public class NotificationRouteTests
     [Theory]
     [InlineData("notifications-route", "/api/notifications", "ActivityFeedPolicy")]
     [InlineData("reports-daily-route", "/api/reports/daily", "AdminOnly")]
+    [InlineData("reports-monthly-route", "/api/reports/monthly", "AdminOnly")]
     public void RouteIsProxiedToTheNotificationService(string routeId, string path, string policy)
     {
         using var factory = new ApiGatewayWebApplicationFactory();
