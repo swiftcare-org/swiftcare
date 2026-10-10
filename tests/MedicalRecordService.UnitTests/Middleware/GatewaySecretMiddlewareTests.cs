@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +18,32 @@ public class GatewaySecretMiddlewareTests
 
         Assert.True(result.NextCalled);
         Assert.Equal(StatusCodes.Status200OK, result.Context.Response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor", "11111111-1111-1111-1111-111111111111")]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    public async Task ValidGatewayEstablishesOnlyProvidedIdentityClaims(string? role, string? userId)
+    {
+        var result = await InvokeAsync("/api/resource", Secret, userId: userId, role: role);
+
+        Assert.True(result.NextCalled);
+        Assert.True(result.Context.User.Identity!.IsAuthenticated);
+        Assert.Equal("Gateway", result.Context.User.Identity.AuthenticationType);
+        Assert.Equal(string.IsNullOrEmpty(userId) ? null : userId, result.Context.User.FindFirstValue(ClaimTypes.NameIdentifier));
+        Assert.Equal(string.IsNullOrEmpty(role) ? null : role, result.Context.User.FindFirstValue(ClaimTypes.Role));
+        Assert.Equal(role == "Doctor", result.Context.User.IsInRole("Doctor"));
+    }
+
+    [Fact]
+    public async Task PublicPathDoesNotEstablishIdentityFromHeaders()
+    {
+        var result = await InvokeAsync("/health", null, userId: Guid.NewGuid().ToString(), role: "Doctor");
+
+        Assert.True(result.NextCalled);
+        Assert.False(result.Context.User.IsInRole("Doctor"));
+        Assert.False(result.Context.User.Identity?.IsAuthenticated == true);
     }
 
     [Theory]
@@ -69,7 +96,9 @@ public class GatewaySecretMiddlewareTests
     private static async Task<InvocationResult> InvokeAsync(
         string path,
         string? providedSecret,
-        string? configuredSecret = Secret)
+        string? configuredSecret = Secret,
+        string? userId = null,
+        string? role = null)
     {
         var nextCalled = false;
         var middleware = new GatewaySecretMiddleware(
@@ -90,6 +119,8 @@ public class GatewaySecretMiddlewareTests
         var context = new DefaultHttpContext();
         context.Request.Path = path;
         context.Response.Body = new MemoryStream();
+        if (userId is not null) context.Request.Headers["X-User-Id"] = userId;
+        if (role is not null) context.Request.Headers["X-User-Role"] = role;
         if (providedSecret is not null)
         {
             context.Request.Headers["X-Gateway-Secret"] = providedSecret;
@@ -103,6 +134,7 @@ public class GatewaySecretMiddlewareTests
     private static async Task AssertUnauthorizedAsync(InvocationResult result)
     {
         Assert.False(result.NextCalled);
+        Assert.False(result.Context.User.Identity?.IsAuthenticated == true);
         Assert.Equal(StatusCodes.Status401Unauthorized, result.Context.Response.StatusCode);
 
         result.Context.Response.Body.Position = 0;

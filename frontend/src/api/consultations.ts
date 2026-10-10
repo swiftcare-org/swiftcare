@@ -141,6 +141,10 @@ export function getLatestCompletedConsultation(): Promise<
   );
 }
 
+export function getCompletedConsultations(page = 0): Promise<CompletedConsultationContext[]> {
+  return apiRequest<CompletedConsultationContext[]>(`/api/consultations/completed?page=${page}`);
+}
+
 export function createConsultation(
   request: CreateConsultationRequestBody,
 ): Promise<Consultation> {

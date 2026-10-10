@@ -139,3 +139,7 @@ dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.
 ```
 
 The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, completion ordering and retry, overdue follow-up date logic, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
+
+### Recovering unfinished prescription work
+
+GET /api/consultations/completed?page=0 returns up to 50 completed visits owned by the authenticated doctor, ordered from oldest to newest. The gateway restricts this endpoint to Doctor. Recovery scans successive pages, skips visits still active in QueueService and visits with either a prescription or no-prescription outcome, and returns the oldest unresolved context. No browser cache is needed. The latest-completed endpoint remains available for existing callers.
