@@ -292,6 +292,30 @@ public class DailyReportServiceTests
     private static DailyReportService CreateService(TestDatabase database) =>
         new(database.DbContext, Options.Create(new ReportOptions()));
 
+    [Fact]
+    public async Task CompletionReceivedInTheNextMonthIsCountedOnItsOriginalClinicDay()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var completedAt = new DateTime(2026, 9, 30, 18, 29, 0, DateTimeKind.Utc);
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            EventId = Guid.NewGuid(), ConsultationId = Guid.NewGuid(), QueueId = Guid.NewGuid(),
+            PatientId = Guid.NewGuid(), DoctorId = Guid.NewGuid(), Diagnosis = "Synthetic", CompletedAt = completedAt
+        });
+        var notification = new NotificationEventParser(new KafkaOptions { BootstrapServers = "localhost:9092" })
+            .Parse("consultation-completed", payload, completedAt.AddHours(2));
+        await database.SeedAsync(notification!);
+
+        var originalDay = await CreateService(database).GetAsync(new DateOnly(2026, 9, 30));
+        var arrivalDay = await CreateService(database).GetAsync(new DateOnly(2026, 10, 1));
+        var monthly = new MonthlyReportService(database.DbContext, Options.Create(new ReportOptions()));
+
+        Assert.Single(originalDay.TopDiagnoses);
+        Assert.Empty(arrivalDay.TopDiagnoses);
+        Assert.Single((await monthly.GetAsync(new DateOnly(2026, 9, 1))).TopDiagnoses);
+        Assert.Empty((await monthly.GetAsync(new DateOnly(2026, 10, 1))).TopDiagnoses);
+    }
+
     private static Notification CheckIn(Guid patientId, bool isNew, DateTime? occurredAt = null) =>
         NewEvent(NotificationType.PatientCheckedIn, patientId, occurredAt, isNew: isNew);
 

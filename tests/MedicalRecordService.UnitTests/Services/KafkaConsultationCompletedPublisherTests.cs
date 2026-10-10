@@ -15,7 +15,7 @@ public class KafkaConsultationCompletedPublisherTests
     [Fact]
     public async Task PublishesTheEventToTheConfiguredTopicKeyedByQueue()
     {
-        var completedEvent = NewEvent();
+        var completedEvent = NewEvent() with { CompletedAt = new DateTime(2026, 9, 30, 18, 29, 0, DateTimeKind.Utc) };
         string? topic = null;
         Message<string, string>? message = null;
         var producer = new Mock<IProducer<string, string>>();
@@ -39,6 +39,7 @@ public class KafkaConsultationCompletedPublisherTests
         // The department reports count diagnoses, so the event must carry it under this name.
         using var payload = JsonDocument.Parse(message.Value);
         Assert.Equal("Viral URTI", payload.RootElement.GetProperty("Diagnosis").GetString());
+        Assert.Equal(completedEvent.CompletedAt, payload.RootElement.GetProperty("CompletedAt").GetDateTime());
     }
 
     [Fact]
