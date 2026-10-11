@@ -29,7 +29,8 @@ public class ConsultationTests : SeleniumTestBase
     [Fact]
     public void CreateConsultation_WithAllFieldsAndNoTemplate_ShowsSavedConfirmation()
     {
-        var consultation = ArrangeDoctorWithCurrentPatient();
+        using var seed = new SeedClient();
+        var consultation = ArrangeDoctorWithCurrentPatient(seed);
 
         consultation.FillSymptoms("QA E2E symptoms - fever and dry cough for two days");
         consultation.FillExaminationFindings("QA E2E findings - clear chest, no wheeze");
@@ -49,7 +50,8 @@ public class ConsultationTests : SeleniumTestBase
     [Fact]
     public void SelectTemplate_PreFillsFieldsAndRemainsEditable_ThenSaves()
     {
-        var consultation = ArrangeDoctorWithCurrentPatient();
+        using var seed = new SeedClient();
+        var consultation = ArrangeDoctorWithCurrentPatient(seed);
 
         consultation.SelectTemplate("Respiratory Consultation");
 
@@ -80,7 +82,8 @@ public class ConsultationTests : SeleniumTestBase
     [Fact]
     public void Submit_WithSymptomsAndDiagnosisBlank_ShowsValidationErrorsAndDoesNotSave()
     {
-        var consultation = ArrangeDoctorWithCurrentPatient();
+        using var seed = new SeedClient();
+        var consultation = ArrangeDoctorWithCurrentPatient(seed);
 
         consultation.ClickSave();
 
@@ -95,9 +98,8 @@ public class ConsultationTests : SeleniumTestBase
     // sessionStorage state written by DoctorDashboard's own call-next click handler,
     // see frontend/src/consultations/currentPatientStorage.ts), then opens the
     // consultation form via the dashboard's "Record Consultation" link.
-    private ConsultationPage ArrangeDoctorWithCurrentPatient()
+    private ConsultationPage ArrangeDoctorWithCurrentPatient(SeedClient seed)
     {
-        using var seed = new SeedClient();
         var doctor = seed.CreateUser("Doctor");
         var patient = seed.RegisterPatient();
         seed.WaitUntilWaiting(patient.PatientId);
@@ -109,6 +111,8 @@ public class ConsultationTests : SeleniumTestBase
 
         var dashboard = new DoctorDashboardPage(Driver);
         dashboard.WaitUntilLoaded();
+        dashboard.WaitForPatientRow(patient.FullName);
+        seed.EnsureNextWaitingPatientIs(patient.PatientId);
         dashboard.ClickCallNextPatient();
         dashboard.WaitForCurrentPatientPanel();
         dashboard.ClickRecordConsultation();

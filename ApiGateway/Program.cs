@@ -107,6 +107,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddSingleton<RevokedTokenStore>();
+builder.Services.AddHttpClient<IClinicalVisitValidator, ClinicalVisitValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHttpClient<ISessionValidator, SessionValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
 
 var app = builder.Build();
@@ -168,6 +169,7 @@ app.UseAuthentication();
 app.UseMiddleware<SessionValidationMiddleware>();
 app.UseMiddleware<TokenRevocationMiddleware>();
 app.UseAuthorization();
+app.UseMiddleware<ClinicalVisitValidationMiddleware>();
 
 app.UseMiddleware<GatewayForwardingMiddleware>();
 
