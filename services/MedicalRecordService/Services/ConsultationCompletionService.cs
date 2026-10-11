@@ -32,6 +32,14 @@ public sealed class ConsultationCompletionService : IConsultationCompletionServi
         return _repository.FindLatestCompletedAsync(doctorId, cancellationToken);
     }
 
+    public Task<IReadOnlyList<CompletedConsultationContextResponse>> FindCompletedPageAsync(
+        Guid doctorId, int page, CancellationToken cancellationToken = default)
+    {
+        if (doctorId == Guid.Empty) throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        if (page < 0 || page > int.MaxValue / 50) throw new ArgumentOutOfRangeException(nameof(page));
+        return _repository.FindCompletedPageAsync(doctorId, page, cancellationToken);
+    }
+
     public Task<ConsultationProgressResponse?> FindByQueueAsync(
         Guid queueId,
         Guid doctorId,

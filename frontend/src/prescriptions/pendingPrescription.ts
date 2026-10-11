@@ -1,6 +1,6 @@
-import { getLatestCompletedConsultation } from '../api/consultations';
+import { getCompletedConsultations } from '../api/consultations';
 import { getPatient } from '../api/patients';
-import { getPatientPrescriptions, getPrescriptionByQueueId } from '../api/prescriptions';
+import { getPrescriptionByQueueId } from '../api/prescriptions';
 import { getCurrentPatient } from '../api/queue';
 
 export interface PrescriptionContext {
@@ -33,45 +33,39 @@ async function hasRecordedOutcome(queueId: string): Promise<boolean> {
 }
 
 export async function findPendingPrescriptionContext(): Promise<PrescriptionContext | null> {
-  const [consultation, currentPatient] = await Promise.all([
-    getLatestCompletedConsultation(),
-    getCurrentPatient(),
-  ]);
-  if (!consultation) {
-    return null;
-  }
+  const currentPatient = await getCurrentPatient();
+  for (let page = 0; ; page += 1) {
+    const consultations = await getCompletedConsultations(page);
+    for (const consultation of consultations) {
+      // MedicalRecordService commits COMPLETE before publishing to Kafka. When
+      // publishing has not succeeded yet, QueueService still owns the same active
+      // assignment and the doctor must retry completion before prescribing.
+      if (currentPatient?.queueId === consultation.queueId) {
+        continue;
+      }
 
-  // MedicalRecordService commits COMPLETE before publishing to Kafka. When
-  // publishing has not succeeded yet, QueueService still owns the same active
-  // assignment and the doctor must retry completion before prescribing.
-  if (currentPatient?.queueId === consultation.queueId) {
-    return null;
-  }
+      // A consultation recorded as needing no prescription is resolved too. That decision is
+      // not in the patient's prescription history, so it is looked up by the queue entry.
+      if (await hasRecordedOutcome(consultation.queueId)) {
+        continue;
+      }
 
-  const prescriptions = await getPatientPrescriptions(consultation.patientId);
-  if (prescriptions.some((item) => item.consultationId === consultation.consultationId)) {
-    return null;
-  }
+      let patientName: string | undefined;
+      try {
+        patientName = (await getPatient(consultation.patientId)).fullName;
+      } catch {
+        // The identifiers are sufficient to reopen the prescription. A temporary
+        // patient-name lookup failure must not hide unfinished clinical work.
+      }
 
-  // A consultation recorded as needing no prescription is resolved too. That decision is
-  // not in the patient's prescription history, so it is looked up by the queue entry.
-  if (await hasRecordedOutcome(consultation.queueId)) {
-    return null;
+      return {
+        completed: true,
+        consultationId: consultation.consultationId,
+        queueId: consultation.queueId,
+        patientId: consultation.patientId,
+        patientName,
+      };
+    }
+    if (consultations.length < 50) return null;
   }
-
-  let patientName: string | undefined;
-  try {
-    patientName = (await getPatient(consultation.patientId)).fullName;
-  } catch {
-    // The identifiers are sufficient to reopen the prescription. A temporary
-    // patient-name lookup failure must not hide unfinished clinical work.
-  }
-
-  return {
-    completed: true,
-    consultationId: consultation.consultationId,
-    queueId: consultation.queueId,
-    patientId: consultation.patientId,
-    patientName,
-  };
 }

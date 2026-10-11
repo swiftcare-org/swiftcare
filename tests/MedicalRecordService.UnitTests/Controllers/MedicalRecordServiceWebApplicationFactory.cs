@@ -15,6 +15,7 @@ public sealed class MedicalRecordServiceWebApplicationFactory : WebApplicationFa
 
     public Mock<IConsultationService> ConsultationServiceMock { get; } = new();
     public Mock<IConsultationTemplateService> TemplateServiceMock { get; } = new();
+    public Mock<IConsultationCompletionService> CompletionServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -35,8 +36,10 @@ public sealed class MedicalRecordServiceWebApplicationFactory : WebApplicationFa
         {
             services.RemoveAll<IConsultationService>();
             services.RemoveAll<IConsultationTemplateService>();
+            services.RemoveAll<IConsultationCompletionService>();
             services.AddScoped(_ => ConsultationServiceMock.Object);
             services.AddScoped(_ => TemplateServiceMock.Object);
+            services.AddScoped(_ => CompletionServiceMock.Object);
         });
     }
 }
