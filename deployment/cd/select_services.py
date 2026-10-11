@@ -84,6 +84,9 @@ def decide(item, manifest, state, release_sha, changed_files):
         return True, "app does not exist yet"
     if previous is None:
         return True, "running version is unknown or not a commit"
+    app = (state.get("apps") or {}).get(item["key"]) or {}
+    if item["kind"] != "frontend" and app.get("ready") is False:
+        return True, "latest revision is not ready (an earlier release left it broken)"
     if previous == release_sha:
         return False, "already at the release commit"
     changed = changed_files(previous, release_sha)

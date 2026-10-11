@@ -97,8 +97,6 @@ jobs:
       auth_matrix: ${{ steps.select.outputs.auth_matrix }}
       services_matrix: ${{ steps.select.outputs.services_matrix }}
       services_count: ${{ steps.select.outputs.services_count }}
-      images_matrix: ${{ steps.select.outputs.images_matrix }}
-      images_count: ${{ steps.select.outputs.images_count }}
       gateway: ${{ steps.select.outputs.gateway }}
       frontend: ${{ steps.select.outputs.frontend }}
     env:
@@ -189,23 +187,74 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
-  images:
-    name: Build ${{ matrix.key }} image
+  # AuthService goes first: the gateway checks every session with it and every smoke check
+  # signs in through it.
+  deploy-auth:
+    name: Release ${{ matrix.name }}
     needs: plan
-    if: needs.plan.outputs.images_count != '0' && !inputs.plan_only
+    if: needs.plan.outputs.auth == 'true' && !inputs.plan_only
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.auth_matrix || '{"include":[]}') }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/deploy-service.yml
+    with:
+      key: ${{ matrix.key }}
+      name: ${{ matrix.name }}
+      app_var: ${{ matrix.app_var }}
+      image: ${{ matrix.image }}
+      dockerfile: ${{ matrix.dockerfile }}
+      migrate_job_var: ${{ matrix.migrate_job_var }}
+      db_user_var: ${{ matrix.db_user_var }}
+      db_password_var: ${{ matrix.db_password_var }}
+      release_sha: ${{ needs.plan.outputs.release_sha }}
+      bootstrap_admin: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin || false }}
+      rollback_drill: ${{ github.event_name == 'workflow_dispatch' && inputs.rollback_drill || 'none' }}
+
+  deploy-services:
+    name: Release ${{ matrix.name }}
+    needs: [plan, deploy-auth]
+    if: >-
+      always() && needs.plan.result == 'success' && !inputs.plan_only &&
+      needs.plan.outputs.services_count != '0' &&
+      (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.services_matrix || '{"include":[]}') }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/deploy-service.yml
+    with:
+      key: ${{ matrix.key }}
+      name: ${{ matrix.name }}
+      app_var: ${{ matrix.app_var }}
+      image: ${{ matrix.image }}
+      dockerfile: ${{ matrix.dockerfile }}
+      migrate_job_var: ${{ matrix.migrate_job_var }}
+      db_user_var: ${{ matrix.db_user_var }}
+      db_password_var: ${{ matrix.db_password_var }}
+      release_sha: ${{ needs.plan.outputs.release_sha }}
+      rollback_drill: ${{ github.event_name == 'workflow_dispatch' && inputs.rollback_drill || 'none' }}
+
+  gateway-image:
+    name: Build ApiGateway image
+    needs: plan
+    if: needs.plan.outputs.gateway == 'true' && !inputs.plan_only
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.images_matrix || '{"include":[]}') }}
     steps:
       - name: Check out the release commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.DEPLOY_SHA }}
+          ref: ${{ needs.plan.outputs.release_sha }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -217,73 +266,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push ${{ matrix.name }}
+      - name: Build and push ApiGateway
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: ApiGateway/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REPOSITORY }}/${{ matrix.image }}:${{ env.DEPLOY_SHA }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
-
-  # AuthService goes first: the gateway checks every session with it and every smoke check
-  # signs in through it.
-  deploy-auth:
-    name: Release ${{ matrix.name }}
-    needs: [plan, images]
-    if: needs.plan.outputs.auth == 'true' && !inputs.plan_only
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.auth_matrix || '{"include":[]}') }}
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/deploy-service.yml
-    with:
-      key: ${{ matrix.key }}
-      name: ${{ matrix.name }}
-      app_var: ${{ matrix.app_var }}
-      migrate_job_var: ${{ matrix.migrate_job_var }}
-      db_user_var: ${{ matrix.db_user_var }}
-      db_password_var: ${{ matrix.db_password_var }}
-      release_sha: ${{ needs.plan.outputs.release_sha }}
-      bootstrap_admin: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin || false }}
-      rollback_drill: ${{ github.event_name == 'workflow_dispatch' && inputs.rollback_drill || 'none' }}
-
-  deploy-services:
-    name: Release ${{ matrix.name }}
-    needs: [plan, images, deploy-auth]
-    if: >-
-      always() && needs.plan.result == 'success' && !inputs.plan_only &&
-      needs.plan.outputs.services_count != '0' && needs.images.result == 'success' &&
-      (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped')
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.services_matrix || '{"include":[]}') }}
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/deploy-service.yml
-    with:
-      key: ${{ matrix.key }}
-      name: ${{ matrix.name }}
-      app_var: ${{ matrix.app_var }}
-      migrate_job_var: ${{ matrix.migrate_job_var }}
-      db_user_var: ${{ matrix.db_user_var }}
-      db_password_var: ${{ matrix.db_password_var }}
-      release_sha: ${{ needs.plan.outputs.release_sha }}
-      rollback_drill: ${{ github.event_name == 'workflow_dispatch' && inputs.rollback_drill || 'none' }}
+          tags: ${{ env.IMAGE_REPOSITORY }}/swiftcare-gateway:${{ needs.plan.outputs.release_sha }}
+          cache-from: type=gha,scope=swiftcare-gateway
+          cache-to: type=gha,mode=max,scope=swiftcare-gateway
 
   # The gateway is released last and only when no selected service failed, so it never routes to a
   # service that was rolled back or left unhealthy. Its smoke check exercises every service.
   deploy-gateway:
     name: Release the gateway
-    needs: [plan, images, deploy-auth, deploy-services]
+    needs: [plan, gateway-image, deploy-auth, deploy-services]
     if: >-
       always() && needs.plan.result == 'success' && !inputs.plan_only &&
-      needs.plan.outputs.gateway == 'true' && needs.images.result == 'success' &&
+      needs.plan.outputs.gateway == 'true' && needs.gateway-image.result == 'success' &&
       (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') &&
       (needs.deploy-services.result == 'success' || needs.deploy-services.result == 'skipped')
     runs-on: ubuntu-latest
@@ -400,7 +401,7 @@ jobs:
   # succeeded or been skipped.
   deploy-frontend:
     name: Build and deploy frontend
-    needs: [plan, images, deploy-auth, deploy-services, deploy-gateway]
+    needs: [plan, deploy-auth, deploy-services, gateway-image, deploy-gateway]
     if: >-
       always() && needs.plan.result == 'success' && !inputs.plan_only &&
       needs.plan.outputs.frontend == 'true' &&
@@ -472,7 +473,7 @@ jobs:
 
   summary:
     name: Release summary
-    needs: [plan, images, deploy-auth, deploy-services, deploy-gateway, deploy-frontend]
+    needs: [plan, deploy-auth, deploy-services, gateway-image, deploy-gateway, deploy-frontend]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5

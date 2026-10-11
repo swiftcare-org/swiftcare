@@ -2,7 +2,7 @@
 # Write one deployable's release result as JSON, for the final summary.
 # Usage: record-result.sh OUTPUT_DIR
 # Environment: KEY, JOB_STATUS (success|failure|cancelled), and for backend apps DEPLOY_OUTCOME,
-# ROLLBACK_OUTCOME, ROLLBACK_RESULT (done|unavailable), POST_ROLLBACK_SMOKE, PREVIOUS_IMAGE and
+# ROLLBACK_OUTCOME, ROLLBACK_RESULT (done|unavailable|same), POST_ROLLBACK_SMOKE, PREVIOUS_IMAGE and
 # DEPLOY_SHA. The frontend passes DEPLOY_OUTCOME=n/a.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -40,6 +40,9 @@ elif [ "$rollback_outcome" = "success" ] && [ "$rollback_result" = "done" ]; the
 elif [ "$rollback_outcome" = "success" ] && [ "$rollback_result" = "unavailable" ]; then
   status="Failed"
   detail="No previous image existed, so it was left as deployed."
+elif [ "$rollback_outcome" = "success" ] && [ "$rollback_result" = "same" ]; then
+  status="Failed"
+  detail="It already ran this image before the release, so there was nothing to roll back to."
 elif [ "$rollback_outcome" = "failure" ]; then
   status="Failed"
   detail="The rollback itself failed. Check the app now."

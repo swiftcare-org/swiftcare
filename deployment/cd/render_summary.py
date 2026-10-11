@@ -51,7 +51,7 @@ def render(selection, results, plan_only=False):
                 result["detail"],
             )
         else:
-            cells = (before, "unchanged", "Not run", "An earlier job failed or was skipped.")
+            cells = (before, "unchanged", "Not run", "Its image build or an earlier job failed, or it was skipped.")
         lines.append(f"| {key} | " + " | ".join(cells) + " |")
     lines += ["", "Plan only: nothing was changed in Azure." if plan_only else REMINDER, ""]
     return "\n".join(lines)

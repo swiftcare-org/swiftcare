@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Read what each deployable runs today, as input for select_services.py. Read-only.
 # Usage: read-state.sh OUTPUT_FILE
-# Apps: existence, image and running status. Frontend: the commit published in /version.json.
+# Apps: existence, image, running status and whether the latest revision is ready.
+# Frontend: the commit published in /version.json.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -14,9 +15,13 @@ while IFS= read -r -u 3 key; do
   if app_exists "$app"; then
     image=$(current_image "$app")
     status=$(running_status "$app")
-    apps=$(jq -c --arg key "$key" --arg image "$image" --arg status "$status" \
-      '. + {($key): {exists: true, image: $image, running: $status}}' <<<"$apps")
-    log "$key: ${image##*/} ($status)"
+    revisions=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$app" \
+      --query "{latest:properties.latestRevisionName,ready:properties.latestReadyRevisionName}" --output json)
+    # A latest revision that never became ready means an earlier release left the app broken.
+    ready=$(jq -r 'if (.latest // "") != "" and .latest == .ready then "true" else "false" end' <<<"$revisions")
+    apps=$(jq -c --arg key "$key" --arg image "$image" --arg status "$status" --argjson ready "$ready" \
+      '. + {($key): {exists: true, image: $image, running: $status, ready: $ready}}' <<<"$apps")
+    log "$key: ${image##*/} ($status, latest revision ready: $ready)"
   else
     apps=$(jq -c --arg key "$key" '. + {($key): {exists: false, image: null, running: null}}' <<<"$apps")
     log "$key: no app"

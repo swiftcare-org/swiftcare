@@ -87,6 +87,19 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(selected, {})
         self.assertIn("already at the release commit", skipped["auth"])
 
+    def test_app_whose_latest_revision_is_not_ready_is_selected_again(self):
+        current = state(sha=NEW, frontend=NEW)
+        current["apps"]["queue"]["ready"] = False
+        selected, skipped = sel.select(
+            MANIFEST, current, NEW, "changed", False, lambda previous, release: self.fail("no diff is needed"))
+        self.assertEqual(list(selected), ["queue"])
+        self.assertIn("not ready", selected["queue"])
+        self.assertIn("already at the release commit", skipped["patient"])
+
+    def test_state_without_readiness_counts_as_ready(self):
+        selected, _ = sel.select(MANIFEST, state(sha=NEW, frontend=NEW), NEW, "changed", False, lambda p, r: [])
+        self.assertEqual(selected, {})
+
     def test_unknown_image_tag_selects_the_app(self):
         for tag in ("ghcr.io/x/swiftcare-auth:latest", "ghcr.io/x/swiftcare-auth", "ghcr.io/x/swiftcare-auth:ABCDEF"):
             with self.subTest(tag=tag):

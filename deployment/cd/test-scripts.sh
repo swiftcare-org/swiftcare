@@ -191,6 +191,12 @@ add_app swiftcare-patient "$NEW" Running 5002
 expect_success "accepts a first deployment with no previous image" bash "$HERE/rollback-service.sh" patient ""
 expect_equal "reports unavailable" "$(grep '^rollback=' "$GITHUB_OUTPUT")" "rollback=unavailable"
 expect_not_logged "changes nothing" "containerapp update"
+reset
+add_app swiftcare-patient "$OLD" Running 5002
+: > "$GITHUB_OUTPUT"
+expect_success "accepts a release that did not change the image" bash "$HERE/rollback-service.sh" patient "ghcr.io/org/swiftcare-patient:$OLD"
+expect_equal "reports that the image was the same" "$(grep '^rollback=' "$GITHUB_OUTPUT")" "rollback=same"
+expect_not_logged "does not redeploy the same image" "containerapp update"
 
 echo "== deploy-gateway"
 reset
@@ -241,6 +247,10 @@ export FAKE_CURL_BODY="{\"sha\":\"$NEW\"}"
 expect_success "reads the apps and the frontend commit" bash "$HERE/read-state.sh" "$WORK/state.json"
 expect_equal "records an app image" "$(jq -r '.apps.auth.image' "$WORK/state.json")" "ghcr.io/org/swiftcare-auth:$OLD"
 expect_equal "records a missing app" "$(jq -r '.apps.patient.exists' "$WORK/state.json")" "false"
+expect_equal "records a ready latest revision" "$(jq -r '.apps.auth.ready' "$WORK/state.json")" "true"
+echo "swiftcare-queue--broken" > "$FAKE_AZ_STATE/swiftcare-queue.rev"
+bash "$HERE/read-state.sh" "$WORK/state.json" > /dev/null 2>&1
+expect_equal "records a latest revision that never became ready" "$(jq -r '.apps.queue.ready' "$WORK/state.json")" "false"
 expect_equal "records the frontend commit" "$(jq -r '.frontend.sha' "$WORK/state.json")" "$NEW"
 export FAKE_CURL_BODY='<html>not json</html>'
 bash "$HERE/read-state.sh" "$WORK/state.json" > /dev/null 2>&1
@@ -353,6 +363,8 @@ expect_equal "records the commit it returned to" "$(jq -r '.previous' "$WORK/res
 expect_equal "notes a healthy app after rollback" "$(jq -r '.detail' "$WORK/results/queue.json" | grep -c 'pass again')" "1"
 expect_equal "first deployment has nothing to roll back to" "$(record queue failure success success unavailable skipped "")" "Failed"
 expect_equal "says why nothing was rolled back" "$(jq -r '.detail' "$WORK/results/queue.json" | grep -c 'No previous image')" "1"
+expect_equal "a rollback to the same image is not reported as rolled back" "$(record queue failure success success same skipped "ghcr.io/org/q:$OLD")" "Failed"
+expect_equal "says there was nothing to roll back to" "$(jq -r '.detail' "$WORK/results/queue.json" | grep -c 'nothing to roll back')" "1"
 expect_equal "a failed rollback is reported" "$(record queue failure success failure "" skipped "ghcr.io/org/q:$OLD")" "Failed"
 expect_equal "says the rollback failed" "$(jq -r '.detail' "$WORK/results/queue.json" | grep -c 'rollback itself failed')" "1"
 expect_equal "a cancelled job is Cancelled" "$(record queue cancelled success skipped "" skipped "")" "Cancelled"

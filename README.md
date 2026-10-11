@@ -451,7 +451,7 @@ The `plan` job compares each Container App's running commit (the SHA in its imag
 | `.github/workflows/cd.yml`, `.github/workflows/deploy-service.yml`, `deployment/cd/**`, `.dockerignore` | every deployable |
 | Tests, docs, Terraform, Compose, `ci.yml`, solution files | nothing |
 
-Terraform never runs in CD, so infrastructure changes are applied through a reviewed plan and release nothing. A running version that cannot be read (no app, a tag that is not a commit, or a commit missing from the repository history) releases that deployable. A service app that does not exist yet also releases the gateway, because the gateway needs its new internal address. The plan job writes the decision for every deployable to the run summary.
+Terraform never runs in CD, so infrastructure changes are applied through a reviewed plan and release nothing. A running version that cannot be read (no app, a tag that is not a commit, or a commit missing from the repository history) releases that deployable, and so does an app whose latest revision never became ready, so a failed first deployment is retried by the next run. A service app that does not exist yet also releases the gateway, because the gateway needs its new internal address. The plan job writes the decision for every deployable to the run summary.
 
 #### Manual trigger
 
@@ -475,7 +475,7 @@ gh workflow run cd.yml --ref develop -f release=changed -f plan_only=true
 
 #### Order, smoke checks and rollback
 
-1. Images for the selected backend deployables are built in parallel and tagged with the release commit.
+1. Each selected backend deployable builds its own image, tagged with the release commit, inside its own job. A failed build holds back only that deployable.
 2. AuthService is released first, because the gateway validates every session with it and every smoke check signs in through it.
 3. The other selected services are released in parallel, each in its own job. A job captures the running image, runs only its own migration job, deploys, waits for a ready revision (starting the app first when it is stopped), and smoke tests through the gateway.
 4. The gateway is released last and only when no selected service failed. Its smoke test runs every service check.
@@ -483,7 +483,7 @@ gh workflow run cd.yml --ref develop -f release=changed -f plan_only=true
 
 If a service fails after its deployment started, only that service returns to the image it ran before the release, and its smoke checks run again. Other services keep the versions just deployed, the gateway and frontend are skipped, and the run is marked failed. A failure before the deployment (for example a failed migration) leaves the running version unchanged.
 Rollback restores images only. Schemas, data, secrets, settings and domain changes stay as they are, so migrations must stay compatible with the previous image.
-The first deployment of a service has no previous image and is left as deployed when it fails.
+The first deployment of a service has no previous image and is left as deployed when it fails. When the app already ran the release image before the run (for example `release=all` on an unchanged app), there is nothing to roll back to and the summary says so.
 
 Smoke checks go through the gateway using two synthetic accounts (a Receptionist and a Doctor) stored as `SMOKE_RECEPTIONIST_USERNAME`, `SMOKE_RECEPTIONIST_PASSWORD`, `SMOKE_DOCTOR_USERNAME` and `SMOKE_DOCTOR_PASSWORD` in the `azure-development` Environment. Create both through the Admin user screen; the Doctor needs an unused room label of at most 16 characters and never calls patients.
 The checks only read data, never print response bodies or tokens, and revoke each token afterwards.

@@ -32,7 +32,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("| auth | `aaaaaaaaaaaa` | `bbbbbbbbbbbb` | Deployed |", text)
         self.assertIn("| queue | `aaaaaaaaaaaa` | see detail | Rolled back | Back on aaaaaaaaaaaa. |", text)
         self.assertIn("| patient | `aaaaaaaaaaaa` | unchanged | Skipped | no changes |", text)
-        self.assertIn("| gateway | `aaaaaaaaaaaa` | unchanged | Not run |", text)
+        self.assertIn("| gateway | `aaaaaaaaaaaa` | unchanged | Not run | Its image build", text)
         self.assertIn("stay Running", text)
 
     def test_plan_only_changes_nothing_and_says_so(self):

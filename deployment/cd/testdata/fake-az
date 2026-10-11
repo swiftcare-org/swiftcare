@@ -39,6 +39,8 @@ case "$group $sub" in
         fi
         printf '{"running":"%s","latest":"%s","ready":"%s","image":"%s"}\n' \
           "$(cat "$state/$app.running")" "$(cat "$state/$app.rev")" "$(cat "$state/$app.ready")" "$(cat "$state/$app.image")" ;;
+      *latestRevisionName*latestReadyRevisionName*)
+        printf '{"latest":"%s","ready":"%s"}\n' "$(cat "$state/$app.rev")" "$(cat "$state/$app.ready")" ;;
       properties.runningStatus) cat "$state/$app.running"; echo ;;
       properties.template.containers*) cat "$state/$app.image"; echo ;;
       properties.latestRevisionName) cat "$state/$app.rev"; echo ;;
