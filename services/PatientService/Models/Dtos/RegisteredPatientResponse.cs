@@ -7,4 +7,5 @@ public sealed class RegisteredPatientResponse
 {
     public required Guid PatientId { get; init; }
     public required DateTime CreatedAt { get; init; }
+    public bool QueueDeliveryPending { get; init; }
 }

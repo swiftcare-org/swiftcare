@@ -8,9 +8,17 @@ public sealed class PatientDbContext(DbContextOptions<PatientDbContext> options)
     public DbSet<Patient> Patients => Set<Patient>();
     public DbSet<Allergy> Allergies => Set<Allergy>();
     public DbSet<ChronicCondition> ChronicConditions => Set<ChronicCondition>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.HasKey(message => message.Id);
+            entity.Property(message => message.Id).ValueGeneratedNever();
+            entity.Property(message => message.Payload).IsRequired();
+            entity.HasIndex(message => new { message.CreatedAt, message.Id });
+        });
         modelBuilder.Entity<Patient>(entity =>
         {
             entity.Property(p => p.Id).ValueGeneratedNever();
