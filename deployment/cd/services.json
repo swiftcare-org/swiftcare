@@ -16,7 +16,6 @@
   "shared": {
     "files": [
       ".github/workflows/cd.yml",
-      ".github/workflows/deploy-service.yml",
       ".dockerignore"
     ],
     "prefixes": [

@@ -203,7 +203,9 @@ jobs:
           path: TestResults
 
   mutation-testing:
-    name: Mutation testing (${{ matrix.service }})
+    # No matrix expression in the name: GitHub appends the service itself, and a skipped job
+    # (for example inside the CD quality gate) shows a clean name instead of the raw template.
+    name: Mutation testing
     needs: build-and-test
     # A reusable call from CD reports the caller's event and workflow name, so the CD
     # quality gate does not run the full mutation matrix.

@@ -164,6 +164,9 @@ def build_result(manifest, state, release_sha, mode, selected, skipped):
         images.append(entry(manifest["gateway"]))
     auth = [entry(item) for item in services if item["key"] == "auth"]
     others = [entry(item) for item in services if item["key"] != "auth"]
+    # Settings of every service, keyed by display name. The workflow's matrix holds only the
+    # names, so GitHub shows readable job names, and each job looks up its settings here.
+    meta = {item["name"]: entry(item) for item in manifest["services"]}
 
     rows = []
     for item in items.values():
@@ -181,6 +184,7 @@ def build_result(manifest, state, release_sha, mode, selected, skipped):
         "mode": mode,
         "auth": bool(auth),
         "auth_entry": auth,
+        "service_meta": meta,
         "services": others,
         "images": images,
         "gateway": "gateway" in selected,
@@ -204,14 +208,13 @@ def summary_markdown(result):
 
 
 def github_outputs(result):
-    """Flat key/value pairs for $GITHUB_OUTPUT; matrices are JSON with an `include` list."""
+    """Flat key/value pairs for $GITHUB_OUTPUT. Lists and the settings table are compact JSON."""
     return {
         "release_sha": result["release_sha"],
         "auth": str(result["auth"]).lower(),
-        "auth_matrix": json.dumps({"include": result["auth_entry"]}, separators=(",", ":")),
-        "services_matrix": json.dumps({"include": result["services"]}, separators=(",", ":")),
+        "services_list": json.dumps([service["name"] for service in result["services"]], separators=(",", ":")),
         "services_count": str(len(result["services"])),
-        "images_matrix": json.dumps({"include": result["images"]}, separators=(",", ":")),
+        "service_meta": json.dumps(result["service_meta"], separators=(",", ":")),
         "images_count": str(len(result["images"])),
         "gateway": str(result["gateway"]).lower(),
         "frontend": str(result["frontend"]).lower(),
