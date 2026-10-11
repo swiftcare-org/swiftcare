@@ -144,6 +144,9 @@ public class DoctorDashboardPage
     public bool HasCurrentPatientLoadError =>
         _driver.FindElements(By.XPath("//*[normalize-space()='Current Consultation Unavailable']")).Count > 0;
 
+    public string WaitForArrivalNotice() =>
+        _wait.Until(d => d.FindElement(By.CssSelector("[data-testid='dashboard-notice']"))).Text.Trim();
+
     // SWC-92 turns both identifiers in the current-patient line into links to the same
     // patient profile. Keep these selectors scoped to that line so they cannot match a
     // patient link rendered in the shared waiting pool below it.
