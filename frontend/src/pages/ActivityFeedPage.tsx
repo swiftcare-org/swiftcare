@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { listActivity, type ActivityEntry, type ActivityType } from '../api/notifications';
+import { listActivity, type ActivityEntry, type ActivityType, type ActivityView } from '../api/notifications';
 import { getPatient } from '../api/patients';
 import { Banner } from '../components/ui/Banner';
+import { Button } from '../components/ui/Button';
 import { EmptyState, LoadingText } from '../components/ui/Feedback';
 import { numericClassName } from '../components/ui/fieldStyles';
 import { SectionCard } from '../components/ui/SectionCard';
@@ -40,6 +41,41 @@ function describe(entry: ActivityEntry, patientName: string | undefined): string
 }
 
 export function ActivityFeedPage() {
+  const [view, setView] = useState<ActivityView>('today');
+
+  return (
+    <DashboardShell sectionLabel="Activity Feed">
+      <SectionCard
+        title="Department Activity"
+        description="Check-ins, patients called and completed consultations, newest first. Updates every 10 seconds."
+        actions={
+          <div role="group" aria-label="Activity date filter" className="flex gap-2">
+            <Button
+              size="sm"
+              variant={view === 'today' ? 'primary' : 'secondary'}
+              aria-pressed={view === 'today'}
+              onClick={() => setView('today')}
+            >
+              Today
+            </Button>
+            <Button
+              size="sm"
+              variant={view === 'all' ? 'primary' : 'secondary'}
+              aria-pressed={view === 'all'}
+              onClick={() => setView('all')}
+            >
+              All activity
+            </Button>
+          </div>
+        }
+      >
+        <ActivityFeedContent key={view} view={view} />
+      </SectionCard>
+    </DashboardShell>
+  );
+}
+
+function ActivityFeedContent({ view }: { view: ActivityView }) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -79,7 +115,7 @@ export function ActivityFeedPage() {
 
     async function refresh() {
       try {
-        const loaded = await listActivity();
+        const loaded = await listActivity(view);
         if (disposed) {
           return;
         }
@@ -111,56 +147,53 @@ export function ActivityFeedPage() {
       window.clearTimeout(initialLoadId);
       window.clearInterval(pollId);
     };
-  }, []);
+  }, [view]);
 
   return (
-    <DashboardShell sectionLabel="Activity Feed">
-      <SectionCard
-        title="Department Activity"
-        description="Check-ins, patients called and completed consultations, newest first. Updates every 10 seconds."
-      >
-        {loadState === 'loading' && <LoadingText>Loading the activity feed…</LoadingText>}
-        {loadState === 'error' && (
-          <Banner tone="error" title="Activity Feed Unavailable" role="alert">
-            Unable to load the activity feed. It will be tried again automatically.
-          </Banner>
-        )}
-        {loadState === 'loaded' && refreshFailed && (
-          <Banner tone="warning" title="Feed Not Updating" role="status" className="mb-4">
-            The latest activity could not be loaded. Showing the last feed received.
-          </Banner>
-        )}
-        {loadState === 'loaded' && entries.length === 0 && <EmptyState>No activity recorded yet.</EmptyState>}
+    <>
+      {loadState === 'loading' && <LoadingText>Loading the activity feed…</LoadingText>}
+      {loadState === 'error' && (
+        <Banner tone="error" title="Activity Feed Unavailable" role="alert">
+          Unable to load the activity feed. It will be tried again automatically.
+        </Banner>
+      )}
+      {loadState === 'loaded' && refreshFailed && (
+        <Banner tone="warning" title="Feed Not Updating" role="status" className="mb-4">
+          The latest activity could not be loaded. Showing the last feed received.
+        </Banner>
+      )}
+      {loadState === 'loaded' && entries.length === 0 && (
+        <EmptyState>{view === 'today' ? 'No activity recorded today' : 'No activity recorded yet.'}</EmptyState>
+      )}
 
-        {loadState === 'loaded' && entries.length > 0 && (
-          <ol className="divide-y divide-slate-100" data-testid="activity-feed">
-            {entries.map((entry) => {
-              const badge = TYPE_BADGES[entry.type] ?? UNKNOWN_BADGE;
+      {loadState === 'loaded' && entries.length > 0 && (
+        <ol className="divide-y divide-slate-100" data-testid="activity-feed">
+          {entries.map((entry) => {
+            const badge = TYPE_BADGES[entry.type] ?? UNKNOWN_BADGE;
 
-              return (
-                <li
-                  key={entry.id}
-                  data-testid="activity-entry"
-                  className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:gap-4"
+            return (
+              <li
+                key={entry.id}
+                data-testid="activity-entry"
+                className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:gap-4"
+              >
+                <time
+                  dateTime={entry.occurredAt}
+                  className={`shrink-0 text-xs text-slate-500 sm:w-40 ${numericClassName}`}
                 >
-                  <time
-                    dateTime={entry.occurredAt}
-                    className={`shrink-0 text-xs text-slate-500 sm:w-40 ${numericClassName}`}
-                  >
-                    {formatDateTime(entry.occurredAt)}
-                  </time>
-                  <span className="shrink-0 sm:w-24">
-                    <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
-                  </span>
-                  <p className="min-w-0 break-words text-sm text-slate-900">
-                    {describe(entry, patientNames[entry.patientId])}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </SectionCard>
-    </DashboardShell>
+                  {formatDateTime(entry.occurredAt)}
+                </time>
+                <span className="shrink-0 sm:w-24">
+                  <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
+                </span>
+                <p className="min-w-0 break-words text-sm text-slate-900">
+                  {describe(entry, patientNames[entry.patientId])}
+                </p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </>
   );
 }
