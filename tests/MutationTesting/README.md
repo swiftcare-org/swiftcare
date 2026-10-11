@@ -102,21 +102,35 @@ An **equivalent mutant** changes the code without changing behaviour (for exampl
 where the two values can never be equal), so no test can kill it. These are recorded with a
 justification in the result report instead of being "fixed".
 
-## CI handoff (DevOps)
+## CI
 
-The `mutation-testing` job in `.github/workflows/ci.yml` runs after the existing .NET build and test job on pull requests to `main` or `develop`, and on manual `workflow_dispatch` runs.
-One matrix leg runs `run-mutation-tests.ps1` for each of the seven services above.
-Push and reusable workflow calls do not run mutation testing.
+The `mutation-testing` job in `.github/workflows/ci.yml` runs after the .NET build and test job.
+One matrix leg runs `run-mutation-tests.ps1` for each of the seven services above, and each
+leg reports as its own check, `Mutation testing (<Service>)`.
 
-Pull request legs fetch full Git history and pass `-Since origin/<base branch>` to mutate only changed code.
-A manual run passes an empty `-Since` value and mutates the full service.
-Each leg writes its score table to the GitHub Actions job summary and uploads its result directory as `mutation-report-<Service>`, including the HTML report when Stryker produces one.
-Upload runs even when the mutation step fails.
-The script returns a failure if the configured service break threshold is missed or no report is produced.
+| Event | Runs | Mutates |
+|---|---|---|
+| Pull request into `develop` or `main`, opened or updated | Yes | Code changed since the base branch (`-Since origin/<base branch>`) |
+| Manual **Run workflow** | Yes | Every service in full, on the chosen ref |
+| Push to `develop` or `main` (a merge) | No | - |
+| CD calling CI (`workflow_call`) | No | - |
 
-After the workflow is merged, inspect a pull request CI run for seven matrix results, score tables and downloadable reports.
-Use the CI workflow's manual Run workflow option on the intended ref to verify a full seven-service run.
-Record the run IDs and results; the workflow definition alone does not establish that either mode or the failure threshold passed in GitHub Actions.
+Why it runs where it does:
+
+- **Pull requests** are where a weaker test suite can still be stopped. A leg fails when its
+  service scores below its break threshold, and the seven checks are required in the `develop`
+  and `main` branch rulesets, so that blocks the merge. Mutating only changed code keeps a pull
+  request run to minutes.
+- **Not on push or in CD.** The merged code already passed on its pull request, a failure after
+  the merge could no longer block it, and a full run (about 16 minutes) would delay every
+  deployment.
+- **A full run** of every service is started manually with **Run workflow**, for example before
+  a release or to refresh the results below.
+
+Each leg writes its score table to the GitHub Actions job summary and uploads its result
+directory as `mutation-report-<Service>`, including the HTML report. Upload runs even when the
+mutation step fails. The script fails when the service scores below its break threshold or
+produces no report.
 
 ## Results
 
