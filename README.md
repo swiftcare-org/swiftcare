@@ -61,7 +61,6 @@ Sprint 1 focuses on AuthService, PatientService, and QueueService.
 swiftcare/
 |-- .github/workflows/ci.yml
 |-- .github/workflows/cd.yml
-|-- .github/workflows/deploy-service.yml
 |-- ApiGateway/
 |-- frontend/
 |-- services/
@@ -448,7 +447,7 @@ The `plan` job compares each Container App's running commit (the SHA in its imag
 | `services/<Name>/**` | that service |
 | `ApiGateway/**` | the gateway |
 | `frontend/**` | the frontend |
-| `.github/workflows/cd.yml`, `.github/workflows/deploy-service.yml`, `deployment/cd/**`, `.dockerignore` | every deployable |
+| `.github/workflows/cd.yml`, `deployment/cd/**`, `.dockerignore` | every deployable |
 | Tests, docs, Terraform, Compose, `ci.yml`, solution files | nothing |
 
 Terraform never runs in CD, so infrastructure changes are applied through a reviewed plan and release nothing. A running version that cannot be read (no app, a tag that is not a commit, or a commit missing from the repository history) releases that deployable, and so does an app whose latest revision never became ready, so a failed first deployment is retried by the next run. A service app that does not exist yet also releases the gateway, because the gateway needs its new internal address. The plan job writes the decision for every deployable to the run summary.
@@ -501,7 +500,7 @@ A release starts the apps it deploys, plus AuthService and the gateway it needs 
 
 #### Adding a service
 
-Add one entry to `deployment/cd/services.json`, create its Environment values, and add its app-name variable to the environment blocks of the plan job, the gateway job and `deploy-service.yml`. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
+Add one entry to `deployment/cd/services.json`, create its Environment values, and add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
 
 #### Local checks
 

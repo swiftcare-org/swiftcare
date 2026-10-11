@@ -298,6 +298,12 @@ class ManifestTests(unittest.TestCase):
         in_manifest = {item["dockerfile"] for item in MANIFEST["services"] + [MANIFEST["gateway"]]}
         self.assertEqual(in_repo, in_manifest)
 
+    def test_shared_files_and_prefixes_exist(self):
+        for path in MANIFEST["shared"]["files"]:
+            self.assertTrue((ROOT / path).is_file(), path)
+        for prefix in MANIFEST["shared"]["prefixes"]:
+            self.assertTrue((ROOT / prefix).is_dir(), prefix)
+
     def test_manifest_paths_exist(self):
         for item in MANIFEST["services"] + [MANIFEST["gateway"], MANIFEST["frontend"]]:
             self.assertTrue((ROOT / item["path"]).is_dir(), item["path"])
