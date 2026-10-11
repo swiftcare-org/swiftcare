@@ -27,9 +27,9 @@
       "cleartext"
     ],
     "thresholds": {
-      "high": 90,
-      "low": 85,
-      "break": 85
+      "high": 95,
+      "low": 90,
+      "break": 90
     }
   }
 }

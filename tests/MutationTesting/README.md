@@ -122,7 +122,7 @@ Why it runs where it does:
   and `main` branch rulesets, so that blocks the merge. Mutating only changed code keeps a pull
   request run to minutes.
 - **Not on push or in CD.** The merged code already passed on its pull request, a failure after
-  the merge could no longer block it, and a full run (about 16 minutes) would delay every
+  the merge could no longer block it, and a full run (about 25 minutes) would delay every
   deployment.
 - **A full run** of every service is started manually with **Run workflow**, for example before
   a release or to refresh the results below.
@@ -134,26 +134,34 @@ produces no report.
 
 ## Results
 
-| | Baseline | Final |
-|---|---:|---:|
-| Mutation score (all services) | 62.11% | **90.25%** |
-| Covered score | 77.56% | **98.24%** |
-| Undetected mutants | 540 | 139, all classified |
-| Unit test cases | 630 | 983 |
+Current results (2026-10-11, all seven services):
 
-Full per-service results, the tests added, the defect found and the classification of every
-remaining mutant: [`results/RESULT-mutation-20261005.md`](results/RESULT-mutation-20261005.md).
+| Service | Mutation score | Covered score | Break threshold |
+|---|---:|---:|---:|
+| ApiGateway | 98.26% | 98.69% | 90 |
+| AuthService | 91.96% | 98.62% | 85 |
+| MedicalRecordService | 95.33% | 99.78% | 90 |
+| NotificationService | 89.04% | 97.99% | 80 |
+| PatientService | 91.30% | 97.85% | 85 |
+| PrescriptionService | 91.67% | 98.02% | 85 |
+| QueueService | 91.45% | 97.48% | 85 |
+| **All services** | **92.84%** | **98.45%** | |
 
-NotificationService was added on 2026-10-11 with the same method:
+How the suite got there:
 
-| | Baseline | Final |
-|---|---:|---:|
-| Mutation score | 86.67% | **88.57%** |
-| Covered score | 95.79% | **97.89%** |
-| Undetected mutants | 28 | 24, all classified |
-| Unit test cases | 197 | 201 |
+| | 2026-10-05 baseline | 2026-10-05 final | 2026-10-11 final |
+|---|---:|---:|---:|
+| Services | 6 | 6 | 7 |
+| Mutation score | 62.11% | 90.25% | **92.84%** |
+| Covered score | 77.56% | 98.24% | **98.45%** |
+| Undetected mutants | 540 | 139 | 157, all classified |
+| Unit test cases | 630 | 983 | 1,778 |
 
-Details: [`results/RESULT-mutation-notificationservice-20261011.md`](results/RESULT-mutation-notificationservice-20261011.md).
+Per-service results, the tests added, the defect found (and confirmed fixed) and the
+classification of every remaining mutant:
+[`results/RESULT-mutation-20261011.md`](results/RESULT-mutation-20261011.md). The earlier runs
+are kept in [`RESULT-mutation-20261005.md`](results/RESULT-mutation-20261005.md) and
+[`RESULT-mutation-notificationservice-20261011.md`](results/RESULT-mutation-notificationservice-20261011.md).
 
 Stop the Docker Compose stack before a run: one ApiGateway route test fails while a real
 PrescriptionService is listening on port 5001, and Stryker will not start unless every test
