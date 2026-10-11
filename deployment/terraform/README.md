@@ -297,6 +297,82 @@ Retain sanitized Availability screenshots, location aggregates, plan/apply actio
 
 References: [Microsoft availability tests and agent firewall guidance](https://learn.microsoft.com/en-us/azure/azure-monitor/app/availability), [AzureRM 5.2.0 alert criteria](https://github.com/hashicorp/terraform-provider-azurerm/blob/v5.2.0/website/docs/r/monitor_metric_alert.html.markdown), and [Cloudflare Skip limitations](https://developers.cloudflare.com/waf/custom-rules/skip/).
 
+## Service SQL users
+
+Each service connects with its own MySQL user that has privileges on its own database only. Terraform creates the databases; it does not create users, because MySQL accepts connections only from inside the VNet and the provider cannot reach it. Create or rotate a service user with a temporary manual Container Apps job in `swiftcare-aca-env`, which runs inside the VNet, then delete the job.
+
+Authorization is required before running this: it writes to the shared MySQL server and creates an Azure resource. Read the target server and database with `az mysql flexible-server db list` first and confirm the database exists (for Notification, after the Terraform apply).
+
+Prerequisites: signed in to the Azure for Students subscription, the existing administrator password (`swiftcareadmin`) typed into the shell and never stored, and the database already created. The job image `mysql:8.4` is the public Docker Hub client image.
+
+Step 1 - set the shell variables. The new password uses letters and digits only so it is valid inside a connection string.
+
+```powershell
+$sub = "0f585319-2092-4ed0-993a-b30886e4e07c"
+$rg = "swiftcare-rg"
+$mysqlHost = "swiftcare-mysql.mysql.database.azure.com"
+$jobName = "swiftcare-sqluser-tmp"
+$adminSecure = Read-Host "swiftcareadmin password" -AsSecureString
+$adminPassword = [Net.NetworkCredential]::new("", $adminSecure).Password
+$bytes = [byte[]]::new(32)
+[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$newPassword = ([Convert]::ToBase64String($bytes) -replace '[^A-Za-z0-9]', '').Substring(0, 32)
+```
+
+Step 2 - define a helper that runs one shell script as a short-lived job, prints its output and removes the job. The script is sent base64-encoded so it needs no quoting, holds variable names only, and the passwords travel as job secrets.
+
+```powershell
+function Invoke-SqlJob([string]$Script) {
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Script.Replace("`r`n", "`n")))
+  az containerapp job create --subscription $sub -g $rg -n $jobName --environment swiftcare-aca-env `
+    --trigger-type Manual --replica-timeout 300 --replica-retry-limit 0 --image mysql:8.4 `
+    --cpu 0.25 --memory 0.5Gi `
+    --secrets "mysql-admin=$adminPassword" "new-db=$newPassword" `
+    --env-vars "MYSQL_PWD=secretref:mysql-admin" "NEW_PWD=secretref:new-db" "SQL_HOST=$mysqlHost" "SQL_ADMIN=swiftcareadmin" "NEW_USER=$newUser" `
+    --command "/bin/sh" --args "-c" "echo $encoded | base64 -d | sh" --only-show-errors | Out-Null
+  $execution = az containerapp job start --subscription $sub -g $rg -n $jobName --query name -o tsv
+  do { Start-Sleep 10; $status = az containerapp job execution show --subscription $sub -g $rg -n $jobName --job-execution-name $execution --query properties.status -o tsv } while ($status -in "Running", "Processing", "")
+  "Execution $execution finished: $status"
+  az containerapp job logs show --subscription $sub -g $rg -n $jobName --execution $execution --container $jobName --format text 2>$null
+  az containerapp job delete --subscription $sub -g $rg -n $jobName --yes --only-show-errors | Out-Null
+}
+```
+
+Step 3 - read the existing user names so the new user follows the same convention. This step changes nothing.
+
+```powershell
+$newUser = "discovery"
+Invoke-SqlJob @'
+mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$SQL_ADMIN" -e "SELECT user, host FROM mysql.user WHERE user NOT LIKE 'mysql.%'"
+'@
+```
+
+Step 4 - create the user and grant privileges on its own database only. Set `$newUser` to the name that matches the convention found in Step 3. The script is repeatable: it creates the user if missing and always sets the password. It is shown for Notification; change the database name for another service.
+
+```powershell
+$newUser = "<user name following the convention from Step 3>"
+Invoke-SqlJob @'
+mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$SQL_ADMIN" -e "CREATE USER IF NOT EXISTS '$NEW_USER'@'%' IDENTIFIED BY '$NEW_PWD'; ALTER USER '$NEW_USER'@'%' IDENTIFIED BY '$NEW_PWD'; GRANT ALL PRIVILEGES ON swiftcare_notification.* TO '$NEW_USER'@'%'; FLUSH PRIVILEGES;"
+'@
+```
+
+Step 5 - verify as the new user. The first check must pass and the second must be refused; a refused `USE` on another database proves the grant is scoped.
+
+```powershell
+Invoke-SqlJob @'
+MYSQL_PWD="$NEW_PWD" mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$NEW_USER" -e "USE swiftcare_notification; SELECT 1" >/dev/null 2>&1 && echo "own database: PASS" || echo "own database: FAIL"
+MYSQL_PWD="$NEW_PWD" mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$NEW_USER" -e "USE swiftcare_auth" >/dev/null 2>&1 && echo "other database: FAIL (reachable)" || echo "other database: PASS (refused)"
+'@
+```
+
+Step 6 - store the password where it is needed, then clear the shell. Set it as the GitHub Environment secret `<SERVICE>_DB_PASSWORD` in `azure-development` through the GitHub UI or `gh secret set` typed by the owner, and the user name as the matching variable. Do not print or paste the value.
+
+```powershell
+Remove-Variable adminPassword, adminSecure, newPassword, bytes
+```
+
+Confirm that no temporary job remains with `az containerapp job list --subscription $sub -g $rg --query "[].name" -o tsv`. If a run fails, delete the job with `az containerapp job delete` before retrying. Rotating a password means repeating Steps 1, 4 and 5 and updating the Environment secret before the next release.
+
 ## Cost controls
 
 The paid messaging layer is ephemeral. To remove its Container Instance, NAT Gateway, public IP and Kafka DNS record while retaining the VNet, delegated subnet and private DNS zone:
