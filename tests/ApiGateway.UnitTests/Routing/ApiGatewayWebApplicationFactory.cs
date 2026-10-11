@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
@@ -37,6 +38,11 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
     {
         builder.UseEnvironment("Testing");
         builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ISessionValidator>();
+            services.AddSingleton<ISessionValidator, ValidTestSession>();
+        });
 
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
@@ -63,7 +69,8 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Jti, jti ?? Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, jti ?? Guid.NewGuid().ToString()),
+            new("sessionVersion", Guid.NewGuid().ToString())
         };
 
         if (role is not null)
@@ -82,5 +89,11 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private sealed class ValidTestSession : ISessionValidator
+    {
+        public Task<bool> ValidateAsync(ClaimsPrincipal user, bool revoke, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
     }
 }

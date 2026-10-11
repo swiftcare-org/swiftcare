@@ -39,6 +39,8 @@ builder.Services.AddControllers()
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<SessionValidationService>();
 
 // The connection string is read lazily by EF Core when AuthDbContext is first resolved,
 // so a missing value here doesn't crash registration - the explicit check below (after
