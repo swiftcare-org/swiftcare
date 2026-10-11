@@ -183,7 +183,7 @@ export function PatientRegistrationPage() {
       <div aria-live="polite" className="empty:hidden">
         {status === 'created' && registeredPatient && (
           <Banner tone="success" title="Patient Registered">
-            <p>Patient registered successfully. Patient ID: {registeredPatient.patientId}</p>
+            <p>Patient registered successfully.</p>
             {registeredPatient.queueDeliveryPending && <p>Queue entry is pending. It will be added automatically when the connection is restored.</p>}
             <p className="mt-1">
               <Link to={`/patients/${registeredPatient.patientId}`} className={textLinkClassName}>

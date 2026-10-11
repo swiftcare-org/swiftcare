@@ -812,9 +812,6 @@ export function PrescriptionPage() {
                   <ButtonLink to="/doctor" data-testid="back-to-dashboard">
                     Back to Dashboard
                   </ButtonLink>
-                  <p className="break-all text-xs text-slate-500">
-                    Prescription reference: {savedPrescription.id}
-                  </p>
                 </div>
               </div>
             )}

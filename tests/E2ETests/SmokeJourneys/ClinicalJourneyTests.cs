@@ -71,7 +71,9 @@ public class ClinicalJourneyTests : SeleniumTestBase
         dashboard.ClickCurrentPatientName();
         var profile = new PatientProfilePage(Driver);
         profile.WaitUntilLoaded();
-        Assert.Equal(patient.PatientId, profile.PatientId, ignoreCase: true);
+        Assert.Equal($"/patients/{patient.PatientId}", new Uri(Driver.Url).AbsolutePath);
+        Assert.Equal(patient.Nic, profile.Nic);
+        Assert.False(profile.HasPatientIdField);
         profile.WaitForMedicalAlertCount(2);
         Assert.Equal(new[] { "Allergy Alert", "Chronic Condition Alert" }, profile.MedicalAlertLabelsInOrder);
         Assert.Contains(profile.MedicalAlertMessagesInOrder, message => message.Contains("Penicillin"));

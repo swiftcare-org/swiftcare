@@ -29,7 +29,8 @@ public class AllergyLoadFailureTests : SeleniumTestBase
 
         Assert.False(profile.HasProfileLoadError);
         Assert.False(profile.ShowsNoAllergiesRecorded);
-        Assert.Equal(patient.PatientId, profile.PatientId, ignoreCase: true);
+        Assert.Equal($"/patients/{patient.PatientId}", new Uri(Driver.Url).AbsolutePath);
+        Assert.False(profile.HasPatientIdField);
         Assert.Equal(patient.Nic, profile.Nic);
         Assert.Equal(patient.PhoneNumber, profile.PhoneNumber);
 
@@ -59,7 +60,9 @@ public class AllergyLoadFailureTests : SeleniumTestBase
         profile.WaitForAllergiesLoadError();
 
         Assert.False(profile.HasProfileLoadError);
-        Assert.Equal(patient.PatientId, profile.PatientId, ignoreCase: true);
+        Assert.Equal($"/patients/{patient.PatientId}", new Uri(Driver.Url).AbsolutePath);
+        Assert.Equal(patient.Nic, profile.Nic);
+        Assert.False(profile.HasPatientIdField);
         profile.WaitForChronicConditionAlertContaining("Asthma");
         profile.WaitForConditionRow("Asthma");
         Assert.False(profile.HasAllergyAlert);
