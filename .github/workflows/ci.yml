@@ -45,6 +45,7 @@ jobs:
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
             services/PrescriptionService/Dockerfile
+            services/NotificationService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -380,7 +381,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Build backend images
-        run: docker compose build authservice patientservice queueservice medicalrecordservice prescriptionservice apigateway
+        run: docker compose build authservice patientservice queueservice medicalrecordservice prescriptionservice notificationservice apigateway
 
       - name: Start infrastructure and apply migrations
         shell: bash
@@ -417,12 +418,13 @@ jobs:
           apply_migrations queueservice QueueService
           apply_migrations medicalrecordservice MedicalRecordService
           apply_migrations prescriptionservice PrescriptionService
+          apply_migrations notificationservice NotificationService
 
           docker compose run --rm --no-deps kafka-init
 
       - name: Start application services
         run: |
-          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice prescriptionservice
+          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice prescriptionservice notificationservice
           docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 apigateway
 
       - name: Run Selenium E2E tests
@@ -465,7 +467,7 @@ jobs:
             docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
             docker compose logs --no-color \
               mysql zookeeper kafka kafka-init \
-              authservice patientservice queueservice medicalrecordservice prescriptionservice apigateway \
+              authservice patientservice queueservice medicalrecordservice prescriptionservice notificationservice apigateway \
               > TestResults/E2E/docker-compose.log 2>&1 || true
           fi
 
@@ -555,6 +557,16 @@ jobs:
           cache-from: type=gha,scope=swiftcare-prescription
           cache-to: type=gha,mode=max,scope=swiftcare-prescription
 
+      - name: Build the NotificationService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/NotificationService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-notification
+          cache-to: type=gha,mode=max,scope=swiftcare-notification
+
   container-scan:
     name: Scan container image for CVEs (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -583,6 +595,9 @@ jobs:
           - service: prescription
             dockerfile: services/PrescriptionService/Dockerfile
             scope: swiftcare-prescription
+          - service: notification
+            dockerfile: services/NotificationService/Dockerfile
+            scope: swiftcare-notification
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -677,6 +692,7 @@ jobs:
       QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
       MEDICAL_RECORD_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_medical_record;User Id=root;Password=ci-only-root-password;"
       PRESCRIPTION_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_prescription;User Id=root;Password=ci-only-root-password;"
+      NOTIFICATION_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_notification;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -761,6 +777,14 @@ jobs:
       - name: Check PrescriptionService for model changes without a migration
         if: hashFiles('services/PrescriptionService/PrescriptionService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/PrescriptionService
+
+      - name: Apply NotificationService migrations to a clean database
+        if: hashFiles('services/NotificationService/NotificationService.csproj') != ''
+        run: dotnet ef database update --project services/NotificationService --connection "$NOTIFICATION_DB_CONNECTION"
+
+      - name: Check NotificationService for model changes without a migration
+        if: hashFiles('services/NotificationService/NotificationService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/NotificationService
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})
