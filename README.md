@@ -280,6 +280,8 @@ dotnet test SwiftCare.slnx
 cd frontend && npm run lint && npm run build
 ```
 
+Mutation testing of the unit tests: see [Mutation testing](#mutation-testing-strykernet).
+
 ## Branching strategy
 
 - `main` contains stable, reviewed, releasable code.
@@ -432,6 +434,21 @@ Only `develop` and pull requests into it are analyzed. `main` is not analyzed, s
 - Coverage missing: confirm the `test-results` artifact contains `coverage-report/SonarQube.xml` and the log shows `Imported coverage data for N files`.
 - Authentication error: the token has expired or been revoked; rotate it.
 - Quality gate failed: open the SonarQube link in the job log or pull request comment, read the failed new-code condition, and fix the new code rather than weakening the gate.
+
+### Mutation testing (Stryker.NET)
+
+Owner: Kularatne P.O.N (IT24103437), SE3112 role Mutation Testing (SWC-151).
+
+Mutation testing checks whether the unit tests would catch a bug: Stryker.NET makes small deliberate changes to the service code and reruns the unit tests against each one. It covers all seven backend services (ApiGateway, AuthService, MedicalRecordService, NotificationService, PatientService, PrescriptionService, QueueService). Stryker.NET 5.0.0 is pinned in `dotnet-tools.json`; no database, Kafka or Docker is needed.
+
+```powershell
+cd tests/MutationTesting
+./run-mutation-tests.ps1                                     # all seven services
+./run-mutation-tests.ps1 -Service QueueService -OpenReport   # one service, opens the HTML report
+./run-mutation-tests.ps1 -Since develop                      # only code changed since develop
+```
+
+The **Mutation testing** job runs one leg per service on pull requests into `develop` or `main` (changed code only) and on manual runs (every service in full). It is not run on push or by CD. A leg fails when its service scores below its break threshold, and the legs are required checks, so a failing leg blocks the merge. Configuration, results and the reasoning behind these choices: [`tests/MutationTesting/README.md`](tests/MutationTesting/README.md).
 
 ### Continuous deployment
 

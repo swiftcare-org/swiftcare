@@ -113,6 +113,42 @@ public class RequestContextForwardingTests
         }
     }
 
+    [Theory]
+    [InlineData("10.0.0.5", "10.0.0.5")]
+    [InlineData(null, "unknown")]
+    public async Task AdminActionsForwardTheCallersIpAddressOrUnknown(string? ipAddress, string expectedIpAddress)
+    {
+        string? forwarded = null;
+        var service = new Mock<IUserAccountService>();
+        service.Setup(candidate => candidate.CreateUserAsync(
+                It.IsAny<CreateUserRequest>(),
+                It.IsAny<AdminActionContext>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<CreateUserRequest, AdminActionContext, CancellationToken>(
+                (_, actionContext, _) => forwarded = actionContext.IpAddress)
+            .ReturnsAsync(new CreateUserResult { Outcome = CreateUserOutcome.Success });
+        var context = Context(correlationId: null, ipAddress);
+        context.HttpContext.Request.Headers["X-User-Role"] = "Admin";
+
+        await new UsersController(service.Object, NullLogger<UsersController>.Instance) { ControllerContext = context }
+            .CreateUser(new CreateUserRequest(), CancellationToken.None);
+
+        Assert.Equal(expectedIpAddress, forwarded);
+    }
+
+    // A request that leaves the field out must fail [Required], not pass with a default value.
+    [Fact]
+    public void EmptyResetPasswordRequestFailsTheRequiredPassword()
+    {
+        Assert.Equal(["Password is required."], ValidationMessages(new ResetPasswordRequest()));
+    }
+
+    [Fact]
+    public void EmptyUpdateUserRequestFailsTheRequiredFullName()
+    {
+        Assert.Equal(["Full name is required."], ValidationMessages(new UpdateUserRequest()));
+    }
+
     [Fact]
     public void EmptyLoginRequestFailsBothRequiredFields()
     {
