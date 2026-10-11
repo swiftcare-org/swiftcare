@@ -27,10 +27,8 @@ public class LoginPage
 
     public void SubmitCredentials(string username, string password)
     {
-        UsernameInput.Clear();
-        UsernameInput.SendKeys(username);
-        PasswordInput.Clear();
-        PasswordInput.SendKeys(password);
+        EnterControlledValue(By.Id("username"), username);
+        EnterControlledValue(By.Id("password"), password);
         SubmitButton.Click();
     }
 
@@ -52,7 +50,21 @@ public class LoginPage
 
     public void WaitForRedirectAwayFromLogin()
     {
-        _wait.Until(d => !d.Url.Contains("/login"));
+        new WebDriverWait(_driver, TimeSpan.FromSeconds(10))
+            .Until(d => !d.Url.Contains("/login"));
+    }
+
+    // React owns both login inputs. Under concurrent Chrome load, sending the next
+    // field immediately can race a controlled-input render and drop part of the
+    // previous value. Verify the DOM value before submitting so the browser always
+    // sends the credentials that the test supplied.
+    private void EnterControlledValue(By locator, string value)
+    {
+        var input = _driver.FindElement(locator);
+        input.Clear();
+        input.SendKeys(value);
+        new WebDriverWait(_driver, TimeSpan.FromSeconds(5))
+            .Until(d => d.FindElement(locator).GetDomProperty("value") == value);
     }
 
     private string? TryGetText(By locator)

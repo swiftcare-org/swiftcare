@@ -59,6 +59,29 @@ public class UserManagementPage
         _wait.Until(d => d.FindElements(By.CssSelector("[data-testid='edit-user-form']")).Count > 0);
     }
 
+    public void OpenDeactivatePanel(string username)
+    {
+        _driver.FindElement(By.XPath(
+            $"//tr[td[normalize-space()='{username}']]//button[@data-testid='user-deactivate']")).Click();
+        _wait.Until(d => d.FindElements(By.XPath(
+            $"//tr[@data-testid='user-panel']//*[@role='alertdialog'][.//*[contains(normalize-space(), '{username}')]]"))
+            .Count > 0);
+    }
+
+    public void ConfirmDeactivate() =>
+        _driver.FindElement(By.XPath(
+            "//tr[@data-testid='user-panel']//*[@role='alertdialog']//button[normalize-space()='Deactivate']")).Click();
+
+    public void WaitForStatus(string username, string status) =>
+        _wait.Until(_ => string.Equals(UserRowStatus(username), status, StringComparison.OrdinalIgnoreCase));
+
+    public string WaitForActionNotice() =>
+        _wait.Until(d =>
+        {
+            var text = d.FindElement(By.CssSelector("[data-testid='user-action-notice']")).Text.Trim();
+            return text.Length > 0 ? text : null;
+        })!;
+
     public void SelectRole(string role) => RoleSelect.SelectByValue(role);
 
     public void FillForm(string username, string password, string fullName, string role, string? roomNumber)
