@@ -22,6 +22,21 @@ namespace PrescriptionService.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("PrescriptionService.Models.Entities.ConsultationOutcome", b =>
+                {
+                    b.Property<Guid>("ConsultationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.HasKey("ConsultationId");
+
+                    b.ToTable("ConsultationOutcomes");
+                });
+
             modelBuilder.Entity("PrescriptionService.Models.Entities.NoPrescriptionDecision", b =>
                 {
                     b.Property<Guid>("Id")
@@ -98,6 +113,10 @@ namespace PrescriptionService.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 

@@ -6,7 +6,8 @@ public enum DispensePrescriptionOutcome
 {
     Success,
     PrescriptionNotFound,
-    AlreadyDispensed
+    AlreadyDispensed,
+    ConcurrentModification
 }
 
 public sealed record DispensePrescriptionResult(
