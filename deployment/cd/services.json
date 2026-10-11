@@ -1,0 +1,160 @@
+{
+  "description": "Release manifest for the CD workflow. One entry per deployable. Adding a service means adding one entry here plus its Environment values.",
+  "common": {
+    "env": [
+      "ASPNETCORE_ENVIRONMENT=Production",
+      "APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}",
+      "Gateway__InternalSecret=secretref:gateway-secret"
+    ],
+    "secrets": [
+      { "name": "gateway-secret", "source": "GATEWAY_INTERNAL_SECRET" }
+    ],
+    "optional_values": [
+      "APPLICATIONINSIGHTS_CONNECTION_STRING"
+    ]
+  },
+  "shared": {
+    "files": [
+      ".github/workflows/cd.yml",
+      ".github/workflows/deploy-service.yml",
+      ".dockerignore"
+    ],
+    "prefixes": [
+      "deployment/cd/"
+    ],
+    "exclude_prefixes": [
+      "deployment/cd/test_"
+    ]
+  },
+  "services": [
+    {
+      "key": "auth",
+      "name": "AuthService",
+      "path": "services/AuthService",
+      "image": "swiftcare-auth",
+      "dockerfile": "services/AuthService/Dockerfile",
+      "port": 5000,
+      "database": "swiftcare_auth",
+      "app_var": "AZURE_AUTH_APP",
+      "migrate_job_var": "AZURE_AUTH_MIGRATE_JOB",
+      "db_user_var": "AUTH_DB_USER",
+      "db_password_var": "AUTH_DB_PASSWORD",
+      "connection_setting": "ConnectionStrings__AuthDb",
+      "db_secret": "auth-db",
+      "gateway_cluster": "auth-cluster",
+      "gateway_destination": "auth-destination",
+      "smoke_roles": ["RECEPTIONIST"],
+      "extra_secrets": [
+        { "name": "jwt-key", "source": "JWT_SIGNING_KEY" }
+      ],
+      "extra_env": [
+        "Jwt__SecretKey=secretref:jwt-key",
+        "Jwt__Issuer=${JWT_ISSUER}",
+        "Jwt__Audience=${JWT_AUDIENCE}",
+        "Kafka__BootstrapServers=${KAFKA_BOOTSTRAP_SERVERS}"
+      ]
+    },
+    {
+      "key": "medical-record",
+      "name": "MedicalRecordService",
+      "path": "services/MedicalRecordService",
+      "image": "swiftcare-medical-record",
+      "dockerfile": "services/MedicalRecordService/Dockerfile",
+      "port": 5004,
+      "database": "swiftcare_medical_record",
+      "app_var": "AZURE_MEDICAL_RECORD_APP",
+      "migrate_job_var": "AZURE_MEDICAL_RECORD_MIGRATE_JOB",
+      "db_user_var": "MEDICAL_RECORD_DB_USER",
+      "db_password_var": "MEDICAL_RECORD_DB_PASSWORD",
+      "connection_setting": "ConnectionStrings__MedicalRecordDb",
+      "db_secret": "medical-record-db",
+      "gateway_cluster": "medical-record-cluster",
+      "gateway_destination": "medical-record-destination",
+      "smoke_roles": ["DOCTOR"],
+      "extra_secrets": [],
+      "extra_env": [
+        "Kafka__BootstrapServers=${KAFKA_BOOTSTRAP_SERVERS}"
+      ]
+    },
+    {
+      "key": "patient",
+      "name": "PatientService",
+      "path": "services/PatientService",
+      "image": "swiftcare-patient",
+      "dockerfile": "services/PatientService/Dockerfile",
+      "port": 5002,
+      "database": "swiftcare_patient",
+      "app_var": "AZURE_PATIENT_APP",
+      "migrate_job_var": "AZURE_PATIENT_MIGRATE_JOB",
+      "db_user_var": "PATIENT_DB_USER",
+      "db_password_var": "PATIENT_DB_PASSWORD",
+      "connection_setting": "ConnectionStrings__PatientDb",
+      "db_secret": "patient-db",
+      "gateway_cluster": "patient-cluster",
+      "gateway_destination": "patient-destination",
+      "smoke_roles": ["RECEPTIONIST"],
+      "extra_secrets": [],
+      "extra_env": [
+        "Kafka__BootstrapServers=${KAFKA_BOOTSTRAP_SERVERS}"
+      ]
+    },
+    {
+      "key": "prescription",
+      "name": "PrescriptionService",
+      "path": "services/PrescriptionService",
+      "image": "swiftcare-prescription",
+      "dockerfile": "services/PrescriptionService/Dockerfile",
+      "port": 5001,
+      "database": "swiftcare_prescription",
+      "app_var": "AZURE_PRESCRIPTION_APP",
+      "migrate_job_var": "AZURE_PRESCRIPTION_MIGRATE_JOB",
+      "db_user_var": "PRESCRIPTION_DB_USER",
+      "db_password_var": "PRESCRIPTION_DB_PASSWORD",
+      "connection_setting": "ConnectionStrings__PrescriptionDb",
+      "db_secret": "prescription-db",
+      "gateway_cluster": "prescription-cluster",
+      "gateway_destination": "prescription-destination",
+      "smoke_roles": ["RECEPTIONIST"],
+      "extra_secrets": [],
+      "extra_env": []
+    },
+    {
+      "key": "queue",
+      "name": "QueueService",
+      "path": "services/QueueService",
+      "image": "swiftcare-queue",
+      "dockerfile": "services/QueueService/Dockerfile",
+      "port": 5003,
+      "database": "swiftcare_queue",
+      "app_var": "AZURE_QUEUE_APP",
+      "migrate_job_var": "AZURE_QUEUE_MIGRATE_JOB",
+      "db_user_var": "QUEUE_DB_USER",
+      "db_password_var": "QUEUE_DB_PASSWORD",
+      "connection_setting": "ConnectionStrings__QueueDb",
+      "db_secret": "queue-db",
+      "gateway_cluster": "queue-cluster",
+      "gateway_destination": "queue-destination",
+      "smoke_roles": ["RECEPTIONIST"],
+      "extra_secrets": [],
+      "extra_env": [
+        "Kafka__BootstrapServers=${KAFKA_BOOTSTRAP_SERVERS}",
+        "Kafka__PatientCheckedInTopic=${KAFKA_PATIENT_CHECKED_IN_TOPIC}",
+        "Kafka__ConsumerGroupId=${KAFKA_QUEUE_CONSUMER_GROUP}"
+      ]
+    }
+  ],
+  "gateway": {
+    "key": "gateway",
+    "name": "ApiGateway",
+    "path": "ApiGateway",
+    "image": "swiftcare-gateway",
+    "dockerfile": "ApiGateway/Dockerfile",
+    "port": 8000,
+    "app_var": "AZURE_GATEWAY_APP"
+  },
+  "frontend": {
+    "key": "frontend",
+    "name": "Frontend",
+    "path": "frontend"
+  }
+}

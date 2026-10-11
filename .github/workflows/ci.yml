@@ -48,11 +48,25 @@ jobs:
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
+            deployment/cd/services.json
+            deployment/cd/select_services.py
           )
 
           for file in "${required_files[@]}"; do
             test -f "$file" || { echo "Missing required file: $file"; exit 1; }
           done
+
+      - name: Test release selection
+        shell: bash
+        run: python3 -I -m unittest discover -s deployment/cd -p 'test_*.py' -v
+
+      - name: Lint release scripts
+        shell: bash
+        run: shellcheck -x deployment/cd/*.sh deployment/cd/testdata/fake-az
+
+      - name: Test release scripts
+        shell: bash
+        run: bash deployment/cd/test-scripts.sh
 
       - name: Prepare safe validation environment
         run: cp .env.example .env
@@ -190,7 +204,11 @@ jobs:
   mutation-testing:
     name: Mutation testing (${{ matrix.service }})
     needs: build-and-test
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # A reusable call from CD reports the caller's event and workflow name, so the CD
+    # quality gate does not run the full mutation matrix.
+    if: >-
+      github.workflow == 'CI' &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:

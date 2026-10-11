@@ -1,0 +1,222 @@
+name: Deploy one service
+
+# Called by cd.yml once per selected service. Each call builds the service's image, captures the
+# running image, migrates the service's own database, deploys it, smoke tests it through the
+# gateway and, on a failure after the deploy started, rolls back only this service. Calls run in
+# separate jobs and never touch another service's app, job or image, so a failed build or deploy
+# holds back only this service.
+
+on:
+  workflow_call:
+    inputs:
+      key:
+        description: Deployable key from deployment/cd/services.json
+        required: true
+        type: string
+      name:
+        required: true
+        type: string
+      app_var:
+        description: Name of the Environment variable that holds the Container App name
+        required: true
+        type: string
+      image:
+        description: Image name without registry or tag
+        required: true
+        type: string
+      dockerfile:
+        required: true
+        type: string
+      migrate_job_var:
+        required: true
+        type: string
+      db_user_var:
+        required: true
+        type: string
+      db_password_var:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
+      bootstrap_admin:
+        required: false
+        default: false
+        type: boolean
+      rollback_drill:
+        description: Deployable whose first smoke check is forced to fail (evidence only)
+        required: false
+        default: none
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Build ${{ inputs.name }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ inputs.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}:${{ inputs.release_sha }}
+          cache-from: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image }}
+
+  deploy:
+    name: Deploy ${{ inputs.name }}
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: azure-development
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SERVICE_KEY: ${{ inputs.key }}
+      SERVICE_NAME: ${{ inputs.name }}
+      DEPLOY_SHA: ${{ inputs.release_sha }}
+      IMAGE_REPOSITORY: ghcr.io/${{ github.repository_owner }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      AZURE_GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
+      AZURE_AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
+      AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
+      AZURE_QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
+      AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
+      AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
+      AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
+      SERVICE_MIGRATE_JOB: ${{ vars[inputs.migrate_job_var] }}
+      SERVICE_DB_USER: ${{ vars[inputs.db_user_var] }}
+      SERVICE_DB_PASSWORD: ${{ secrets[inputs.db_password_var] }}
+      MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      JWT_ISSUER: ${{ vars.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
+      JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
+      GATEWAY_INTERNAL_SECRET: ${{ secrets.GATEWAY_INTERNAL_SECRET }}
+      KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
+      KAFKA_PATIENT_CHECKED_IN_TOPIC: ${{ vars.KAFKA_PATIENT_CHECKED_IN_TOPIC }}
+      KAFKA_QUEUE_CONSUMER_GROUP: ${{ vars.KAFKA_QUEUE_CONSUMER_GROUP }}
+      # Optional: services skip telemetry until this secret is set in the environment.
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+      SMOKE_RECEPTIONIST_USERNAME: ${{ secrets.SMOKE_RECEPTIONIST_USERNAME }}
+      SMOKE_RECEPTIONIST_PASSWORD: ${{ secrets.SMOKE_RECEPTIONIST_PASSWORD }}
+      SMOKE_DOCTOR_USERNAME: ${{ secrets.SMOKE_DOCTOR_USERNAME }}
+      SMOKE_DOCTOR_PASSWORD: ${{ secrets.SMOKE_DOCTOR_PASSWORD }}
+    steps:
+      - name: Check out the release scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          sparse-checkout: deployment/cd
+
+      - name: Validate configuration
+        run: bash deployment/cd/validate-config.sh service "$SERVICE_KEY"
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Add the Container Apps extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Prepare the gateway path for smoke checks
+        id: prepare
+        run: bash deployment/cd/prepare-smoke.sh "$SERVICE_KEY"
+
+      - name: Capture the running image for rollback
+        id: previous
+        run: bash deployment/cd/capture-previous.sh "$SERVICE_KEY"
+
+      - name: Apply database migrations inside the VNet
+        run: bash deployment/cd/migrate-service.sh "$SERVICE_KEY"
+
+      - name: Bootstrap the initial administrator
+        if: inputs.key == 'auth' && inputs.bootstrap_admin
+        env:
+          INITIAL_ADMIN_USERNAME: ${{ secrets.INITIAL_ADMIN_USERNAME }}
+          INITIAL_ADMIN_PASSWORD: ${{ secrets.INITIAL_ADMIN_PASSWORD }}
+          INITIAL_ADMIN_FULL_NAME: ${{ vars.INITIAL_ADMIN_FULL_NAME }}
+        run: bash deployment/cd/bootstrap-admin.sh
+
+      - name: Deploy the service
+        id: deploy
+        run: bash deployment/cd/deploy-service.sh "$SERVICE_KEY"
+
+      - name: Smoke test through the gateway
+        if: steps.prepare.outputs.skip != 'true'
+        env:
+          GATEWAY_URL: ${{ steps.prepare.outputs.gateway_url }}
+          SMOKE_FORCE_FAIL: ${{ inputs.rollback_drill }}
+        run: bash deployment/cd/smoke.sh "$SERVICE_KEY"
+
+      - name: Roll back this service only
+        id: rollback
+        if: failure() && steps.deploy.outcome != 'skipped'
+        env:
+          PREVIOUS_IMAGE: ${{ steps.previous.outputs.previous_image }}
+        run: |
+          bash deployment/cd/rollback-service.sh "$SERVICE_KEY" "$PREVIOUS_IMAGE"
+          echo "::error::$SERVICE_NAME failed its release and was rolled back. Other services were not touched."
+
+      - name: Smoke test again after the rollback
+        id: after_rollback
+        if: failure() && steps.rollback.outcome == 'success' && steps.rollback.outputs.rollback == 'done' && steps.prepare.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          GATEWAY_URL: ${{ steps.prepare.outputs.gateway_url }}
+        run: bash deployment/cd/smoke.sh "$SERVICE_KEY"
+
+      - name: Record the result
+        if: always()
+        env:
+          KEY: ${{ env.SERVICE_KEY }}
+          JOB_STATUS: ${{ job.status }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+          ROLLBACK_RESULT: ${{ steps.rollback.outputs.rollback }}
+          POST_ROLLBACK_SMOKE: ${{ steps.after_rollback.outcome }}
+          PREVIOUS_IMAGE: ${{ steps.previous.outputs.previous_image }}
+        run: bash deployment/cd/record-result.sh "$RUNNER_TEMP/result"
+
+      - name: Upload the result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-result-${{ inputs.key }}
+          path: ${{ runner.temp }}/result/${{ inputs.key }}.json
+          if-no-files-found: warn
+          overwrite: true
