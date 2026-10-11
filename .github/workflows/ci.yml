@@ -48,11 +48,17 @@ jobs:
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
+            deployment/cd/services.json
+            deployment/cd/select_services.py
           )
 
           for file in "${required_files[@]}"; do
             test -f "$file" || { echo "Missing required file: $file"; exit 1; }
           done
+
+      - name: Test release selection
+        shell: bash
+        run: python3 -I -m unittest discover -s deployment/cd -p 'test_*.py' -v
 
       - name: Prepare safe validation environment
         run: cp .env.example .env
