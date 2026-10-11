@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using QueueService.Data;
 using QueueService.Models.Configuration;
 using QueueService.Models.Dtos;
+using QueueService.Models.Enums;
 
 namespace QueueService.Services;
 
@@ -36,7 +37,9 @@ public sealed class PatientQueueStatusService : IPatientQueueStatusService
             .Select(entry => new PatientQueueStatusResponse
             {
                 IsCheckedIn = true,
-                QueueNumber = entry.QueueNumber
+                QueueNumber = entry.QueueNumber,
+                Status = entry.Status == QueueStatus.Completed ? "COMPLETED"
+                    : entry.Status == QueueStatus.InConsultation ? "IN_CONSULTATION" : "WAITING"
             })
             .SingleOrDefaultAsync(cancellationToken);
 

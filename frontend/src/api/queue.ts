@@ -3,6 +3,7 @@ import { apiRequest } from './client';
 export interface PatientQueueStatus {
   isCheckedIn: boolean;
   queueNumber: string | null;
+  status: TodayQueueStatus | null;
 }
 
 export function getPatientQueueStatus(patientId: string): Promise<PatientQueueStatus> {

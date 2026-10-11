@@ -326,6 +326,14 @@ public class PatientProfilePage
         return banner!.Text;
     }
 
+    public string WaitForCompletedVisitBanner() =>
+        _wait.Until(d =>
+        {
+            var elements = d.FindElements(By.XPath(
+                "//*[@role='status'][.//*[normalize-space()='Visit Completed Today']]"));
+            return elements.Count > 0 ? elements[0].Text : null;
+        })!;
+
     // "Q-007" out of either check-in banner, so a caller can carry the number on to the
     // queue views without re-reading it from the API.
     public static string QueueNumberFrom(string bannerText)

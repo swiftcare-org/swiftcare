@@ -1,3 +1,4 @@
+using System.Drawing;
 using E2ETests.Pages;
 using E2ETests.Support;
 
@@ -29,6 +30,17 @@ public class CreateUserTests : SeleniumTestBase
         Assert.Contains("created successfully", page.WaitForSuccessMessage());
         Assert.True(page.UserRowExists(username));
         Assert.Equal("Active", page.UserRowStatus(username), ignoreCase: true);
+        Assert.Equal(new[] { "USERNAME", "FULL NAME", "ROLE", "ROOM", "STATUS", "ACTIONS" }, page.AccountHeaders);
+
+        foreach (var width in new[] { 1024, 1280 })
+        {
+            Driver.Manage().Window.Size = new Size(width, 900);
+            Assert.True(page.ActionsFitWithoutHorizontalScrolling(username),
+                $"Staff account actions should fit without horizontal scrolling at width {width}.");
+        }
+
+        page.OpenEditForm(username);
+        Assert.False(page.HasSpecializationField);
     }
 
     // Scenario 4 - missing required fields: client-side validation blocks the
@@ -68,6 +80,7 @@ public class CreateUserTests : SeleniumTestBase
 
         page.SelectRole("Doctor");
         Assert.True(page.HasRoomNumberField, "Room number should be visible for the Doctor role.");
+        Assert.False(page.HasSpecializationField);
 
         page.SelectRole("Receptionist");
         Assert.False(page.HasRoomNumberField, "Room number should be hidden for non-Doctor roles.");

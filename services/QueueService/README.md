@@ -126,7 +126,7 @@ SWC-38 covers automatic queue completion, including the UTC completion timestamp
 | `GET` | `/api/queue/today` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns all current clinic-day queue entries ordered by queue number |
 | `GET` | `/api/queue/today/waiting` | `X-Gateway-Secret`, `X-User-Role: Doctor` | Returns the shared pool of current clinic-day `WAITING` entries ordered by queue number |
 | `GET` | `/api/queue/today/current` | `X-Gateway-Secret`, trusted doctor identity headers | Returns the doctor's active assignment as `200`, or `204` when none exists |
-| `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber }` for today's clinic-local queue |
+| `GET` | `/api/queue/today/patient/{patientId}` | `X-Gateway-Secret`, `X-User-Role: Receptionist` | Returns `{ isCheckedIn, queueNumber, status }` for today's clinic-local queue. Status is `WAITING`, `IN_CONSULTATION`, `COMPLETED`, or null when no visit exists today. Completed visits remain checked in for the same-day restriction. |
 | `PUT` | `/api/queue/call-next` | `X-Gateway-Secret`, trusted doctor identity headers | Calls the first waiting patient or returns the empty/occupied outcome |
 | `GET` | `/api/queue/display` | `X-Gateway-Secret`; no user identity required | Returns only current room assignments and the next three queue numbers |
 | `GET` | `/health` | none | Health check |
