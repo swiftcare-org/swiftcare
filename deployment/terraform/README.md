@@ -27,7 +27,7 @@ The CD workflow owns deployable application state:
 Do not add CD-owned resources to this Terraform state without an explicit ownership decision.
 CD reconciles apps/jobs/images/ingress/secrets but has no custom-domain certificate command.
 Cloudflare DNS/proxy settings, SQL users/grants, and GitHub Environment/protection settings are also manual.
-Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`; cost budgets and the Notification database remain absent.
+Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`; cost budgets remain absent. The `swiftcare_notification` database is defined in `database.tf` and, like the other databases, is created empty: its scoped SQL user and grants, and the Notification Container App, migration job and secrets, are created outside Terraform (SQL user manually from inside the VNet, app and job by CD).
 
 ## Prerequisites
 
