@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Minimal stand-in for the Azure CLI used by test-scripts.sh. It keeps one small state file per
+# app under $FAKE_AZ_STATE and records every call in $FAKE_AZ_LOG. It supports only the calls the
+# CD scripts make and answers from its state, so it proves script logic, not Azure behavior.
+set -euo pipefail
+
+state="${FAKE_AZ_STATE:?}"
+printf '%s\n' "$*" >> "${FAKE_AZ_LOG:?}"
+
+arg() { # arg NAME : the value after --NAME
+  local previous=""
+  for word in "$@"; do
+    [ "$previous" = "--$NAME" ] && { printf '%s' "$word"; return; }
+    previous="$word"
+  done
+}
+
+all=("$@")
+group="${all[0]:-}"
+sub="${all[1]:-}"
+NAME=name
+app=$(arg "${all[@]}")
+query=$(NAME=query arg "${all[@]}")
+image=$(NAME=image arg "${all[@]}")
+case "$group $sub" in
+  "containerapp show")
+    [ -f "$state/$app.image" ] || exit 3
+    port=$(cat "$state/$app.port" 2>/dev/null || echo 5000)
+    external=false
+    [ "$app" = "swiftcare-gateway" ] && external=true
+    case "$query" in
+      "") exit 0 ;;
+      *runningStatus*latest*)
+        # A scripted transient failure: the first readiness read fails once.
+        if [ -n "${FAKE_AZ_FLAKY_ONCE:-}" ] && [ ! -f "$state/flaky.done" ]; then
+          touch "$state/flaky.done"
+          echo "fake-az: transient failure" >&2
+          exit 1
+        fi
+        printf '{"running":"%s","latest":"%s","ready":"%s","image":"%s"}\n' \
+          "$(cat "$state/$app.running")" "$(cat "$state/$app.rev")" "$(cat "$state/$app.ready")" "$(cat "$state/$app.image")" ;;
+      properties.runningStatus) cat "$state/$app.running"; echo ;;
+      properties.template.containers*) cat "$state/$app.image"; echo ;;
+      properties.latestRevisionName) cat "$state/$app.rev"; echo ;;
+      properties.configuration.ingress.fqdn) echo "$app.internal.example.test" ;;
+      properties.configuration.ingress) printf '{"external":%s,"targetPort":%s}\n' "$external" "$port" ;;
+      id) echo "/subscriptions/test/apps/$app" ;;
+      *) echo "fake-az: unsupported containerapp query: $query" >&2; exit 9 ;;
+    esac ;;
+  "containerapp update" | "containerapp create")
+    [ -n "$image" ] || exit 0
+    n=$(( $(cat "$state/$app.n" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$state/$app.n"
+    echo "$image" > "$state/$app.image"
+    echo "$app--$n" > "$state/$app.rev"
+    echo "$app--$n" > "$state/$app.ready"
+    [ -f "$state/$app.running" ] || echo Running > "$state/$app.running"
+    # A scripted failure: this image never becomes ready.
+    if [ "$image" = "${FAKE_AZ_UNREADY_IMAGE:-}" ]; then echo "$app--not-ready" > "$state/$app.ready"; fi
+    # The caller passes the port through --target-port on create.
+    port=$(NAME=target-port arg "${all[@]}")
+    [ -z "$port" ] || echo "$port" > "$state/$app.port" ;;
+  "containerapp ingress")
+    port=$(NAME=target-port arg "${all[@]}")
+    [ -z "$port" ] || echo "$port" > "$state/$app.port" ;;
+  "containerapp revision" | "containerapp registry" | "containerapp secret") exit 0 ;;
+  "containerapp job")
+    case "${all[2]:-}" in
+      show) [ -f "$state/job.$app" ] || exit 3 ;;
+      create | update) echo ok > "$state/job.$app" ;;
+      registry | secret) exit 0 ;;
+      start) echo "exec-$app" ;;
+      execution) echo "${FAKE_MIGRATION_STATUS:-Succeeded}" ;;
+      delete) rm -f "$state/job.$app" ;;
+    esac ;;
+  "rest "*)
+    uri=$(NAME=uri arg "${all[@]}")
+    started="${uri#*/apps/}"; started="${started%%/*}"
+    echo Running > "$state/$started.running" ;;
+  *) echo "fake-az: unsupported call: $*" >&2; exit 9 ;;
+esac

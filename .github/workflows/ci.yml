@@ -60,6 +60,14 @@ jobs:
         shell: bash
         run: python3 -I -m unittest discover -s deployment/cd -p 'test_*.py' -v
 
+      - name: Lint release scripts
+        shell: bash
+        run: shellcheck -x deployment/cd/*.sh deployment/cd/testdata/fake-az
+
+      - name: Test release scripts
+        shell: bash
+        run: bash deployment/cd/test-scripts.sh
+
       - name: Prepare safe validation environment
         run: cp .env.example .env
 
