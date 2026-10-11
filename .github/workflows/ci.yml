@@ -45,7 +45,7 @@ jobs:
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
             services/PrescriptionService/Dockerfile
-            services/NotificationService/Dockerfile
+            tests/E2ETests/Infrastructure/NotificationService.Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
