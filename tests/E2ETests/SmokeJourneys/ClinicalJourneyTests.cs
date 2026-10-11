@@ -129,6 +129,17 @@ public class ClinicalJourneyTests : SeleniumTestBase
         queue.WaitUntilLoaded();
         queue.WaitForStatus(queueNumber, "COMPLETED", QueueUpdateTimeout);
         queue.WaitForPendingPrescription(queueNumber, QueueUpdateTimeout);
+        AppSession.GoTo(Driver, $"/patients/{patient.PatientId}");
+        checkInProfile.WaitUntilLoaded();
+        var completedVisit = checkInProfile.WaitForCompletedVisitBanner();
+        Assert.Contains("Visit Completed Today", completedVisit);
+        Assert.Contains($"Queue: {queueNumber}", completedVisit);
+        Assert.Contains("This patient cannot be checked in again today.", completedVisit);
+        Assert.False(checkInProfile.HasCheckInButton);
+
+        AppSession.GoTo(Driver, QueueManagementPage.Path);
+        queue.WaitUntilLoaded();
+        queue.WaitForPendingPrescription(queueNumber, QueueUpdateTimeout);
         Assert.Equal(
             PrescriptionDetailsPage.PathFor(assignment.QueueId),
             queue.ViewPrescriptionPath(queueNumber));

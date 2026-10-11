@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 
@@ -28,6 +29,35 @@ public class UserManagementPage
 
     // The room-number field is rendered only while the selected role is Doctor.
     public bool HasRoomNumberField => _driver.FindElements(By.Id("roomNumber")).Count > 0;
+
+    public bool HasSpecializationField =>
+        _driver.FindElements(By.CssSelector("input[name='specialization']")).Count > 0;
+
+    public IReadOnlyList<string> AccountHeaders =>
+        _driver.FindElements(By.CssSelector("table thead th"))
+            .Select(header => Regex.Replace(header.Text, @"\s+", " ").Trim().ToUpperInvariant()).ToArray();
+
+    public bool ActionsFitWithoutHorizontalScrolling(string username)
+    {
+        var row = _driver.FindElement(By.XPath($"//tr[td[normalize-space()='{username}']]"));
+        var actions = row.FindElements(By.CssSelector(
+            "button[data-testid='user-edit'], button[data-testid='user-reset-password'], button[data-testid='user-deactivate']"));
+        return actions.Count == 3 && actions.All(action => action.Displayed &&
+            (bool)((IJavaScriptExecutor)_driver).ExecuteScript(
+                "const table = arguments[0].closest('table');" +
+                "const wrapper = table.parentElement;" +
+                "const bounds = wrapper.getBoundingClientRect();" +
+                "const action = arguments[0].getBoundingClientRect();" +
+                "return wrapper.scrollWidth <= wrapper.clientWidth + 1 && " +
+                "action.left >= bounds.left && action.right <= bounds.right + 1;", action));
+    }
+
+    public void OpenEditForm(string username)
+    {
+        _driver.FindElement(By.XPath(
+            $"//tr[td[normalize-space()='{username}']]//button[@data-testid='user-edit']")).Click();
+        _wait.Until(d => d.FindElements(By.CssSelector("[data-testid='edit-user-form']")).Count > 0);
+    }
 
     public void SelectRole(string role) => RoleSelect.SelectByValue(role);
 

@@ -928,7 +928,14 @@ export function PatientProfilePage() {
               <div aria-live="polite" className="space-y-3">
                 {queueStatusLoadState === 'loading' && <LoadingText>Checking today&apos;s queue…</LoadingText>}
 
-                {checkInStatus === 'succeeded' && queueStatus?.isCheckedIn && (
+                {queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && queueStatus.status === 'COMPLETED' && (
+                  <Banner tone="neutral" title="Visit Completed Today" role="status">
+                    <p className="font-semibold">Queue: {queueStatus.queueNumber}</p>
+                    <p>This patient cannot be checked in again today.</p>
+                  </Banner>
+                )}
+
+                {checkInStatus === 'succeeded' && queueStatus?.isCheckedIn && queueStatus.status !== 'COMPLETED' && (
                   <Banner tone="success" title="Checked In">
                     <p className="font-semibold">
                       {patient.fullName} checked in. Queue: {queueStatus.queueNumber}
@@ -936,7 +943,7 @@ export function PatientProfilePage() {
                   </Banner>
                 )}
 
-                {checkInStatus !== 'succeeded' && queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && (
+                {checkInStatus !== 'succeeded' && queueStatusLoadState === 'loaded' && queueStatus?.isCheckedIn && queueStatus.status !== 'COMPLETED' && (
                   <Banner tone="warning" title="In Today's Queue">
                     <p className="font-semibold">Already checked in. Queue: {queueStatus.queueNumber}</p>
                   </Banner>
