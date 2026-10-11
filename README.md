@@ -514,6 +514,8 @@ The checks only read data, never print response bodies or tokens, and revoke eac
 | Notification | Today's notification feed returns a JSON array for the Receptionist |
 | Gateway | Health returns 200, then every check above |
 
+A service deployed for the first time has no address in the running gateway, so a check through that gateway could only return 502. A service job therefore skips its own smoke check when the running gateway has no address for it, and the gateway job, which receives every address, runs the check for all services. After a first deployment of a service, release the gateway (`release=gateway`, or `all`).
+
 A release starts the apps it deploys, plus AuthService and the gateway it needs for the smoke checks, when they are stopped. Starting an app does not change its image. Stop the demo apps again after the approved window.
 
 #### Adding a service

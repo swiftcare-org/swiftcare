@@ -354,6 +354,15 @@ reset
 add_app swiftcare-gateway "$OLD" Running 8000
 expect_failure "fails when AuthService is not deployed" bash "$HERE/prepare-smoke.sh" queue
 expect_success "does not require AuthService when releasing AuthService" bash "$HERE/prepare-smoke.sh" auth
+reset
+add_app swiftcare-auth "$OLD" Running 5000
+add_app swiftcare-gateway "$OLD" Running 8000
+printf 'ReverseProxy__Clusters__auth-cluster__Destinations__auth-destination__Address\n' > "$FAKE_AZ_STATE/swiftcare-gateway.envnames"
+expect_success "skips smoke for a service the running gateway has no address for" bash "$HERE/prepare-smoke.sh" notification
+expect_equal "reports skip for a first deployment" "$(grep '^skip=' "$GITHUB_OUTPUT")" "skip=true"
+: > "$GITHUB_OUTPUT"
+expect_success "still prepares a service the gateway does know" bash "$HERE/prepare-smoke.sh" auth
+expect_equal "reports no skip for a known service" "$(grep '^skip=' "$GITHUB_OUTPUT")" "skip=false"
 
 echo "== validate-config"
 export AZURE_LOCATION=eastasia AZURE_CLIENT_ID=client AZURE_TENANT_ID=tenant AZURE_SUBSCRIPTION_ID=subscription

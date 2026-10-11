@@ -42,6 +42,14 @@ case "$group $sub" in
       *latestRevisionName*latestReadyRevisionName*)
         printf '{"latest":"%s","ready":"%s"}\n' "$(cat "$state/$app.rev")" "$(cat "$state/$app.ready")" ;;
       properties.runningStatus) cat "$state/$app.running"; echo ;;
+      *env*name*)
+        # Names of the app's settings. A test can write $app.envnames to control them; by default
+        # every service cluster address is present.
+        if [ -f "$state/$app.envnames" ]; then cat "$state/$app.envnames"; else
+          for cluster in auth patient queue medical-record prescription notification; do
+            echo "ReverseProxy__Clusters__${cluster}-cluster__Destinations__${cluster}-destination__Address"
+          done
+        fi ;;
       properties.template.containers*) cat "$state/$app.image"; echo ;;
       properties.latestRevisionName) cat "$state/$app.rev"; echo ;;
       properties.configuration.ingress.fqdn) echo "$app.internal.example.test" ;;
