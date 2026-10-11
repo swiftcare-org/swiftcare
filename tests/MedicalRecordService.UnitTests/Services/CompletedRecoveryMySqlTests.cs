@@ -29,7 +29,7 @@ public class CompletedRecoveryMySqlTests
             context.Consultations.AddRange(visits);
             context.Consultations.AddRange(incomplete, Visit(otherDoctor, -2));
             await context.SaveChangesAsync();
-            var repository = new AdoNetConsultationCompletionRepository(new ConnectionFactory(settings.ConnectionString));
+            var repository = new AdoNetConsultationCompletionRepository(new ConnectionFactory(settings.ConnectionString), TimeProvider.System);
 
             var first = await repository.FindCompletedPageAsync(doctor, 0);
             var second = await repository.FindCompletedPageAsync(doctor, 1);

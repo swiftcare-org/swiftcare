@@ -44,16 +44,10 @@ public sealed class TodayQueueService : ITodayQueueService
             throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
         }
 
-        var clinicNow = TimeZoneInfo.ConvertTime(
-            _timeProvider.GetUtcNow(),
-            _clinicTimeZone);
-        var queueDate = DateOnly.FromDateTime(clinicNow.DateTime);
-
         var entry = await _dbContext.QueueEntries
             .AsNoTracking()
             .Where(candidate =>
-                candidate.QueueDate == queueDate
-                && candidate.Status == QueueStatus.InConsultation
+                candidate.Status == QueueStatus.InConsultation
                 && candidate.DoctorId == doctorId)
             .OrderByDescending(candidate => candidate.CalledAt)
             .FirstOrDefaultAsync(cancellationToken);
@@ -94,9 +88,8 @@ public sealed class TodayQueueService : ITodayQueueService
         var entries = await _dbContext.QueueEntries
             .AsNoTracking()
             .Where(entry =>
-                entry.QueueDate == queueDate
-                && (entry.Status == QueueStatus.Waiting
-                    || entry.Status == QueueStatus.InConsultation))
+                (entry.QueueDate == queueDate && entry.Status == QueueStatus.Waiting)
+                || entry.Status == QueueStatus.InConsultation)
             .Select(entry => new
             {
                 entry.QueueNumber,
@@ -144,7 +137,8 @@ public sealed class TodayQueueService : ITodayQueueService
 
         var query = _dbContext.QueueEntries
             .AsNoTracking()
-            .Where(entry => entry.QueueDate == queueDate);
+            .Where(entry => entry.QueueDate == queueDate
+                || entry.Status == QueueStatus.InConsultation);
 
         if (status.HasValue)
         {

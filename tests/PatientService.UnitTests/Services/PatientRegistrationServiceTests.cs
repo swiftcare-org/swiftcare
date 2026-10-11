@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using PatientService.Data;
 using PatientService.Models.Dtos;
 using PatientService.Models.Entities;
 using PatientService.Models.Enums;
+using PatientService.Models.Events;
 using PatientService.Services;
 
 namespace PatientService.UnitTests.Services;
@@ -41,8 +43,7 @@ public class PatientRegistrationServiceTests
         await using var dbContext = CreateDbContext();
         var publisherMock = new Mock<IPatientEventPublisher>();
         publisherMock
-            .Setup(p => p.PublishPatientCheckedInAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<PatientCheckedInEvent>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         var service = CreateService(dbContext, publisherMock);
 
@@ -54,8 +55,11 @@ public class PatientRegistrationServiceTests
         Assert.Equal(result.Patient!.PatientId, persisted.Id);
 
         publisherMock.Verify(
-            p => p.PublishPatientCheckedInAsync(persisted.Id, true, CorrelationId, It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.Is<PatientCheckedInEvent>(message => message.PatientId == persisted.Id
+                && message.IsNewPatient && message.CorrelationId == CorrelationId), It.IsAny<CancellationToken>()),
             Times.Once);
+        Assert.Empty(dbContext.OutboxMessages);
+        Assert.False(result.Patient.QueueDeliveryPending);
     }
 
     [Fact]
@@ -83,8 +87,7 @@ public class PatientRegistrationServiceTests
         Assert.Null(result.Patient);
         Assert.Single(dbContext.Patients);
         publisherMock.Verify(
-            p => p.PublishPatientCheckedInAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.IsAny<PatientCheckedInEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -146,8 +149,7 @@ public class PatientRegistrationServiceTests
         await using var dbContext = CreateDbContext();
         var publisherMock = new Mock<IPatientEventPublisher>();
         publisherMock
-            .Setup(p => p.PublishPatientCheckedInAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<PatientCheckedInEvent>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var service = CreateService(dbContext, publisherMock);
 
@@ -155,5 +157,59 @@ public class PatientRegistrationServiceTests
 
         Assert.Equal(RegisterPatientOutcome.Success, result.Outcome);
         Assert.Single(dbContext.Patients);
+        Assert.True(result.Patient!.QueueDeliveryPending);
+        Assert.Single(dbContext.OutboxMessages);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SaveFailureOnlyReportsDuplicateNicWhenThatNicWasActuallyPersisted(bool competingNic)
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var readerOptions = new DbContextOptionsBuilder<PatientDbContext>().UseInMemoryDatabase(databaseName).Options;
+        var failedSave = new CompetingRegistration(readerOptions, competingNic);
+        await using var context = new PatientDbContext(new DbContextOptionsBuilder<PatientDbContext>()
+            .UseInMemoryDatabase(databaseName).AddInterceptors(failedSave).Options);
+        var publisher = new Mock<IPatientEventPublisher>(MockBehavior.Strict);
+        var service = CreateService(context, publisher);
+        if (competingNic)
+        {
+            var result = await service.RegisterPatientAsync(CreateValidRequest(), CorrelationId, ActingUserId);
+            Assert.Equal(RegisterPatientOutcome.DuplicateNic, result.Outcome);
+            Assert.Null(result.Patient);
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<DbUpdateException>(() =>
+                service.RegisterPatientAsync(CreateValidRequest(), CorrelationId, ActingUserId));
+            Assert.Equal("Database save failed", exception.Message);
+        }
+        Assert.Empty(context.ChangeTracker.Entries());
+        await using var reader = new PatientDbContext(readerOptions);
+        Assert.Equal(competingNic ? "199012345678" : "198012345678", (await reader.Patients.SingleAsync()).Nic);
+        Assert.Empty(await reader.OutboxMessages.ToListAsync());
+        publisher.VerifyNoOtherCalls();
+    }
+
+    private sealed class CompetingRegistration(DbContextOptions<PatientDbContext> options, bool competingNic) : SaveChangesInterceptor
+    {
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await using var competitor = new PatientDbContext(options);
+            competitor.Patients.Add(new Patient
+            {
+                Nic = competingNic ? "199012345678" : "198012345678",
+                FullName = "Competing Patient",
+                DateOfBirth = new DateOnly(1990, 1, 1),
+                Gender = Gender.Male,
+                Address = "Test Address",
+                PhoneNumber = "0771234567",
+                BloodGroup = BloodGroup.APositive
+            });
+            await competitor.SaveChangesAsync(cancellationToken);
+            throw new DbUpdateException("Database save failed");
+        }
     }
 }

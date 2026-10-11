@@ -36,6 +36,25 @@ namespace QueueService.Migrations
                     b.ToTable("DailyQueueCounters");
                 });
 
+            modelBuilder.Entity("QueueService.Models.Entities.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt", "Id");
+
+                    b.ToTable("OutboxMessages");
+                });
+
             modelBuilder.Entity("QueueService.Models.Entities.ProcessedEvent", b =>
                 {
                     b.Property<Guid>("EventId")

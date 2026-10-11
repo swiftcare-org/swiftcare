@@ -120,6 +120,7 @@ public sealed class MedicalRecordDbContext(DbContextOptions<MedicalRecordDbConte
             entity.Property(consultation => consultation.CreatedAt)
                 .HasColumnType("datetime(6)")
                 .IsRequired();
+            entity.Property(consultation => consultation.CompletedAt).HasColumnType("datetime(6)");
             entity.Property(consultation => consultation.Status)
                 .HasColumnType("varchar(16)")
                 .HasMaxLength(16)

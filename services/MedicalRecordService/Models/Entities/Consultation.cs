@@ -23,5 +23,6 @@ public sealed class Consultation
     public DateTime CreatedAt { get; set; }
     public string Status { get; set; } = InProgressStatus;
     public Guid? EventId { get; set; }
+    public DateTime? CompletedAt { get; set; }
     public VitalSigns? VitalSigns { get; set; }
 }

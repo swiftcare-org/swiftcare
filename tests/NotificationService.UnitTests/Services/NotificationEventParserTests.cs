@@ -59,7 +59,7 @@ public class NotificationEventParserTests
         Guid? queueId = null,
         Guid? patientId = null,
         Guid? doctorId = null,
-        string? diagnosis = "Viral URTI") =>
+        string? diagnosis = "Viral URTI", DateTime? completedAt = null) =>
         JsonSerializer.Serialize(new
         {
             EventId = eventId ?? EventId,
@@ -67,7 +67,8 @@ public class NotificationEventParserTests
             QueueId = queueId ?? QueueId,
             PatientId = patientId ?? PatientId,
             DoctorId = doctorId ?? DoctorId,
-            Diagnosis = diagnosis
+            Diagnosis = diagnosis,
+            CompletedAt = completedAt
         });
 
     [Theory]
@@ -135,6 +136,24 @@ public class NotificationEventParserTests
         var notification = Parser.Parse("consultation-completed", Completed(diagnosis: "  Viral URTI  "), ReceivedAt);
 
         Assert.Equal("Viral URTI", notification!.Diagnosis);
+    }
+
+    [Theory]
+    [InlineData(2026, 10, 8)]
+    [InlineData(2026, 9, 30)]
+    public void DelayedCompletionKeepsItsOriginalTimeAcrossDayAndMonthBoundaries(int year, int month, int day)
+    {
+        var completedAt = new DateTime(year, month, day, 18, 29, 0, DateTimeKind.Utc);
+        var receivedAt = completedAt.AddHours(2);
+        var payload = Completed(completedAt: completedAt);
+
+        var first = Parser.Parse("consultation-completed", payload, receivedAt);
+        var retry = Parser.Parse("consultation-completed", payload, receivedAt.AddDays(1));
+
+        Assert.Equal(completedAt, first!.OccurredAt);
+        Assert.Equal(completedAt, retry!.OccurredAt);
+        Assert.Equal(receivedAt, first.ReceivedAt);
+        Assert.Equal(receivedAt.AddDays(1), retry.ReceivedAt);
     }
 
     // Events published before the diagnosis was added carry none, and are still stored.

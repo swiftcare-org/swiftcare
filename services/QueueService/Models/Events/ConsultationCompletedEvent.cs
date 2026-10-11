@@ -1,9 +1,10 @@
 namespace QueueService.Models.Events;
 
-// Must match the identifier-only event published by MedicalRecordService.
+// Consumes the visit identifiers and optional completion time published by MedicalRecordService.
 public sealed record ConsultationCompletedEvent(
     Guid EventId,
     Guid ConsultationId,
     Guid QueueId,
     Guid PatientId,
-    Guid DoctorId);
+    Guid DoctorId,
+    DateTime? CompletedAt = null);
