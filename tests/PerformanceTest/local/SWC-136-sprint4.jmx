@@ -1046,7 +1046,7 @@ if (pick) {
           <hashTree />
           <ResponseAssertion testname="[READ] GET /api/patients/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
             <collectionProp name="Asserion.test_strings">
-              <stringProp name="0">"id"</stringProp>
+              <stringProp name="0">"patientId"</stringProp>
             </collectionProp>
             <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/patients/{id}</stringProp>
             <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
@@ -1387,8 +1387,8 @@ if (pick) {
           <hashTree />
           <ResponseAssertion testname="[READ] GET /api/prescriptions/report/monthly contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
             <collectionProp name="Asserion.test_strings">
-              <stringProp name="0">"written"</stringProp>
-              <stringProp name="1">"dispensed"</stringProp>
+              <stringProp name="0">"totalWritten"</stringProp>
+              <stringProp name="1">"totalDispensed"</stringProp>
             </collectionProp>
             <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/prescriptions/report/monthly</stringProp>
             <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
@@ -1594,7 +1594,7 @@ if (pick) {
           <hashTree />
           <ResponseAssertion testname="[WRITE] PUT /api/users/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
             <collectionProp name="Asserion.test_strings">
-              <stringProp name="0">"id"</stringProp>
+              <stringProp name="0">"userId"</stringProp>
             </collectionProp>
             <stringProp name="Assertion.custom_message">Response contract failed for [WRITE] PUT /api/users/{id}</stringProp>
             <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>

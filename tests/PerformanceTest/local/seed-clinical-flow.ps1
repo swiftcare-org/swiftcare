@@ -204,7 +204,7 @@ for ($i = 1; $i -le $QueueVolume; $i++) {
         $registered = Invoke-RestMethod -Method Post -Uri "$GatewayUrl/api/patients" `
             -Headers @{ Authorization = "Bearer $receptionToken" } `
             -ContentType "application/json" -Body $body
-        $patientRows.Add([string]$registered.id)
+        $patientRows.Add([string]$registered.patientId)
         $checkedIn++
     }
     catch {

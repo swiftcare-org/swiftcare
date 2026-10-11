@@ -23,6 +23,8 @@ results/*.log
 results/*.csv
 results/*-report/
 jmeter.log
+.env.swc136
+!.env.swc136.example
 
 # ...but keep the resource-usage logs that back the stress findings.
 !results/stress-confirm-stats.log

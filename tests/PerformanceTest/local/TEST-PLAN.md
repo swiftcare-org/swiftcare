@@ -305,3 +305,64 @@ report).
   opening with the load profile and time window (users, role split, ramp, duration, samples,
   throughput) before the percentiles, followed by the verdict, the post-run checks, the log
   scan and a short analysis.
+
+## 10. Sprint 4 workload (SWC-136)
+
+### 10.1 Scope and workload
+
+`SWC-136-sprint4.jmx` preserves the Sprint 3 Doctor and counter flows and adds four separately
+sized groups: Receptionist Activity Feed/Today, Doctor patient and prescription history,
+Admin daily/monthly reports, and Admin user management. Authentication is once per thread and
+excluded from the read/write classifications.
+
+| Profile | Doctor | Counter | Activity | History | Reports | Admin | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Smoke | 1 | 1 | 1 | 1 | 1 | 1 | 6 |
+| Sprint 3 baseline | 10 | 10 | 0 | 0 | 0 | 0 | 20 |
+| Sprint 4 Load | 10 | 8 | 8 | 8 | 4 | 2 | 40 |
+| Stress 1 | 25 | 20 | 20 | 20 | 10 | 5 | 100 |
+| Stress 2 | 50 | 40 | 40 | 40 | 20 | 10 | 200 |
+| Stress 3 | 75 | 60 | 60 | 60 | 30 | 15 | 300 |
+| Stress 4 | 100 | 80 | 80 | 80 | 40 | 20 | 400 |
+
+Smoke runs 90 seconds. Baseline and Load run 900 seconds after a 30-second ramp. Each Stress
+stage uses a 600-second ramp within a 900-second run. Comparable phases start from fresh
+isolated databases and are reseeded; no shared or Azure endpoint is allowed.
+
+### 10.2 Pre-registered pass/fail thresholds
+
+The following thresholds are fixed before execution and apply after discarding the first
+90 seconds of Load. Functional errors use HTTP/application failures and exclude the separate
+duration-assertion tripwire samples.
+
+| Metric | Required threshold |
+|---|---:|
+| Read p95 | <= 800 ms |
+| Read p99 | <= 1500 ms |
+| Write p95 | <= 1500 ms |
+| Write p99 | <= 3000 ms |
+| Functional error rate | <= 0.5% |
+| Latency drift | last-third p95 <= first-third p95 + 20%, for reads and writes |
+
+Smoke must have zero functional errors, all expected sampler labels and clean integrity.
+Load must pass all six thresholds and integrity before Stress is permitted. Stress locates a
+breaking point rather than receiving a PASS from lower latency alone: stop at the first stage
+with a sustained threshold breach, flat/falling throughput while threads rise, unsafe host
+pressure, or integrity failure.
+
+### 10.3 SWC-128 concurrency regression
+
+`SWC-136-call-next-burst.jmx` synchronizes 2, 10 and 25 authenticated Doctor calls. A burst
+passes when no request produces the former 500/deadlock, each successful call assigns a unique
+queue entry, and database integrity confirms at most one active queue entry per doctor and
+room. A legitimate non-500 capacity response is reported separately rather than hidden.
+
+### 10.4 Saturation and integrity evidence
+
+`monitor-sprint4-resources.ps1` captures each isolated container's CPU and memory plus MySQL
+current/max connections. The first saturated service is named only when resource pressure
+aligns in time with p95/error/throughput degradation; otherwise the result is inconclusive.
+`verify-sprint4-integrity.ps1` checks queue/consultation completion pairs, duplicate
+prescriptions and decisions, dispense fields, notification EventId uniqueness, orphaned
+records and multiple active assignments. Every report retains JTL, HTML dashboard, resource
+CSV, integrity CSV, relevant service logs, exact command, time window and environment limits.

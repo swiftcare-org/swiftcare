@@ -321,3 +321,98 @@ Results follow the `RESULT-<type>-SWC-126-<date>.md` naming. Keep the run's
   confirm the completion flow instead.
 - A run ends part-way through some cycles. A few queue entries stay InConsultation and a few
   prescriptions stay PENDING until the next seed.
+
+## SWC-136 - Sprint 4 local performance suite
+
+This suite extends the Sprint 3 clinical flow with Activity Feed, Today notifications,
+patient and prescription history, daily/monthly reports and Admin user operations. It also
+retests the SWC-128 concurrent Call Next fix. It is local-only; never point these plans at
+Azure or a shared Gateway.
+
+### Isolation and prerequisites
+
+Use the fixed project name `swiftcare-swc136`, the checked-in override, and a private env file
+created from `.env.swc136.example`. Copy only secrets from the developer `.env`; never commit
+`.env.swc136`. The template assigns ports 8016/5100-5105/3316/9116 and database names ending
+in `_swc136`. Compose therefore creates a separate network and volumes. The override assigns
+unique QueueService and NotificationService Kafka consumer groups.
+
+```powershell
+$compose = @(
+  '--env-file','tests/PerformanceTest/local/.env.swc136',
+  '-p','swiftcare-swc136',
+  '-f','docker-compose.yml',
+  '-f','tests/PerformanceTest/local/docker-compose.swc136.yml'
+)
+docker compose @compose config --quiet
+docker compose @compose up -d --build --wait mysql kafka
+foreach ($s in 'authservice','patientservice','queueservice','medicalrecordservice','prescriptionservice','notificationservice') {
+  docker compose @compose run --rm --no-deps $s --migrate
+}
+docker compose @compose run --rm kafka-init
+docker compose @compose up -d --no-build --wait
+```
+
+All JMeter commands below run with JMeter 5.6.3 and Java 21. Run them from this directory.
+First validate both plans without generating traffic:
+
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Java\jdk-21'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path" # jmeter.bat resolves java.exe from PATH
+$jmeter = 'C:\Users\M S I\Tools\apache-jmeter-5.6.3\bin\jmeter.bat'
+& $jmeter -n -t SWC-136-sprint4.jmx -q user.properties `
+  -JusersDoctor=0 -JusersCounter=0 -JusersActivity=0 -JusersHistory=0 -JusersReports=0 -JusersAdmin=0
+& $jmeter -n -t SWC-136-call-next-burst.jmx -q user.properties -JusersBurst=0
+```
+
+Seed only the isolated Gateway. The script refuses non-loopback URLs and writes ignored CSV
+files containing synthetic credentials and identifiers:
+
+```powershell
+./seed-sprint4.ps1 -GatewayBaseUrl http://127.0.0.1:8016 `
+  -DoctorCount 25 -ReceptionistCount 20 -AdminCount 10 -QueueVolume 600
+```
+
+### Phase gates and workloads
+
+Smoke is a functional gate: one thread in each of six groups for 90 seconds, all expected
+labels present, no functional errors, followed by a clean integrity report. Do not run Load
+when Smoke or integrity fails.
+
+```powershell
+& $jmeter -n -t SWC-136-sprint4.jmx -q user.properties `
+  -Jhost=127.0.0.1 -Jport=8016 `
+  -JusersDoctor=1 -JusersCounter=1 -JusersActivity=1 -JusersHistory=1 -JusersReports=1 -JusersAdmin=1 `
+  -JrampUp=6 -Jduration=90 -l results/smoke-SWC-136.jtl -e -o results/smoke-SWC-136-report
+```
+
+Retest SWC-128 separately at 2, 10 and 25 simultaneous doctors. Clear each doctor's open
+consultation between bursts by rerunning `seed-clinical-flow.ps1 -QueueVolume 0`. PASS means
+no HTTP 500/deadlock, no doctor/room receives more than one active entry, and every successful
+response names a unique queue entry.
+
+The comparable Sprint 3 baseline uses the cloned clinical groups in the Sprint 4 plan with
+all four new groups set to zero: 10 Doctor + 10 Receptionist, 30-second ramp, 900 seconds.
+The separately reported Sprint 4 Load uses 10 Doctor, 8 Receptionist, 8 Activity Feed,
+8 History, 4 Report and 2 Admin threads (40 total), with the same ramp and duration. Start
+resource monitoring before each run, then summarize and verify integrity:
+
+```powershell
+./monitor-sprint4-resources.ps1 -ComposeProject swiftcare-swc136 -DurationSeconds 960 `
+  -OutputPrefix results/load-SWC-136-resources
+./summarize-sprint4-results.ps1 -JtlPath results/load-SWC-136.jtl `
+  -OutputPath results/load-SWC-136-summary.json -WarmupSeconds 90
+./verify-sprint4-integrity.ps1 -ComposeProject swiftcare-swc136 `
+  -OutputPath results/load-SWC-136-integrity.csv
+```
+
+Load passes only when all six pre-registered thresholds in `TEST-PLAN.md` pass and integrity
+is clean. Only then inspect host memory and Docker usage and run capped Stress. Stress stages
+are 100, 200, 300 and 400 total users with the 25:20:20:20:10:5 role ratio, 600-second ramp
+and 900-second duration. Stop at the first sustained threshold breach, host pressure, or
+unexpected contact with a non-isolated endpoint. Record the first saturated service using
+container CPU/memory, MySQL connections, throughput, errors and latency together.
+
+For capped stages add `docker-compose.perf.yml` to `$compose`. Restore or destroy only the
+isolated project with `docker compose @compose down -v`; never use an unqualified `down`.
+Keep JTLs, HTML dashboards, resource CSVs, integrity CSVs and service logs under `results/`.

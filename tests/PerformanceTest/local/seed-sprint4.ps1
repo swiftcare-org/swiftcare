@@ -90,7 +90,7 @@ for ($i = 1; $i -le $AdminCount; $i++) {
         role = "Receptionist"
     }
 
-    $adminRows.Add("$adminUsername,$UserPassword,$($target.id),$targetName")
+    $adminRows.Add("$adminUsername,$UserPassword,$($target.userId),$targetName")
 }
 
 Set-Content -Path (Join-Path $dataDir "sprint4-admins.csv") -Value $adminRows -Encoding utf8
@@ -112,8 +112,11 @@ Set-Content -Path (Join-Path $dataDir "sprint4-history.csv") -Value $historyRows
 $doctorToken = Get-Token $doctorRows[0].username $doctorRows[0].password
 $deadline = (Get-Date).AddSeconds($QueueWaitSeconds)
 do {
-    $waiting = @(Invoke-RestMethod -Method Get -Uri "$GatewayUrl/api/queue/today/waiting" `
-        -Headers @{ Authorization = "Bearer $doctorToken" })
+    # Invoke-RestMethod preserves a top-level JSON array as one pipeline object
+    # when invoked inside @(...), so that wrapper misleadingly reports Count=1.
+    # Direct assignment keeps the returned array's actual Count.
+    $waiting = Invoke-RestMethod -Method Get -Uri "$GatewayUrl/api/queue/today/waiting" `
+        -Headers @{ Authorization = "Bearer $doctorToken" }
     if ($waiting.Count -ge $QueueVolume) { break }
     Start-Sleep -Seconds 2
 } while ((Get-Date) -lt $deadline)

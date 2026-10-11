@@ -1,0 +1,16 @@
+services:
+  zookeeper:
+    ports: !override
+      - "${ZOOKEEPER_HOST_PORT:-2216}:2181"
+
+  queueservice:
+    environment:
+      Kafka__ConsumerGroupId: queue-service-swc136
+
+  notificationservice:
+    environment:
+      Kafka__ConsumerGroupId: notification-service-swc136
+
+networks:
+  swiftcare-network:
+    name: swiftcare-swc136-network
