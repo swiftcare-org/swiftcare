@@ -3,6 +3,7 @@ import { apiRequest } from './client';
 export interface PatientQueueStatus {
   isCheckedIn: boolean;
   queueNumber: string | null;
+  status: TodayQueueStatus | null;
 }
 
 export function getPatientQueueStatus(patientId: string): Promise<PatientQueueStatus> {
@@ -41,6 +42,7 @@ export interface CalledPatient {
   doctorName: string;
   roomNumber: string;
   calledAt: string;
+  notificationPending?: boolean;
 }
 
 export function callNextPatient(): Promise<CalledPatient> {

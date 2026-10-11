@@ -71,7 +71,9 @@ public class ClinicalJourneyTests : SeleniumTestBase
         dashboard.ClickCurrentPatientName();
         var profile = new PatientProfilePage(Driver);
         profile.WaitUntilLoaded();
-        Assert.Equal(patient.PatientId, profile.PatientId, ignoreCase: true);
+        Assert.Equal($"/patients/{patient.PatientId}", new Uri(Driver.Url).AbsolutePath);
+        Assert.Equal(patient.Nic, profile.Nic);
+        Assert.False(profile.HasPatientIdField);
         profile.WaitForMedicalAlertCount(2);
         Assert.Equal(new[] { "Allergy Alert", "Chronic Condition Alert" }, profile.MedicalAlertLabelsInOrder);
         Assert.Contains(profile.MedicalAlertMessagesInOrder, message => message.Contains("Penicillin"));
@@ -128,6 +130,17 @@ public class ClinicalJourneyTests : SeleniumTestBase
         var queue = new QueueManagementPage(Driver);
         queue.WaitUntilLoaded();
         queue.WaitForStatus(queueNumber, "COMPLETED", QueueUpdateTimeout);
+        queue.WaitForPendingPrescription(queueNumber, QueueUpdateTimeout);
+        AppSession.GoTo(Driver, $"/patients/{patient.PatientId}");
+        checkInProfile.WaitUntilLoaded();
+        var completedVisit = checkInProfile.WaitForCompletedVisitBanner();
+        Assert.Contains("Visit Completed Today", completedVisit);
+        Assert.Contains($"Queue: {queueNumber}", completedVisit);
+        Assert.Contains("This patient cannot be checked in again today.", completedVisit);
+        Assert.False(checkInProfile.HasCheckInButton);
+
+        AppSession.GoTo(Driver, QueueManagementPage.Path);
+        queue.WaitUntilLoaded();
         queue.WaitForPendingPrescription(queueNumber, QueueUpdateTimeout);
         Assert.Equal(
             PrescriptionDetailsPage.PathFor(assignment.QueueId),

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using NotificationService.Models.Configuration;
 using NotificationService.Services;
 
 namespace NotificationService.UnitTests.Services;
@@ -22,7 +24,7 @@ public class NotificationFeedServiceEdgeCaseTests
             id: Guid.Parse("00000000-0000-0000-0000-000000000002"));
         await database.SeedAsync(lowerId, higherId);
 
-        var feed = await new NotificationFeedService(database.DbContext).GetRecentAsync(50);
+        var feed = await new NotificationFeedService(database.DbContext, Options.Create(new ReportOptions()), TimeProvider.System).GetRecentAsync(50);
 
         Assert.Equal(new[] { higherId.Id, lowerId.Id }, feed.Select(entry => entry.Id).ToArray());
     }

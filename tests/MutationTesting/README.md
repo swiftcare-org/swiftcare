@@ -102,44 +102,66 @@ An **equivalent mutant** changes the code without changing behaviour (for exampl
 where the two values can never be equal), so no test can kill it. These are recorded with a
 justification in the result report instead of being "fixed".
 
-## CI handoff (DevOps)
+## CI
 
-The `mutation-testing` job in `.github/workflows/ci.yml` runs after the existing .NET build and test job on pull requests to `main` or `develop`, and on manual `workflow_dispatch` runs.
-One matrix leg runs `run-mutation-tests.ps1` for each of the seven services above.
-Push and reusable workflow calls do not run mutation testing.
+The `mutation-testing` job in `.github/workflows/ci.yml` runs after the .NET build and test job.
+One matrix leg runs `run-mutation-tests.ps1` for each of the seven services above, and each
+leg reports as its own check, `Mutation testing (<Service>)`.
 
-Pull request legs fetch full Git history and pass `-Since origin/<base branch>` to mutate only changed code.
-A manual run passes an empty `-Since` value and mutates the full service.
-Each leg writes its score table to the GitHub Actions job summary and uploads its result directory as `mutation-report-<Service>`, including the HTML report when Stryker produces one.
-Upload runs even when the mutation step fails.
-The script returns a failure if the configured service break threshold is missed or no report is produced.
+| Event | Runs | Mutates |
+|---|---|---|
+| Pull request into `develop` or `main`, opened or updated | Yes | Code changed since the base branch (`-Since origin/<base branch>`) |
+| Manual **Run workflow** | Yes | Every service in full, on the chosen ref |
+| Push to `develop` or `main` (a merge) | No | - |
+| CD calling CI (`workflow_call`) | No | - |
 
-After the workflow is merged, inspect a pull request CI run for seven matrix results, score tables and downloadable reports.
-Use the CI workflow's manual Run workflow option on the intended ref to verify a full seven-service run.
-Record the run IDs and results; the workflow definition alone does not establish that either mode or the failure threshold passed in GitHub Actions.
+Why it runs where it does:
+
+- **Pull requests** are where a weaker test suite can still be stopped. A leg fails when its
+  service scores below its break threshold, and the seven checks are required in the `develop`
+  and `main` branch rulesets, so that blocks the merge. Mutating only changed code keeps a pull
+  request run to minutes.
+- **Not on push or in CD.** The merged code already passed on its pull request, a failure after
+  the merge could no longer block it, and a full run (about 25 minutes) would delay every
+  deployment.
+- **A full run** of every service is started manually with **Run workflow**, for example before
+  a release or to refresh the results below.
+
+Each leg writes its score table to the GitHub Actions job summary and uploads its result
+directory as `mutation-report-<Service>`, including the HTML report. Upload runs even when the
+mutation step fails. The script fails when the service scores below its break threshold or
+produces no report.
 
 ## Results
 
-| | Baseline | Final |
-|---|---:|---:|
-| Mutation score (all services) | 62.11% | **90.25%** |
-| Covered score | 77.56% | **98.24%** |
-| Undetected mutants | 540 | 139, all classified |
-| Unit test cases | 630 | 983 |
+Current results (2026-10-11, all seven services):
 
-Full per-service results, the tests added, the defect found and the classification of every
-remaining mutant: [`results/RESULT-mutation-20261005.md`](results/RESULT-mutation-20261005.md).
+| Service | Mutation score | Covered score | Break threshold |
+|---|---:|---:|---:|
+| ApiGateway | 98.26% | 98.69% | 90 |
+| AuthService | 91.96% | 98.62% | 85 |
+| MedicalRecordService | 95.33% | 99.78% | 90 |
+| NotificationService | 89.04% | 97.99% | 80 |
+| PatientService | 91.30% | 97.85% | 85 |
+| PrescriptionService | 91.67% | 98.02% | 85 |
+| QueueService | 91.45% | 97.48% | 85 |
+| **All services** | **92.84%** | **98.45%** | |
 
-NotificationService was added on 2026-10-11 with the same method:
+How the suite got there:
 
-| | Baseline | Final |
-|---|---:|---:|
-| Mutation score | 86.67% | **88.57%** |
-| Covered score | 95.79% | **97.89%** |
-| Undetected mutants | 28 | 24, all classified |
-| Unit test cases | 197 | 201 |
+| | 2026-10-05 baseline | 2026-10-05 final | 2026-10-11 final |
+|---|---:|---:|---:|
+| Services | 6 | 6 | 7 |
+| Mutation score | 62.11% | 90.25% | **92.84%** |
+| Covered score | 77.56% | 98.24% | **98.45%** |
+| Undetected mutants | 540 | 139 | 157, all classified |
+| Unit test cases | 630 | 983 | 1,778 |
 
-Details: [`results/RESULT-mutation-notificationservice-20261011.md`](results/RESULT-mutation-notificationservice-20261011.md).
+Per-service results, the tests added, the defect found (and confirmed fixed) and the
+classification of every remaining mutant:
+[`results/RESULT-mutation-20261011.md`](results/RESULT-mutation-20261011.md). The earlier runs
+are kept in [`RESULT-mutation-20261005.md`](results/RESULT-mutation-20261005.md) and
+[`RESULT-mutation-notificationservice-20261011.md`](results/RESULT-mutation-notificationservice-20261011.md).
 
 Stop the Docker Compose stack before a run: one ApiGateway route test fails while a real
 PrescriptionService is listening on port 5001, and Stryker will not start unless every test

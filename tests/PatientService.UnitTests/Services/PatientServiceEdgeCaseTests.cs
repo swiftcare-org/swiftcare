@@ -153,15 +153,30 @@ public class PatientServiceEdgeCaseTests
     [Fact]
     public void DateOfBirthCheckLeavesMissingValuesToTheRequiredAttribute()
     {
-        Assert.True(new PastDateAttribute().IsValid(null));
+        Assert.Null(new PastDateAttribute().GetValidationResult(null, new ValidationContext(new object())));
+    }
+
+    [Fact]
+    public void DateOfBirthCheckWithoutAClinicDateProviderNamesTheMissingService()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new PastDateAttribute().GetValidationResult(new DateOnly(2000, 1, 1), new ValidationContext(new object())));
+
+        Assert.Equal("IClinicDateProvider is required for birth-date validation.", exception.Message);
     }
 
     [Fact]
     public void DateOfBirthExactlyAtTheMaximumAgeIsAccepted()
     {
-        var oldest = DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-130);
+        var today = new DateOnly(2026, 10, 10);
+        var context = new ValidationContext(new object());
+        context.InitializeServiceProvider(type => type == typeof(IClinicDateProvider) ? new BirthDateProvider(today) : null);
+        Assert.Null(new PastDateAttribute().GetValidationResult(today.AddYears(-130), context));
+    }
 
-        Assert.True(new PastDateAttribute().IsValid(oldest));
+    private sealed class BirthDateProvider(DateOnly today) : IClinicDateProvider
+    {
+        public DateOnly Today => today;
     }
 
     [Fact]

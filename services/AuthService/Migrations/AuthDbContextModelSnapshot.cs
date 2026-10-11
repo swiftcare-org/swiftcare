@@ -139,6 +139,22 @@ namespace AuthService.Migrations
                     b.ToTable("LogoutAuditEntries");
                 });
 
+            modelBuilder.Entity("AuthService.Models.Entities.RevokedSession", b =>
+                {
+                    b.Property<string>("TokenId")
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("TokenId");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.ToTable("RevokedSessions");
+                });
+
             modelBuilder.Entity("AuthService.Models.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -171,6 +187,9 @@ namespace AuthService.Migrations
                     b.Property<string>("RoomNumber")
                         .HasMaxLength(16)
                         .HasColumnType("varchar(16)");
+
+                    b.Property<Guid>("SessionVersion")
+                        .HasColumnType("char(36)");
 
                     b.Property<string>("Specialization")
                         .HasMaxLength(64)

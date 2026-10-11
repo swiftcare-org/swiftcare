@@ -3,6 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using PatientService.Models.Dtos;
 using PatientService.Models.Enums;
+using PatientService.Services;
+using Microsoft.Extensions.Options;
+using PatientService.Models.Configuration;
 
 namespace PatientService.UnitTests.Models;
 
@@ -30,6 +33,9 @@ public class RegisterPatientRequestValidationTests
     private static IList<ValidationResult> Validate(RegisterPatientRequest request)
     {
         var context = new ValidationContext(request);
+        context.InitializeServiceProvider(type => type == typeof(IClinicDateProvider)
+            ? new ClinicDateProvider(TimeProvider.System, Options.Create(new ClinicOptions { TimeZoneId = "Asia/Colombo" }))
+            : null);
         var results = new List<ValidationResult>();
         Validator.TryValidateObject(request, context, results, validateAllProperties: true);
         return results;
@@ -146,7 +152,7 @@ public class RegisterPatientRequestValidationTests
     public void FutureDateOfBirthFailsValidation()
     {
         var request = ValidRequest();
-        request.DateOfBirth = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        request.DateOfBirth = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2));
 
         var errors = Validate(request);
 

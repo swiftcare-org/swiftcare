@@ -277,6 +277,72 @@ public class PrescriptionManagementServiceEdgeCaseTests
         Assert.Equal(2, await scope.DbContext.PrescriptionItems.CountAsync());
     }
 
+    [Fact]
+    public async Task CreateReportsADecisionRecordedConcurrentlyInsteadOfFailing()
+    {
+        var request = ValidRequest();
+        await using var scope = await TestScope.CreateAsync(async connection =>
+        {
+            // The doctor records "No prescription required" for the same consultation between
+            // this request's checks and its save, so the consultation's outcome claim rejects it.
+            await using var other = await CreateDbContextAsync(connection);
+            other.NoPrescriptionDecisions.Add(NewDecision(request.ConsultationId));
+            await other.SaveChangesAsync();
+        });
+
+        var result = await scope.Service.CreateAsync(request, Guid.NewGuid(), "Dr. Amara Chen");
+
+        Assert.Equal(CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded, result.Outcome);
+        Assert.Null(result.Prescription);
+        Assert.Equal(0, await scope.DbContext.Prescriptions.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateIgnoresADecisionForAnotherConsultationWhenReportingAConcurrentDuplicate()
+    {
+        var request = ValidRequest();
+        await using var scope = await TestScope.CreateAsync(async connection =>
+        {
+            await using var other = await CreateDbContextAsync(connection);
+            other.Prescriptions.Add(NewPrescription(Guid.NewGuid(), request.ConsultationId));
+            other.NoPrescriptionDecisions.Add(NewDecision(Guid.NewGuid()));
+            await other.SaveChangesAsync();
+        });
+
+        var result = await scope.Service.CreateAsync(request, Guid.NewGuid(), "Dr. Amara Chen");
+
+        Assert.Equal(CreatePrescriptionOutcome.ConsultationAlreadyHasPrescription, result.Outcome);
+    }
+
+    [Fact]
+    public async Task RemoveMedicineReportsAConcurrentChangeInsteadOfSuccess()
+    {
+        await using var scope = await TestScope.CreateAsync(_ =>
+            throw new DbUpdateConcurrencyException("Another request changed the prescription"));
+        var prescription = NewPrescription(LowerId, itemCount: 2);
+        await scope.SeedAsync(prescription);
+
+        var result = await scope.Service.RemoveMedicineAsync(
+            prescription.Id,
+            prescription.Items.First().Id,
+            prescription.DoctorId);
+
+        Assert.Equal(PrescriptionItemChangeOutcome.ConcurrentModification, result.Outcome);
+        Assert.Null(result.Prescription);
+        Assert.Equal(2, await scope.DbContext.PrescriptionItems.CountAsync());
+    }
+
+    private static NoPrescriptionDecision NewDecision(Guid consultationId) => new()
+    {
+        Id = Guid.NewGuid(),
+        ConsultationId = consultationId,
+        QueueId = Guid.NewGuid(),
+        PatientId = Guid.NewGuid(),
+        DoctorId = Guid.NewGuid(),
+        DoctorName = "Dr. Amara Chen",
+        RecordedAt = Now.UtcDateTime
+    };
+
     private static CreatePrescriptionRequest ValidRequest() => new()
     {
         ConsultationId = Guid.NewGuid(),

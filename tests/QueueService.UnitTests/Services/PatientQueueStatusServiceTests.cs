@@ -30,8 +30,12 @@ public class PatientQueueStatusServiceTests
         Options.Create(new QueueOptions { ClinicTimeZone = "Asia/Colombo" }),
         new FixedTimeProvider(FixedUtcNow));
 
-    [Fact]
-    public async Task GetTodayStatusForQueuedPatientReturnsQueueNumber()
+    [Theory]
+    [InlineData(QueueStatus.Waiting, "WAITING")]
+    [InlineData(QueueStatus.InConsultation, "IN_CONSULTATION")]
+    [InlineData(QueueStatus.Completed, "COMPLETED")]
+    public async Task GetTodayStatusForQueuedPatientReturnsQueueNumberAndStatus(
+        QueueStatus queueStatus, string expectedStatus)
     {
         using var connection = OpenConnection();
         await using var dbContext = new QueueDbContext(
@@ -43,7 +47,7 @@ public class PatientQueueStatusServiceTests
             PatientId = patientId,
             QueueDate = new DateOnly(2026, 9, 2),
             QueueNumber = "Q-003",
-            Status = QueueStatus.Waiting
+            Status = queueStatus
         });
         await dbContext.SaveChangesAsync();
 
@@ -51,6 +55,7 @@ public class PatientQueueStatusServiceTests
 
         Assert.True(status.IsCheckedIn);
         Assert.Equal("Q-003", status.QueueNumber);
+        Assert.Equal(expectedStatus, status.Status);
     }
 
     [Fact]
@@ -65,6 +70,7 @@ public class PatientQueueStatusServiceTests
 
         Assert.False(status.IsCheckedIn);
         Assert.Null(status.QueueNumber);
+        Assert.Null(status.Status);
     }
 
     [Fact]
@@ -80,7 +86,7 @@ public class PatientQueueStatusServiceTests
             PatientId = patientId,
             QueueDate = new DateOnly(2026, 9, 1),
             QueueNumber = "Q-010",
-            Status = QueueStatus.Waiting
+            Status = QueueStatus.Completed
         });
         await dbContext.SaveChangesAsync();
 
@@ -88,5 +94,6 @@ public class PatientQueueStatusServiceTests
 
         Assert.False(status.IsCheckedIn);
         Assert.Null(status.QueueNumber);
+        Assert.Null(status.Status);
     }
 }

@@ -45,15 +45,29 @@ jobs:
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
             services/PrescriptionService/Dockerfile
-            services/NotificationService/Dockerfile
+            tests/E2ETests/Infrastructure/NotificationService.Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
+            deployment/cd/services.json
+            deployment/cd/select_services.py
           )
 
           for file in "${required_files[@]}"; do
             test -f "$file" || { echo "Missing required file: $file"; exit 1; }
           done
+
+      - name: Test release selection
+        shell: bash
+        run: python3 -I -m unittest discover -s deployment/cd -p 'test_*.py' -v
+
+      - name: Lint release scripts
+        shell: bash
+        run: shellcheck -x deployment/cd/*.sh deployment/cd/testdata/fake-az
+
+      - name: Test release scripts
+        shell: bash
+        run: bash deployment/cd/test-scripts.sh
 
       - name: Prepare safe validation environment
         run: cp .env.example .env
@@ -79,6 +93,20 @@ jobs:
     timeout-minutes: 25
     env:
       MINIMUM_LINE_COVERAGE: "55"
+      SWIFTCARE_TEST_MYSQL: "Server=127.0.0.1;Port=3306;User ID=root;Password=swiftcare-ci-tests"
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: swiftcare-ci-tests
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -175,9 +203,15 @@ jobs:
           path: TestResults
 
   mutation-testing:
-    name: Mutation testing (${{ matrix.service }})
+    # No matrix expression in the name: GitHub appends the service itself, and a skipped job
+    # (for example inside the CD quality gate) shows a clean name instead of the raw template.
+    name: Mutation testing
     needs: build-and-test
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # A reusable call from CD reports the caller's event and workflow name, so the CD
+    # quality gate does not run the full mutation matrix.
+    if: >-
+      github.workflow == 'CI' &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -561,7 +595,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: services/NotificationService/Dockerfile
+          file: tests/E2ETests/Infrastructure/NotificationService.Dockerfile
           platforms: linux/amd64
           push: false
           cache-from: type=gha,scope=swiftcare-notification
@@ -596,7 +630,7 @@ jobs:
             dockerfile: services/PrescriptionService/Dockerfile
             scope: swiftcare-prescription
           - service: notification
-            dockerfile: services/NotificationService/Dockerfile
+            dockerfile: tests/E2ETests/Infrastructure/NotificationService.Dockerfile
             scope: swiftcare-notification
     steps:
       - name: Check out repository

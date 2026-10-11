@@ -8,7 +8,8 @@ public enum PrescriptionItemChangeOutcome
     PrescriptionNotFound,
     MedicineNotFound,
     MinimumOneMedicineRequired,
-    PrescriptionDispensed
+    PrescriptionDispensed,
+    ConcurrentModification
 }
 
 public sealed record PrescriptionItemChangeResult(

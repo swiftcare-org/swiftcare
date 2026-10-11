@@ -43,7 +43,7 @@ interface Notice {
   message: string;
 }
 
-const COLUMNS = ['Username', 'Full Name', 'Role', 'Room', 'Specialization', 'Status', 'Actions'];
+const COLUMNS = ['Username', 'Full Name', 'Role', 'Room', 'Status', 'Actions'];
 
 interface FieldErrors {
   username: string | null;
@@ -431,7 +431,15 @@ export function UserManagementPage() {
 
         {listStatus === 'loaded' && users.length > 0 && (
           <div className={tableWrapperClassName}>
-            <table className={tableClassName}>
+            <table className={`${tableClassName} w-full table-fixed [&_th]:whitespace-normal [&_th]:px-2 [&_td]:px-2 [&_td]:[overflow-wrap:anywhere]`}>
+              <colgroup>
+                <col className="w-[20%]" />
+                <col className="w-[23%]" />
+                <col className="w-[12%]" />
+                <col className="w-[8%]" />
+                <col className="w-[12%]" />
+                <col className="w-[25%]" />
+              </colgroup>
               <thead className={tableHeadClassName}>
                 <tr>
                   {COLUMNS.map((heading) => (
@@ -447,7 +455,7 @@ export function UserManagementPage() {
                   const rowAction = (kind: PanelKind, label: string, testId: string) => (
                     <button
                       type="button"
-                      className={textLinkClassName}
+                      className={`${textLinkClassName} text-left`}
                       aria-expanded={openKind === kind}
                       data-testid={testId}
                       onClick={() => (openKind === kind ? closePanel() : openPanel(listedUser, kind))}
@@ -464,14 +472,13 @@ export function UserManagementPage() {
                         <td className={tableCellClassName}>{listedUser.fullName}</td>
                         <td className={tableCellClassName}>{listedUser.role}</td>
                         <td className={tableCellClassName}>{listedUser.roomNumber ?? '-'}</td>
-                        <td className={tableCellClassName}>{listedUser.specialization ?? '-'}</td>
                         <td className={tableCellClassName} data-testid="user-status">
                           <StatusBadge tone={listedUser.isActive ? 'success' : 'neutral'}>
                             {listedUser.isActive ? 'Active' : 'Inactive'}
                           </StatusBadge>
                         </td>
                         <td className={tableCellClassName}>
-                          <div className="flex gap-4 whitespace-nowrap">
+                          <div className="flex flex-wrap gap-x-3 gap-y-2">
                             {rowAction('edit', 'Edit', 'user-edit')}
                             {rowAction('reset', 'Reset Password', 'user-reset-password')}
                             {listedUser.isActive

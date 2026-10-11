@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Field, RequiredLegend } from '../components/ui/Field';
 import { SectionCard } from '../components/ui/SectionCard';
 import { textLinkClassName } from '../components/ui/table';
-import { formatDate } from '../lib/format';
+import { clinicTodayForDateInput, formatDate } from '../lib/format';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'created' | 'failed';
 
@@ -60,7 +60,7 @@ function applyServerFieldErrors(prev: FieldErrors, serverErrors: Readonly<Record
 }
 
 function todayAsDateInputValue(): string {
-  return new Date().toISOString().slice(0, 10);
+  return clinicTodayForDateInput();
 }
 
 export function PatientRegistrationPage() {
@@ -183,7 +183,8 @@ export function PatientRegistrationPage() {
       <div aria-live="polite" className="empty:hidden">
         {status === 'created' && registeredPatient && (
           <Banner tone="success" title="Patient Registered">
-            <p>Patient registered successfully. Patient ID: {registeredPatient.patientId}</p>
+            <p>Patient registered successfully.</p>
+            {registeredPatient.queueDeliveryPending && <p>Queue entry is pending. It will be added automatically when the connection is restored.</p>}
             <p className="mt-1">
               <Link to={`/patients/${registeredPatient.patientId}`} className={textLinkClassName}>
                 Open patient profile

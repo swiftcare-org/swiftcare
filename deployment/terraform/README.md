@@ -400,7 +400,7 @@ Any messaging removal and MySQL shutdown require separate approval; removing mes
 Retained storage/other resources can still incur charges.
 Document who approved the window and the restart owner.
 
-For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD explicitly starts stopped Auth/Patient/Queue/MedicalRecord/Gateway apps but lacks the Prescription start/readiness step; an operator must verify Prescription is running and arrange an authorized start if needed. Check all six app states, revisions and images, custom-domain health, role-specific clinical routing, Kafka flow, and frontend behavior. CD's current smoke test covers neither MedicalRecord nor Prescription API routing, and image rollback does not undo migrations or configuration.
+For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD releases only the changed deployables. Each release starts the apps it deploys, plus AuthService and the gateway it needs for its smoke checks, and waits for a ready revision for every app, Prescription included. A release with `release=all` starts all six apps. Apps that are not part of the release keep their current state, so check all six app states, revisions and images after a window. Smoke checks sign in with the synthetic `SMOKE_*` accounts and cover Auth, Patient, Queue, MedicalRecord and Prescription routing through the gateway. Also check custom-domain health, the full clinical journey, Kafka flow and frontend behavior, which the smoke checks do not cover. Image rollback applies to the failed deployable only and does not undo migrations or configuration.
 
 ### Approved demo and test windows
 

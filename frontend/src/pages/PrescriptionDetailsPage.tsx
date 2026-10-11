@@ -231,19 +231,6 @@ export function PrescriptionDetailsPage() {
               }
             >
               <div className="space-y-5">
-                {!counterContext && (
-                  <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className={DETAIL_TERM_CLASS_NAME}>Queue reference</dt>
-                      <dd className="mt-0.5 break-all text-slate-900">{prescription.queueId}</dd>
-                    </div>
-                    <div>
-                      <dt className={DETAIL_TERM_CLASS_NAME}>Patient reference</dt>
-                      <dd className="mt-0.5 break-all text-slate-900">{prescription.patientId}</dd>
-                    </div>
-                  </dl>
-                )}
-
                 {prescription.status === 'NOT_REQUIRED' && (
                   <Banner tone="neutral" role="status">
                     <span data-testid="no-prescription-details">

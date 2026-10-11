@@ -97,6 +97,31 @@ public class ConsultationPage
         NotesInput.SendKeys(text);
     }
 
+    public void FillFollowUp(DateOnly date, string instructions)
+    {
+        Browser.SetInputValue(_driver, _driver.FindElement(By.Id("followUpDate")), date.ToString("yyyy-MM-dd"));
+        var field = _driver.FindElement(By.Id("followUpInstructions"));
+        field.Clear();
+        field.SendKeys(instructions);
+    }
+
+    public void SaveCurrentDraftAsTemplate(string name)
+    {
+        _driver.FindElement(By.CssSelector("[data-testid='save-as-template']")).Click();
+        _wait.Until(d => d.FindElements(By.CssSelector("[data-testid='save-template-panel']")).Count > 0);
+        var input = _driver.FindElement(By.Id("templateName"));
+        input.SendKeys(name);
+        _driver.FindElement(By.CssSelector("[data-testid='save-template-confirm']")).Click();
+        _wait.Until(d => d.FindElement(By.CssSelector("[data-testid='template-notice']"))
+            .Text.Contains("Template saved", StringComparison.Ordinal));
+    }
+
+    public bool HasTemplateOption(string templateName) =>
+        new SelectElement(TemplateSelect).Options.Any(option => option.Text == templateName);
+
+    public void WaitForTemplateOption(string templateName) =>
+        _wait.Until(_ => HasTemplateOption(templateName));
+
     public void ClickSave() => SaveButton.Click();
 
     // The heading's className includes "uppercase", and Chrome's element.Text returns

@@ -1,5 +1,13 @@
 # SwiftCare
 
+## Clinical visit validation (SWC-154)
+
+The gateway validates consultation creation, prescription creation and no-prescription decisions before forwarding writes. Consultation creation requires an active queue assignment owned by the authenticated doctor with the same patient. Prescription outcomes require a completed consultation owned by that doctor with matching patient and queue identifiers. The patient must still exist.
+
+Invalid identifiers return 400; a missing, mismatched, unfinished or unowned visit returns 422; unavailable authoritative validation returns 503 without forwarding the write. QueueService and MedicalRecordService provide gateway-secret-protected internal visit lookups. No public gateway route exposes those lookups, and no service reads another service's database.
+
+Deploy the two lookup endpoints before updating the gateway. No schema migration is needed. Validation uses the existing YARP cluster destinations, including Azure overrides. This closes the deferred cross-service validation scope recorded in issue #48.
+
 SwiftCare is a healthcare queue and medical-record management system built as six independently deployable microservices behind an API Gateway. It supports authentication, patient administration, clinical records, prescriptions, queue operations, notifications, and reporting.
 
 ## Features
@@ -63,7 +71,9 @@ swiftcare/
 |   |-- PrescriptionService/
 |   `-- NotificationService/
 |-- deployment/
+|   |-- cd/
 |   |-- docker/
+|   |-- terraform/
 |   `-- azure/
 |-- tests/
 |-- docs/
@@ -270,6 +280,8 @@ dotnet test SwiftCare.slnx
 cd frontend && npm run lint && npm run build
 ```
 
+Mutation testing of the unit tests: see [Mutation testing](#mutation-testing-strykernet).
+
 ## Branching strategy
 
 - `main` contains stable, reviewed, releasable code.
@@ -360,6 +372,8 @@ The CI workflow runs on pushes and pull requests involving `develop` or `main`, 
 - **Analyze code** — CodeQL static analysis over C# and TypeScript, reporting into the repository's Security tab.
 - **Build deployable images** — builds the API Gateway, AuthService, PatientService, and QueueService Dockerfiles without publishing them, catching container-only failures before deployment.
 
+The infrastructure job also lints and tests the CD release scripts in `deployment/cd`.
+
 Runs are grouped by workflow and ref with `cancel-in-progress`, so pushing twice in quick succession cancels the superseded run instead of executing both. NuGet packages are cached across runs, keyed on the project files and `dotnet-tools.json`.
 
 Every job guards on its entry file (`SwiftCare.slnx`, `frontend/package.json`, `frontend/package-lock.json`) existing, so each no-ops harmlessly on branches without those projects rather than failing.
@@ -421,13 +435,102 @@ Only `develop` and pull requests into it are analyzed. `main` is not analyzed, s
 - Authentication error: the token has expired or been revoked; rotate it.
 - Quality gate failed: open the SonarQube link in the job log or pull request comment, read the failed new-code condition, and fix the new code rather than weakening the gate.
 
+### Mutation testing (Stryker.NET)
+
+Owner: Kularatne P.O.N (IT24103437), SE3112 role Mutation Testing (SWC-151).
+
+Mutation testing checks whether the unit tests would catch a bug: Stryker.NET makes small deliberate changes to the service code and reruns the unit tests against each one. It covers all seven backend services (ApiGateway, AuthService, MedicalRecordService, NotificationService, PatientService, PrescriptionService, QueueService). Stryker.NET 5.0.0 is pinned in `dotnet-tools.json`; no database, Kafka or Docker is needed.
+
+```powershell
+cd tests/MutationTesting
+./run-mutation-tests.ps1                                     # all seven services
+./run-mutation-tests.ps1 -Service QueueService -OpenReport   # one service, opens the HTML report
+./run-mutation-tests.ps1 -Since develop                      # only code changed since develop
+```
+
+The **Mutation testing** job runs one leg per service on pull requests into `develop` or `main` (changed code only) and on manual runs (every service in full). It is not run on push or by CD. A leg fails when its service scores below its break threshold, and the legs are required checks, so a failing leg blocks the merge. Configuration, results and the reasoning behind these choices: [`tests/MutationTesting/README.md`](tests/MutationTesting/README.md).
+
 ### Continuous deployment
 
-A successful CI run for `main` automatically deploys the shared Azure development environment. `workflow_dispatch` runs the same CI quality gate and can deploy any selected branch for testing. Both paths publish immutable Gateway, AuthService, PatientService, QueueService, and MedicalRecordService images to GHCR; run service EF migrations as finite Container Apps jobs inside the VNet; deploy the services with internal ingress, including MedicalRecordService on port `5004`; deploy the public Gateway last with internal HTTPS destinations for QueueService and MedicalRecordService; smoke-test health, authentication, patient routing, queue display routing, and protected queue access; and deploy the frontend to Azure Static Web Apps. The Gateway accepts both configured frontend custom-domain origins, while the frontend build uses `GATEWAY_ORIGIN` as its public API base URL.
+A successful CI run for `main` starts CD automatically. `workflow_dispatch` first runs the CI quality gate for the selected branch (without mutation testing, which stays in direct CI runs) and can then deploy that branch for testing.
+CD releases only what changed. Each backend service, the gateway and the frontend is a separate deployable with its own image, migration job, Container App, smoke check and rollback. The list of deployables and their Environment value names is `deployment/cd/services.json`.
 
-CD sets both minimum and maximum replicas to `1` for Gateway, AuthService, PatientService, QueueService, and MedicalRecordService on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
+#### How a release is chosen
 
-The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. PrescriptionService deployment is separate from SWC-29, and the placeholder NotificationService is not fabricated or deployed until its project exists.
+The `plan` job compares each Container App's running commit (the SHA in its image tag) with the release commit. The frontend publishes its commit in `version.json`. Azure is the source of truth, so a change missed by an earlier failed or skipped run is picked up by the next one.
+
+| Changed path | Releases |
+|---|---|
+| `services/<Name>/**` | that service |
+| `ApiGateway/**` | the gateway |
+| `frontend/**` | the frontend |
+| `.github/workflows/cd.yml`, `deployment/cd/**`, `.dockerignore` | every deployable |
+| Tests, docs, Terraform, Compose, `ci.yml`, solution files | nothing |
+
+Terraform never runs in CD, so infrastructure changes are applied through a reviewed plan and release nothing. A running version that cannot be read (no app, a tag that is not a commit, or a commit missing from the repository history) releases that deployable, and so does an app whose latest revision never became ready, so a failed first deployment is retried by the next run. A service app that does not exist yet also releases the gateway, because the gateway needs its new internal address. The plan job writes the decision for every deployable to the run summary.
+
+#### Manual trigger
+
+Run the CD workflow from the Actions tab (Run workflow), choose the branch, and set the inputs:
+
+| Input | Values | Effect |
+|---|---|---|
+| `release` | `changed` (default), `all`, `auth`, `patient`, `queue`, `medical-record`, `prescription`, `gateway`, `frontend` | `changed` uses the same selection as an automatic run. `all` releases every deployable. A name releases only that deployable, so its migration and deployment run and nothing else does. |
+| `plan_only` | true or false | Reports the selection and changes nothing in Azure. |
+| `bootstrap_admin` | true or false | Includes AuthService and creates the initial administrator after its migration. |
+| `rollback_drill` | `none` or a deployable | Evidence only. Forces that deployable's first smoke check to fail so its rollback can be shown. It must be part of the release. |
+
+Changes to Environment values or secrets (for example a rotated registry token or signing key) are not visible in Git, so `changed` does not detect them. Use `all` after such a change; only released apps and jobs pick up new settings.
+
+The same run from the GitHub CLI:
+
+```bash
+gh workflow run cd.yml --ref develop -f release=prescription
+gh workflow run cd.yml --ref develop -f release=changed -f plan_only=true
+```
+
+#### Order, smoke checks and rollback
+
+1. Each selected backend deployable builds its own image, tagged with the release commit, inside its own job. A failed build holds back only that deployable.
+2. AuthService is released first, because the gateway validates every session with it and every smoke check signs in through it.
+3. The other selected services are released in parallel, each in its own job. A job captures the running image, runs only its own migration job, deploys, waits for a ready revision (starting the app first when it is stopped), and smoke tests through the gateway.
+4. The gateway is released last and only when no selected service failed. Its smoke test runs every service check.
+5. The frontend is released separately, after the backend jobs it follows have succeeded or been skipped.
+
+If a service fails after its deployment started, only that service returns to the image it ran before the release, and its smoke checks run again. Other services keep the versions just deployed, the gateway and frontend are skipped, and the run is marked failed. A failure before the deployment (for example a failed migration) leaves the running version unchanged.
+Rollback restores images only. Schemas, data, secrets, settings and domain changes stay as they are, so migrations must stay compatible with the previous image.
+The first deployment of a service has no previous image and is left as deployed when it fails. When the app already ran the release image before the run (for example `release=all` on an unchanged app), there is nothing to roll back to and the summary says so.
+
+Smoke checks go through the gateway using two synthetic accounts (a Receptionist and a Doctor) stored as `SMOKE_RECEPTIONIST_USERNAME`, `SMOKE_RECEPTIONIST_PASSWORD`, `SMOKE_DOCTOR_USERNAME` and `SMOKE_DOCTOR_PASSWORD` in the `azure-development` Environment. Create both through the Admin user screen; the Doctor needs an unused room label of at most 16 characters and never calls patients.
+The checks only read data, never print response bodies or tokens, and revoke each token afterwards.
+
+| Deployable | Checks |
+|---|---|
+| Auth | Invalid login returns 401; the Receptionist signs in |
+| Patient | Patient search returns a JSON array |
+| Queue | Public display returns the expected shape; today's queue returns 401 without a token and an array for the Receptionist |
+| MedicalRecord | The Doctor's templates return a JSON array |
+| Prescription | Pending prescriptions return a JSON array for the Receptionist |
+| Gateway | Health returns 200, then every check above |
+
+A release starts the apps it deploys, plus AuthService and the gateway it needs for the smoke checks, when they are stopped. Starting an app does not change its image. Stop the demo apps again after the approved window.
+
+#### Adding a service
+
+Add one entry to `deployment/cd/services.json`, create its Environment values, and add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
+
+#### Local checks
+
+```bash
+python3 -m unittest discover -s deployment/cd -p "test_*.py"
+bash deployment/cd/test-scripts.sh
+```
+
+The first checks the selection rules and summary. The second runs the deployment scripts against a fake Azure CLI and a stub gateway, so it proves script logic and not Azure behavior. It needs bash, jq, curl and Python 3.
+
+CD sets both minimum and maximum replicas to `1` for the gateway and all five services on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
+
+The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. NotificationService joins this release path through its own story, as one manifest entry plus its Environment values.
 
 Application Insights is not configured by CD yet because the current .NET projects have no Application Insights or OpenTelemetry instrumentation package. Adding telemetry is an application change and should be completed with the observability work below rather than represented by unused environment variables.
 

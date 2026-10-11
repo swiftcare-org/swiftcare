@@ -10,6 +10,48 @@ namespace MedicalRecordService.UnitTests.Services;
 
 public class ConsultationCompletionServiceTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(int.MaxValue / 50)]
+    public async Task CompletedPageLookupUsesDoctorPageAndCancellationToken(int page)
+    {
+        var doctor = Guid.NewGuid();
+        using var cancellation = new CancellationTokenSource();
+        IReadOnlyList<CompletedConsultationContextResponse> visits = [new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())];
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        repository.Setup(item => item.FindCompletedPageAsync(doctor, page, cancellation.Token)).ReturnsAsync(visits);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+
+        Assert.Same(visits, await CreateService(repository, publisher).FindCompletedPageAsync(doctor, page, cancellation.Token));
+
+        repository.VerifyAll();
+        publisher.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CompletedPageWithoutDoctorIsRejected()
+    {
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => CreateService(repository, publisher).FindCompletedPageAsync(Guid.Empty, 0));
+        Assert.Contains("Doctor ID must be provided.", error.Message);
+        Assert.Equal("doctorId", error.ParamName);
+        repository.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MaxValue / 50 + 1)]
+    [InlineData(int.MaxValue)]
+    public async Task CompletedPageOutsideSupportedRangeIsRejected(int page)
+    {
+        var repository = new Mock<IConsultationCompletionRepository>(MockBehavior.Strict);
+        var publisher = new Mock<IConsultationCompletedPublisher>(MockBehavior.Strict);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CreateService(repository, publisher).FindCompletedPageAsync(Guid.NewGuid(), page));
+        repository.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task LatestCompletedLookupUsesAuthenticatedDoctorId()
     {

@@ -36,7 +36,8 @@ public class PatientProfilePage
 
     // --- Demographics and access mode (SWC-92) ---
 
-    public string PatientId => DemographicValue("Patient ID");
+    public bool HasPatientIdField =>
+        _driver.FindElements(By.XPath("//dt[normalize-space()='Patient ID']")).Count > 0;
 
     public string Nic => DemographicValue("NIC");
 
@@ -324,6 +325,14 @@ public class PatientProfilePage
             });
         return banner!.Text;
     }
+
+    public string WaitForCompletedVisitBanner() =>
+        _wait.Until(d =>
+        {
+            var elements = d.FindElements(By.XPath(
+                "//*[@role='status'][.//*[normalize-space()='Visit Completed Today']]"));
+            return elements.Count > 0 ? elements[0].Text : null;
+        })!;
 
     // "Q-007" out of either check-in banner, so a caller can carry the number on to the
     // queue views without re-reading it from the API.

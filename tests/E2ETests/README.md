@@ -125,9 +125,9 @@ untouched.
 
 | Classification | Test classes | Execution |
 | --- | --- | --- |
-| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `PrescriptionCounterTests`, `ClinicDayJourneyTests`, `ClinicalJourneyTests` | Exclusive `Shared queue E2E` collection |
+| Global queue | `CheckInPatientTests`, `FullQueueTests`, `WaitingPoolTests`, `CallNextPatientTests`, `CurrentPatientProfileTests`, `WaitingRoomDisplayTests`, `ConsultationTests`, `VitalSignsTests`, `MedicalAlertBannerTests`, `ConsultationCompletionTests`, `PrescriptionTests`, `PrescriptionCounterTests`, `Sprint4ActivityFeedTests`, `Sprint4PatientHistoryTests`, `Sprint4DoctorWorkflowsTests`, `ClinicDayJourneyTests`, `ClinicalJourneyTests`, `Sprint4ClinicalJourneyTests` | Exclusive `Shared queue E2E` collection |
 | Isolated patient/profile | Allergy, allergy load-failure, chronic-condition, search, registration and receptionist journey tests | Up to the configured worker limit; registration-created queue rows are removed by patient id |
-| Independent identity/UI | Login, logout, user-management and admin journey tests | Up to the configured worker limit |
+| Independent identity/UI | Login, logout, user-management, role-restriction, report-resilience and admin journey tests | Up to the configured worker limit |
 
 Every generated value is tagged through `TestData.RunId`, which includes the test-process
 id so two suite processes started in the same second remain distinct. `SeedClient` removes
@@ -153,14 +153,23 @@ locally installed Chrome automatically, so no manual driver setup is needed.
 ## CI setup
 
 The CI E2E job builds AuthService, PatientService, QueueService,
-MedicalRecordService, PrescriptionService and Gateway from the main Compose file.
+MedicalRecordService, PrescriptionService, NotificationService and Gateway from the main Compose file.
 It starts MySQL and Kafka, applies each service's migrations with its `--migrate`
-command, then creates the Kafka topics. All five backend services must pass their
+command, then creates the Kafka topics. All six backend services must pass their
 Compose health checks before Gateway starts; Gateway must be healthy before
 Selenium runs. The job supplies a disposable MySQL user/password to both Compose
 and the test process so the database helpers connect to the same databases.
 
 On failure, the `e2e-test-results` artifact contains Compose status, logs from
-every backend service including PrescriptionService, frontend output and test
+every backend service including PrescriptionService and NotificationService, frontend output and test
 results. CI removes its temporary containers and database volume
 afterward.
+
+## Sprint 4 coverage (SWC-135)
+
+The Sprint 4 classes add browser coverage for staff creation/deactivation and audit logs,
+daily and monthly reports, the live Activity Feed, patient consultation/vitals/prescription
+history, follow-ups, no-prescription decisions, doctor-owned templates, report role guards,
+per-section report failure handling, and a completion journey that reaches both the Activity
+Feed and Daily Report. These tests use the same page-object and synthetic-data conventions as
+the earlier suite; no test relies on another test's fixture.

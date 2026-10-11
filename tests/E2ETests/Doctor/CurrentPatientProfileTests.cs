@@ -49,8 +49,8 @@ public class CurrentPatientProfileTests : SeleniumTestBase
         Assert.Equal(queueNumberTarget, patientNameTarget);
 
         dashboard.ClickCurrentPatientQueueNumber();
-        var profile = AssertDoctorReadableProfile(queueNumberTarget);
-        var openedPatientId = profile.PatientId;
+        var profile = AssertDoctorReadableProfile(queueNumberTarget, patient.Nic);
+        var openedPatientNic = profile.Nic;
 
         Driver.Navigate().Back();
         dashboard.WaitUntilLoaded();
@@ -58,8 +58,8 @@ public class CurrentPatientProfileTests : SeleniumTestBase
         Assert.Equal(patientNameTarget, dashboard.CurrentPatientNameProfilePath);
 
         dashboard.ClickCurrentPatientName();
-        profile = AssertDoctorReadableProfile(patientNameTarget);
-        Assert.Equal(openedPatientId, profile.PatientId);
+        profile = AssertDoctorReadableProfile(patientNameTarget, patient.Nic);
+        Assert.Equal(openedPatientNic, profile.Nic);
     }
 
     [Fact]
@@ -127,18 +127,14 @@ public class CurrentPatientProfileTests : SeleniumTestBase
         }
     }
 
-    private PatientProfilePage AssertDoctorReadableProfile(string expectedPath)
+    private PatientProfilePage AssertDoctorReadableProfile(string expectedPath, string expectedNic)
     {
         var profile = new PatientProfilePage(Driver);
         profile.WaitUntilLoaded();
 
         Assert.Equal(expectedPath, new Uri(Driver.Url).AbsolutePath);
-        var expectedPatientId = expectedPath.Split('/', StringSplitOptions.RemoveEmptyEntries).Last();
-        Assert.True(
-            string.Equals(expectedPatientId, profile.PatientId, StringComparison.OrdinalIgnoreCase),
-            $"Expected profile for patient '{expectedPatientId}', but page showed '{profile.PatientId}'.");
-        Assert.False(string.IsNullOrWhiteSpace(profile.PatientId));
-        Assert.False(string.IsNullOrWhiteSpace(profile.Nic));
+        Assert.Equal(expectedNic, profile.Nic);
+        Assert.False(profile.HasPatientIdField);
         Assert.False(string.IsNullOrWhiteSpace(profile.PhoneNumber));
         Assert.False(string.IsNullOrWhiteSpace(profile.BloodGroup));
         Assert.False(string.IsNullOrWhiteSpace(profile.Address));

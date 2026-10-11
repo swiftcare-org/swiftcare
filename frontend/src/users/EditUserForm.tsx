@@ -14,17 +14,15 @@ interface EditUserFormProps {
 interface FieldErrors {
   fullname: string | null;
   roomnumber: string | null;
-  specialization: string | null;
 }
 
-const NO_ERRORS: FieldErrors = { fullname: null, roomnumber: null, specialization: null };
+const NO_ERRORS: FieldErrors = { fullname: null, roomnumber: null };
 
 export function EditUserForm({ user, onSaved, onCancel }: EditUserFormProps) {
   const isDoctor = user.role === 'Doctor';
 
   const [fullName, setFullName] = useState(user.fullName);
   const [roomNumber, setRoomNumber] = useState(user.roomNumber ?? '');
-  const [specialization, setSpecialization] = useState(user.specialization ?? '');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_ERRORS);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -43,7 +41,6 @@ export function EditUserForm({ user, onSaved, onCancel }: EditUserFormProps) {
     const nextErrors: FieldErrors = {
       fullname: trimmedFullName ? null : 'Full name is required.',
       roomnumber: isDoctor && !trimmedRoomNumber ? 'Room number is required for doctors.' : null,
-      specialization: null,
     };
     setFieldErrors(nextErrors);
 
@@ -58,7 +55,7 @@ export function EditUserForm({ user, onSaved, onCancel }: EditUserFormProps) {
       const updated = await updateUser(user.userId, {
         fullName: trimmedFullName,
         roomNumber: isDoctor ? trimmedRoomNumber : undefined,
-        specialization: isDoctor ? specialization.trim() || undefined : undefined,
+        specialization: isDoctor ? user.specialization : undefined,
       });
       onSaved(updated);
     } catch (error) {
@@ -67,7 +64,6 @@ export function EditUserForm({ user, onSaved, onCancel }: EditUserFormProps) {
         setFieldErrors({
           fullname: error.fieldErrors.fullname ?? null,
           roomnumber: error.fieldErrors.roomnumber ?? null,
-          specialization: error.fieldErrors.specialization ?? null,
         });
       } else if (error instanceof ApiError && error.status === 404) {
         setFormError('This account no longer exists. Please refresh the page.');
@@ -134,26 +130,6 @@ export function EditUserForm({ user, onSaved, onCancel }: EditUserFormProps) {
               onChange={(event) => {
                 setRoomNumber(event.target.value);
                 clearError('roomnumber');
-              }}
-              disabled={saving}
-            />
-          )}
-        </Field>
-      )}
-
-      {isDoctor && (
-        <Field id="edit-specialization" label="Specialization" optional error={fieldErrors.specialization}>
-          {(control) => (
-            <input
-              {...control}
-              name="specialization"
-              type="text"
-              autoComplete="off"
-              maxLength={64}
-              value={specialization}
-              onChange={(event) => {
-                setSpecialization(event.target.value);
-                clearError('specialization');
               }}
               disabled={saving}
             />

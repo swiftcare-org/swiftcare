@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using MedicalRecordService.Logging;
 using MedicalRecordService.Models.Dtos;
@@ -46,6 +47,12 @@ public sealed class GatewaySecretMiddleware
             return;
         }
 
+        var claims = new List<Claim>();
+        var userId = context.Request.Headers["X-User-Id"].FirstOrDefault();
+        var role = context.Request.Headers["X-User-Role"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(userId)) claims.Add(new Claim(ClaimTypes.NameIdentifier, userId));
+        if (!string.IsNullOrEmpty(role)) claims.Add(new Claim(ClaimTypes.Role, role));
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Gateway"));
         await _next(context);
     }
 
