@@ -23,8 +23,9 @@
     script finishes any such consultation through the real APIs (consultation,
     vitals, complete), so re-running it resets the doctor pool.
 
-    Writes data/clinic-doctors.csv and data/clinic-receptionists.csv
-    (username,password), git-ignored.
+    Writes data/clinic-doctors.csv, data/clinic-receptionists.csv and
+    data/clinic-patients.csv, all git-ignored. The patient file lets later
+    performance plans exercise history endpoints using only IDs created by this run.
 
 .PARAMETER GatewayUrl
     API Gateway base URL. Default: http://localhost:8000
@@ -183,6 +184,8 @@ Write-Host "  wrote data/clinic-receptionists.csv ($($receptionistRows.Count - 1
 Write-Host "Checking in $QueueVolume patients to seed today's waiting queue..." -ForegroundColor Cyan
 $stamp = Get-Date -Format "MMddHHmm"
 $checkedIn = 0
+$patientRows = [System.Collections.Generic.List[string]]::new()
+$patientRows.Add("patientId")
 
 for ($i = 1; $i -le $QueueVolume; $i++) {
     $nic = "$stamp{0:D4}" -f $i
@@ -198,9 +201,10 @@ for ($i = 1; $i -le $QueueVolume; $i++) {
     } | ConvertTo-Json -Compress
 
     try {
-        Invoke-RestMethod -Method Post -Uri "$GatewayUrl/api/patients" `
+        $registered = Invoke-RestMethod -Method Post -Uri "$GatewayUrl/api/patients" `
             -Headers @{ Authorization = "Bearer $receptionToken" } `
-            -ContentType "application/json" -Body $body | Out-Null
+            -ContentType "application/json" -Body $body
+        $patientRows.Add([string]$registered.id)
         $checkedIn++
     }
     catch {
@@ -209,6 +213,9 @@ for ($i = 1; $i -le $QueueVolume; $i++) {
 
     if ($i % 100 -eq 0) { Write-Host "  $i / $QueueVolume" -ForegroundColor DarkGray }
 }
+
+Set-Content -Path (Join-Path $dataDir "clinic-patients.csv") -Value $patientRows -Encoding utf8
+Write-Host "  wrote data/clinic-patients.csv ($($patientRows.Count - 1) rows)" -ForegroundColor Green
 
 Write-Host "  checked in $checkedIn / $QueueVolume patients" -ForegroundColor Green
 Write-Host "`nClinical-flow seed complete. Give QueueService a few seconds to drain the" -ForegroundColor Green
