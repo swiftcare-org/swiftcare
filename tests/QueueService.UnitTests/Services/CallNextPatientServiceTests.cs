@@ -204,6 +204,27 @@ public class CallNextPatientServiceTests
             new FixedTimeProvider(FixedUtcNow),
             NullLogger<CallNextPatientService>.Instance);
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PreviousDayAssignmentStillOccupiesDoctorOrRoom(bool sameDoctor)
+    {
+        using var connection = OpenConnection();
+        await using var context = await CreateDbContextAsync(connection);
+        var doctorId = Guid.NewGuid();
+        var active = NewEntry("Q-001", QueueStatus.InConsultation);
+        active.QueueDate = active.QueueDate.AddDays(-1);
+        active.DoctorId = sameDoctor ? doctorId : Guid.NewGuid();
+        active.RoomNumber = sameDoctor ? "R-205" : "R-204";
+        context.QueueEntries.AddRange(active, NewEntry("Q-002"));
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context, new Mock<IQueueEventPublisher>(MockBehavior.Strict).Object)
+            .CallNextAsync(doctorId, "Dr. Chen", "R-204", "midnight");
+
+        Assert.Equal(CallNextPatientOutcome.DoctorOrRoomOccupied, result.Outcome);
+    }
+
     private static Mock<IQueueEventPublisher> SuccessfulPublisher(
         out StrongBox<PatientCalledEvent?> publishedEvent)
     {
