@@ -94,8 +94,8 @@ jobs:
     outputs:
       release_sha: ${{ steps.select.outputs.release_sha }}
       auth: ${{ steps.select.outputs.auth }}
-      auth_matrix: ${{ steps.select.outputs.auth_matrix }}
-      services_matrix: ${{ steps.select.outputs.services_matrix }}
+      services_list: ${{ steps.select.outputs.services_list }}
+      service_meta: ${{ steps.select.outputs.service_meta }}
       services_count: ${{ steps.select.outputs.services_count }}
       gateway: ${{ steps.select.outputs.gateway }}
       frontend: ${{ steps.select.outputs.frontend }}
@@ -189,25 +189,25 @@ jobs:
 
   # AuthService goes first: the gateway checks every session with it and every smoke check
   # signs in through it. Service jobs are written out here, not in a called workflow, because a
-  # called workflow does not receive the environment secrets.
+  # called workflow does not receive the environment secrets. The services matrix holds only
+  # display names, so GitHub shows readable job names; settings come from service_meta.
   deploy-auth:
-    name: Release ${{ matrix.name }}
+    name: Release AuthService
     needs: plan
     if: >-
       needs.plan.outputs.auth == 'true' && !inputs.plan_only
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: azure-development
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.auth_matrix || '{"include":[]}') }}
     permissions:
       contents: read
       id-token: write
       packages: write
     env:
-      SERVICE_KEY: ${{ matrix.key }}
-      SERVICE_NAME: ${{ matrix.name }}
+      SERVICE_KEY: ${{ fromJSON(needs.plan.outputs.service_meta)['AuthService'].key }}
+      SERVICE_NAME: ${{ fromJSON(needs.plan.outputs.service_meta)['AuthService'].name }}
+      SERVICE_IMAGE: ${{ fromJSON(needs.plan.outputs.service_meta)['AuthService'].image }}
+      SERVICE_DOCKERFILE: ${{ fromJSON(needs.plan.outputs.service_meta)['AuthService'].dockerfile }}
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -222,9 +222,9 @@ jobs:
       AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
-      SERVICE_MIGRATE_JOB: ${{ vars[matrix.migrate_job_var] }}
-      SERVICE_DB_USER: ${{ vars[matrix.db_user_var] }}
-      SERVICE_DB_PASSWORD: ${{ secrets[matrix.db_password_var] }}
+      SERVICE_MIGRATE_JOB: ${{ vars[fromJSON(needs.plan.outputs.service_meta)['AuthService'].migrate_job_var] }}
+      SERVICE_DB_USER: ${{ vars[fromJSON(needs.plan.outputs.service_meta)['AuthService'].db_user_var] }}
+      SERVICE_DB_PASSWORD: ${{ secrets[fromJSON(needs.plan.outputs.service_meta)['AuthService'].db_password_var] }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -260,16 +260,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push ${{ matrix.name }}
+      - name: Build and push the image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: ${{ env.SERVICE_DOCKERFILE }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REPOSITORY }}/${{ matrix.image }}:${{ needs.plan.outputs.release_sha }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          tags: ${{ env.IMAGE_REPOSITORY }}/${{ env.SERVICE_IMAGE }}:${{ needs.plan.outputs.release_sha }}
+          cache-from: type=gha,scope=${{ env.SERVICE_IMAGE }}
+          cache-to: type=gha,mode=max,scope=${{ env.SERVICE_IMAGE }}
 
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2
@@ -293,7 +293,7 @@ jobs:
         run: bash deployment/cd/migrate-service.sh "$SERVICE_KEY"
 
       - name: Bootstrap the initial administrator
-        if: matrix.key == 'auth' && github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
+        if: env.SERVICE_KEY == 'auth' && github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
         env:
           INITIAL_ADMIN_USERNAME: ${{ secrets.INITIAL_ADMIN_USERNAME }}
           INITIAL_ADMIN_PASSWORD: ${{ secrets.INITIAL_ADMIN_PASSWORD }}
@@ -331,7 +331,7 @@ jobs:
       - name: Record the result
         if: always()
         env:
-          KEY: ${{ matrix.key }}
+          KEY: ${{ env.SERVICE_KEY }}
           JOB_STATUS: ${{ job.status }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
@@ -344,13 +344,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-result-${{ matrix.key }}
-          path: ${{ runner.temp }}/result/${{ matrix.key }}.json
+          name: release-result-${{ env.SERVICE_KEY }}
+          path: ${{ runner.temp }}/result/${{ env.SERVICE_KEY }}.json
           if-no-files-found: warn
           overwrite: true
 
   deploy-services:
-    name: Release ${{ matrix.name }}
+    name: Release service
     needs: [plan, deploy-auth]
     if: >-
       always() && needs.plan.result == 'success' && !inputs.plan_only &&
@@ -361,14 +361,17 @@ jobs:
     environment: azure-development
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.services_matrix || '{"include":[]}') }}
+      matrix:
+        service: ${{ fromJSON(needs.plan.outputs.services_list || '[]') }}
     permissions:
       contents: read
       id-token: write
       packages: write
     env:
-      SERVICE_KEY: ${{ matrix.key }}
-      SERVICE_NAME: ${{ matrix.name }}
+      SERVICE_KEY: ${{ fromJSON(needs.plan.outputs.service_meta)[matrix.service].key }}
+      SERVICE_NAME: ${{ fromJSON(needs.plan.outputs.service_meta)[matrix.service].name }}
+      SERVICE_IMAGE: ${{ fromJSON(needs.plan.outputs.service_meta)[matrix.service].image }}
+      SERVICE_DOCKERFILE: ${{ fromJSON(needs.plan.outputs.service_meta)[matrix.service].dockerfile }}
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -383,9 +386,9 @@ jobs:
       AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
-      SERVICE_MIGRATE_JOB: ${{ vars[matrix.migrate_job_var] }}
-      SERVICE_DB_USER: ${{ vars[matrix.db_user_var] }}
-      SERVICE_DB_PASSWORD: ${{ secrets[matrix.db_password_var] }}
+      SERVICE_MIGRATE_JOB: ${{ vars[fromJSON(needs.plan.outputs.service_meta)[matrix.service].migrate_job_var] }}
+      SERVICE_DB_USER: ${{ vars[fromJSON(needs.plan.outputs.service_meta)[matrix.service].db_user_var] }}
+      SERVICE_DB_PASSWORD: ${{ secrets[fromJSON(needs.plan.outputs.service_meta)[matrix.service].db_password_var] }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -421,16 +424,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push ${{ matrix.name }}
+      - name: Build and push the image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: ${{ env.SERVICE_DOCKERFILE }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REPOSITORY }}/${{ matrix.image }}:${{ needs.plan.outputs.release_sha }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          tags: ${{ env.IMAGE_REPOSITORY }}/${{ env.SERVICE_IMAGE }}:${{ needs.plan.outputs.release_sha }}
+          cache-from: type=gha,scope=${{ env.SERVICE_IMAGE }}
+          cache-to: type=gha,mode=max,scope=${{ env.SERVICE_IMAGE }}
 
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2
@@ -454,7 +457,7 @@ jobs:
         run: bash deployment/cd/migrate-service.sh "$SERVICE_KEY"
 
       - name: Bootstrap the initial administrator
-        if: matrix.key == 'auth' && github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
+        if: env.SERVICE_KEY == 'auth' && github.event_name == 'workflow_dispatch' && inputs.bootstrap_admin
         env:
           INITIAL_ADMIN_USERNAME: ${{ secrets.INITIAL_ADMIN_USERNAME }}
           INITIAL_ADMIN_PASSWORD: ${{ secrets.INITIAL_ADMIN_PASSWORD }}
@@ -492,7 +495,7 @@ jobs:
       - name: Record the result
         if: always()
         env:
-          KEY: ${{ matrix.key }}
+          KEY: ${{ env.SERVICE_KEY }}
           JOB_STATUS: ${{ job.status }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
@@ -505,8 +508,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-result-${{ matrix.key }}
-          path: ${{ runner.temp }}/result/${{ matrix.key }}.json
+          name: release-result-${{ env.SERVICE_KEY }}
+          path: ${{ runner.temp }}/result/${{ env.SERVICE_KEY }}.json
           if-no-files-found: warn
           overwrite: true
 

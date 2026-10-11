@@ -216,18 +216,28 @@ class OutputTests(unittest.TestCase):
             self.assertTrue(service["smoke_roles"], service["key"])
             self.assertTrue(set(service["smoke_roles"]) <= {"RECEPTIONIST", "DOCTOR"}, service["key"])
 
-    def test_auth_has_its_own_single_entry_matrix(self):
+    def test_auth_is_kept_out_of_the_services_list(self):
         outputs = sel.github_outputs(self.build([], mode="all"))
-        self.assertEqual([entry["key"] for entry in json.loads(outputs["auth_matrix"])["include"]], ["auth"])
+        self.assertEqual(outputs["auth"], "true")
+        self.assertNotIn("AuthService", json.loads(outputs["services_list"]))
         outputs = sel.github_outputs(self.build([], mode="queue"))
-        self.assertEqual(json.loads(outputs["auth_matrix"]), {"include": []})
+        self.assertEqual(outputs["auth"], "false")
+        self.assertEqual(json.loads(outputs["services_list"]), ["QueueService"])
 
-    def test_github_outputs_are_valid_matrices(self):
+    def test_settings_table_covers_every_service_by_display_name(self):
+        meta = json.loads(sel.github_outputs(self.build([], mode="queue"))["service_meta"])
+        self.assertEqual(set(meta), {service["name"] for service in MANIFEST["services"]})
+        self.assertEqual(meta["AuthService"]["key"], "auth")
+        self.assertEqual(meta["QueueService"]["migrate_job_var"], "AZURE_QUEUE_MIGRATE_JOB")
+        self.assertEqual(meta["QueueService"]["db_password_var"], "QUEUE_DB_PASSWORD")
+        self.assertEqual(meta["QueueService"]["dockerfile"], "services/QueueService/Dockerfile")
+
+    def test_github_outputs_are_valid_json(self):
         outputs = sel.github_outputs(self.build(["services/QueueService/Program.cs"]))
         self.assertEqual(outputs["auth"], "false")
         self.assertEqual(outputs["services_count"], "1")
-        self.assertEqual(json.loads(outputs["services_matrix"])["include"][0]["key"], "queue")
-        self.assertEqual(json.loads(outputs["images_matrix"])["include"][0]["image"], "swiftcare-queue")
+        self.assertEqual(json.loads(outputs["services_list"]), ["QueueService"])
+        self.assertEqual(outputs["images_count"], "1")
         self.assertEqual(outputs["gateway"], "false")
         self.assertEqual(outputs["frontend"], "false")
 
@@ -271,7 +281,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_keys_ports_and_names_are_unique(self):
         items = MANIFEST["services"] + [MANIFEST["gateway"]]
-        for field in ("key", "port", "image", "app_var"):
+        for field in ("key", "name", "port", "image", "app_var"):
             values = [item[field] for item in items]
             self.assertEqual(len(values), len(set(values)), field)
         databases = [service["database"] for service in MANIFEST["services"]]
