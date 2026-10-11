@@ -45,6 +45,7 @@ jobs:
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
             services/PrescriptionService/Dockerfile
+            services/NotificationService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -394,7 +395,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Build backend images
-        run: docker compose build authservice patientservice queueservice medicalrecordservice prescriptionservice apigateway
+        run: docker compose build authservice patientservice queueservice medicalrecordservice prescriptionservice notificationservice apigateway
 
       - name: Start infrastructure and apply migrations
         shell: bash
@@ -431,12 +432,13 @@ jobs:
           apply_migrations queueservice QueueService
           apply_migrations medicalrecordservice MedicalRecordService
           apply_migrations prescriptionservice PrescriptionService
+          apply_migrations notificationservice NotificationService
 
           docker compose run --rm --no-deps kafka-init
 
       - name: Start application services
         run: |
-          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice prescriptionservice
+          docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 authservice patientservice queueservice medicalrecordservice prescriptionservice notificationservice
           docker compose up --detach --no-build --no-deps --wait --wait-timeout 180 apigateway
 
       - name: Run Selenium E2E tests
@@ -479,7 +481,7 @@ jobs:
             docker compose ps --all > TestResults/E2E/docker-compose-status.txt 2>&1 || true
             docker compose logs --no-color \
               mysql zookeeper kafka kafka-init \
-              authservice patientservice queueservice medicalrecordservice prescriptionservice apigateway \
+              authservice patientservice queueservice medicalrecordservice prescriptionservice notificationservice apigateway \
               > TestResults/E2E/docker-compose.log 2>&1 || true
           fi
 
