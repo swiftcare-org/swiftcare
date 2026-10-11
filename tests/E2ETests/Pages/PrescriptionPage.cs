@@ -65,6 +65,17 @@ public class PrescriptionPage
 
     public bool HasAddMedicineButton => _driver.FindElements(HeaderAddMedicineButton).Count > 0;
 
+    public void RecordNoPrescriptionRequired()
+    {
+        _driver.FindElement(By.CssSelector("[data-testid='no-prescription-required']")).Click();
+        var dialog = _wait.Until(d => d.FindElement(By.CssSelector("[role='alertdialog']")));
+        dialog.FindElement(By.XPath(".//button[normalize-space()='Confirm']")).Click();
+        _wait.Until(d => new Uri(d.Url).AbsolutePath == "/doctor");
+    }
+
+    public bool ShowsNoPrescriptionRecorded =>
+        _driver.FindElements(By.CssSelector("[data-testid='no-prescription-recorded']")).Count > 0;
+
     public void ClickAddMedicine() => _wait.Until(d => d.FindElement(HeaderAddMedicineButton)).Click();
 
     public int DraftMedicineCount => _driver.FindElements(By.XPath("//form//fieldset")).Count;
