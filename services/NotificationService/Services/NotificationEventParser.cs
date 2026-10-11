@@ -131,8 +131,8 @@ public sealed class NotificationEventParser
             DoctorId = completed.DoctorId,
             ConsultationId = completed.ConsultationId,
             Diagnosis = ShortenedDiagnosis(completed.Diagnosis),
-            // The event has no timestamp, so the time it arrived is the best record there is.
-            OccurredAt = receivedAtUtc,
+            // Legacy events have no completion time. Keep arrival time only for those events.
+            OccurredAt = completed.CompletedAt is { } completedAt ? AsUtc(completedAt) : receivedAtUtc,
             ReceivedAt = receivedAtUtc
         };
     }

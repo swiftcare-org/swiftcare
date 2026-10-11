@@ -31,6 +31,9 @@ namespace MedicalRecordService.Migrations
 
                     MySqlPropertyBuilderExtensions.HasCharSet(b.Property<Guid>("Id"), "ascii");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<DateTime>("ConsultationDate")
                         .HasColumnType("datetime(6)");
 

@@ -1,7 +1,7 @@
 namespace NotificationService.Models.Events;
 
 // NotificationService's own copy of MedicalRecordService's event contract. The event
-// carries identifiers and the diagnosis, and no timestamp.
+// carries identifiers, diagnosis and the original UTC completion time.
 public sealed class ConsultationCompletedEvent
 {
     public Guid EventId { get; init; }
@@ -12,4 +12,5 @@ public sealed class ConsultationCompletedEvent
 
     // Absent on events published before the diagnosis was added to the contract.
     public string? Diagnosis { get; init; }
+    public DateTime? CompletedAt { get; init; }
 }
