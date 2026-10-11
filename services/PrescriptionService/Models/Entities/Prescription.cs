@@ -16,5 +16,6 @@ public sealed class Prescription
     public DateTime? DispensedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public Guid Version { get; set; } = Guid.NewGuid();
     public ICollection<PrescriptionItem> Items { get; } = new List<PrescriptionItem>();
 }

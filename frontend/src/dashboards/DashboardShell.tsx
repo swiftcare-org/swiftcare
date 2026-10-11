@@ -4,6 +4,7 @@ import { useAuth } from '../auth/useAuth';
 import { roleRoutes } from '../auth/roleRoutes';
 import type { UserRole } from '../auth/types';
 import { logout } from '../api/auth';
+import { ApiError } from '../api/client';
 import { BackLink } from '../components/ui/BackLink';
 import { Icon, type IconName } from '../components/ui/Icon';
 import swiftcareLogo from '../assets/swiftcare-logo.png';
@@ -61,6 +62,8 @@ export function DashboardShell({ sectionLabel, backLink, children }: DashboardSh
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpenAt, setMenuOpenAt] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const menuPanel = useRef<HTMLDivElement>(null);
 
@@ -103,12 +106,19 @@ export function DashboardShell({ sectionLabel, backLink, children }: DashboardSh
     }
   }
 
-  function handleSignOut() {
-    // logout() is fired before the token is cleared, since it needs the still-present
-    // bearer token to authenticate the audit-log call. It's deliberately not awaited:
-    // ending the local session must never depend on the network or on AuthService being
-    // reachable, so a rejected request here is swallowed and the audit row is simply lost.
-    logout().catch(() => {});
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    setSignOutError(null);
+    try {
+      await logout();
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) {
+        setSignOutError('Sign out could not be confirmed. Please try again.');
+        setSigningOut(false);
+        return;
+      }
+    }
     signOut();
     navigate('/login', { replace: true });
   }
@@ -167,11 +177,13 @@ export function DashboardShell({ sectionLabel, backLink, children }: DashboardSh
       <button
         type="button"
         onClick={handleSignOut}
+        disabled={signingOut}
         className={`${NAV_ITEM_BASE} mt-2 w-full text-slate-600 hover:bg-slate-100 hover:text-slate-900`}
       >
         <Icon name="signOut" />
-        Sign Out
+        {signingOut ? 'Signing Out...' : 'Sign Out'}
       </button>
+      {signOutError && <p role="alert" className="mt-2 px-3 text-sm text-red-700">{signOutError}</p>}
     </div>
   );
 

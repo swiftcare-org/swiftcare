@@ -139,3 +139,11 @@ dotnet test tests/MedicalRecordService.UnitTests/MedicalRecordService.UnitTests.
 ```
 
 The unit tests cover consultation creation and identity linkage, template prefill data, required-field validation, duplicate queue protection, vital-sign persistence, BMI calculation, completion ordering and retry, overdue follow-up date logic, role enforcement, Gateway-secret enforcement, and maintenance-command parsing.
+
+### Completion event time
+
+Completion stores a UTC CompletedAt value together with COMPLETE and EventId. Retries read the original value rather than the retry time. Apply the AddConsultationCompletedAt migration before deploying the producer. Existing completed rows remain null because their actual completion time cannot be reconstructed.
+
+QueueService and NotificationService accept the optional CompletedAt field. Legacy events without it retain receipt-time behavior. Reports use event time when present; ReceivedAt remains the ingestion time. Deploy consumers before the producer. Existing notifications are not backfilled.
+
+The MySQL completion regression test runs when SWIFTCARE_TEST_MYSQL points to an isolated MySQL 8.4 server. It creates and removes its own uniquely named test database.

@@ -93,6 +93,12 @@ public sealed class PrescriptionManagementService(
         }
         catch (DbUpdateException)
         {
+            dbContext.ChangeTracker.Clear();
+            if (await dbContext.NoPrescriptionDecisions.AsNoTracking()
+                .AnyAsync(candidate => candidate.ConsultationId == request.ConsultationId, cancellationToken))
+            {
+                return new CreatePrescriptionResult(CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded);
+            }
             var duplicateWasPersisted = await dbContext.Prescriptions
                 .AsNoTracking()
                 .AnyAsync(
@@ -212,7 +218,15 @@ public sealed class PrescriptionManagementService(
         prescription.Status = Prescription.DispensedStatus;
         prescription.DispensedBy = receptionistName.Trim();
         prescription.DispensedAt = timeProvider.GetUtcNow().UtcDateTime;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return new DispensePrescriptionResult(DispensePrescriptionOutcome.ConcurrentModification);
+        }
 
         return new DispensePrescriptionResult(
             DispensePrescriptionOutcome.Success,
@@ -258,7 +272,9 @@ public sealed class PrescriptionManagementService(
             Instructions = NormalizeOptional(medicine.Instructions)
         });
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        prescription.Version = Guid.NewGuid();
+        if (!await SaveMedicineChangeAsync(cancellationToken))
+            return new PrescriptionItemChangeResult(PrescriptionItemChangeOutcome.ConcurrentModification);
 
         return new PrescriptionItemChangeResult(
             PrescriptionItemChangeOutcome.Success,
@@ -308,11 +324,27 @@ public sealed class PrescriptionManagementService(
 
         prescription.Items.Remove(medicine);
         dbContext.PrescriptionItems.Remove(medicine);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        prescription.Version = Guid.NewGuid();
+        if (!await SaveMedicineChangeAsync(cancellationToken))
+            return new PrescriptionItemChangeResult(PrescriptionItemChangeOutcome.ConcurrentModification);
 
         return new PrescriptionItemChangeResult(
             PrescriptionItemChangeOutcome.Success,
             ToResponse(prescription));
+    }
+
+    private async Task<bool> SaveMedicineChangeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return false;
+        }
     }
 
     private Task<Prescription?> FindDoctorPrescriptionAsync(

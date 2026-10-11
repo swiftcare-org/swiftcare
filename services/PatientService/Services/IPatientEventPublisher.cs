@@ -1,7 +1,11 @@
+using PatientService.Models.Events;
+
 namespace PatientService.Services;
 
 public interface IPatientEventPublisher
 {
+    Task<bool> PublishAsync(PatientCheckedInEvent message, CancellationToken cancellationToken = default);
+
     // Returns false rather than throwing on failure: a lost patient-checked-in event must
     // never fail the registration request itself (see PatientRegistrationService), so the
     // caller decides what "publish failed" means rather than having to catch an exception.

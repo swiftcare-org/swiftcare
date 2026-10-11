@@ -8,10 +8,12 @@ namespace MedicalRecordService.Data;
 public sealed class AdoNetConsultationCompletionRepository : IConsultationCompletionRepository
 {
     private readonly IMedicalRecordConnectionFactory _connectionFactory;
+    private readonly TimeProvider _timeProvider;
 
-    public AdoNetConsultationCompletionRepository(IMedicalRecordConnectionFactory connectionFactory)
+    public AdoNetConsultationCompletionRepository(IMedicalRecordConnectionFactory connectionFactory, TimeProvider timeProvider)
     {
         _connectionFactory = connectionFactory;
+        _timeProvider = timeProvider;
     }
 
     public async Task<CompletedConsultationContextResponse?> FindLatestCompletedAsync(
@@ -87,12 +89,13 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
         string? status = null;
         var diagnosis = string.Empty;
         Guid? storedEventId;
+        DateTime? completedAt = null;
 
         await using (var lookup = connection.CreateCommand())
         {
             lookup.Transaction = transaction;
             lookup.CommandText = """
-                SELECT QueueId, PatientId, Status, EventId, Diagnosis
+                SELECT QueueId, PatientId, Status, EventId, Diagnosis, CompletedAt
                 FROM Consultations
                 WHERE Id = @ConsultationId AND DoctorId = @DoctorId
                 FOR UPDATE;
@@ -112,6 +115,7 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
                     ? null
                     : Guid.Parse(reader.GetValue(3).ToString()!);
                 diagnosis = reader.GetString(4).Trim();
+                completedAt = reader.IsDBNull(5) ? null : DateTime.SpecifyKind(reader.GetDateTime(5), DateTimeKind.Utc);
             }
             else
             {
@@ -137,7 +141,7 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
             return new CompletionPreparationResult(
                 CompletionPreparationOutcome.Ready,
                 new ConsultationCompletedEvent(
-                    storedEventId.Value, consultationId, queueId.Value, patientId.Value, doctorId, diagnosis));
+                    storedEventId.Value, consultationId, queueId.Value, patientId.Value, doctorId, diagnosis, completedAt));
         }
 
         if (status != Consultation.InProgressStatus || storedEventId is not null)
@@ -166,12 +170,14 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
         }
 
         var eventId = Guid.NewGuid();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        completedAt = new DateTime(now.Ticks - now.Ticks % 10, DateTimeKind.Utc);
         await using (var update = connection.CreateCommand())
         {
             update.Transaction = transaction;
             update.CommandText = """
                 UPDATE Consultations
-                SET Status = @CompleteStatus, EventId = @EventId
+                SET Status = @CompleteStatus, EventId = @EventId, CompletedAt = @CompletedAt
                 WHERE Id = @ConsultationId
                   AND DoctorId = @DoctorId
                   AND Status = @InProgressStatus
@@ -182,6 +188,7 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
             update.Parameters.Add("@InProgressStatus", MySqlDbType.VarChar, 16).Value =
                 Consultation.InProgressStatus;
             update.Parameters.Add("@EventId", MySqlDbType.VarChar, 36).Value = eventId.ToString();
+            update.Parameters.Add("@CompletedAt", MySqlDbType.DateTime).Value = completedAt.Value;
             update.Parameters.Add("@ConsultationId", MySqlDbType.VarChar, 36).Value =
                 consultationId.ToString();
             update.Parameters.Add("@DoctorId", MySqlDbType.VarChar, 36).Value =
@@ -198,6 +205,6 @@ public sealed class AdoNetConsultationCompletionRepository : IConsultationComple
         return new CompletionPreparationResult(
             CompletionPreparationOutcome.Ready,
             new ConsultationCompletedEvent(
-                eventId, consultationId, queueId.Value, patientId.Value, doctorId, diagnosis));
+                eventId, consultationId, queueId.Value, patientId.Value, doctorId, diagnosis, completedAt));
     }
 }
