@@ -45,7 +45,7 @@ jobs:
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
             services/PrescriptionService/Dockerfile
-            tests/E2ETests/Infrastructure/NotificationService.Dockerfile
+            services/NotificationService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -595,7 +595,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: tests/E2ETests/Infrastructure/NotificationService.Dockerfile
+          file: services/NotificationService/Dockerfile
           platforms: linux/amd64
           push: false
           cache-from: type=gha,scope=swiftcare-notification
@@ -630,7 +630,7 @@ jobs:
             dockerfile: services/PrescriptionService/Dockerfile
             scope: swiftcare-prescription
           - service: notification
-            dockerfile: tests/E2ETests/Infrastructure/NotificationService.Dockerfile
+            dockerfile: services/NotificationService/Dockerfile
             scope: swiftcare-notification
     steps:
       - name: Check out repository

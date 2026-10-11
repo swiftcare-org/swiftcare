@@ -211,7 +211,7 @@ services:
   notificationservice:
     build:
       context: .
-      dockerfile: tests/E2ETests/Infrastructure/NotificationService.Dockerfile
+      dockerfile: services/NotificationService/Dockerfile
     restart: unless-stopped
     depends_on:
       mysql:

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Smoke checks through the public gateway, using the synthetic smoke accounts.
 # Usage: smoke.sh TARGET
-#   TARGET is auth, patient, queue, medical-record, prescription or gateway (all checks).
+#   TARGET is auth, patient, queue, medical-record, prescription, notification or gateway (all checks).
 # Environment: GATEWAY_URL; SMOKE_RECEPTIONIST_USERNAME and SMOKE_RECEPTIONIST_PASSWORD for
-# the auth, patient, queue, prescription and gateway targets; SMOKE_DOCTOR_USERNAME and
+# the auth, patient, queue, prescription, notification and gateway targets; SMOKE_DOCTOR_USERNAME and
 # SMOKE_DOCTOR_PASSWORD for medical-record and gateway. Optional: SMOKE_FORCE_FAIL=TARGET fails
 # that target on purpose (rollback drill); CD_SMOKE_ATTEMPTS and CD_SMOKE_INTERVAL tune retries.
 # Response bodies and tokens are never printed. Every token is revoked again when the script ends.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-target="${1:?usage: smoke.sh auth|patient|queue|medical-record|prescription|gateway}"
+target="${1:?usage: smoke.sh auth|patient|queue|medical-record|prescription|notification|gateway}"
 require_values GATEWAY_URL
 GATEWAY_URL="${GATEWAY_URL%/}"
 attempts="${CD_SMOKE_ATTEMPTS:-30}"
@@ -131,6 +131,13 @@ check_prescription() {
     "$GATEWAY_URL/api/prescriptions/pending"
 }
 
+check_notification() {
+  receptionist
+  check "notification feed for a receptionist" 200 'type == "array"' \
+    --header "Authorization: Bearer $receptionist_token" \
+    "$GATEWAY_URL/api/notifications/today"
+}
+
 if [ "${SMOKE_FORCE_FAIL:-}" = "$target" ]; then
   fail "Rollback drill: the $target smoke check was forced to fail"
 fi
@@ -141,6 +148,7 @@ case "$target" in
   queue) check_queue ;;
   medical-record) check_medical_record ;;
   prescription) check_prescription ;;
+  notification) check_notification ;;
   gateway)
     check_gateway_health
     check_auth
@@ -148,6 +156,7 @@ case "$target" in
     check_queue
     check_medical_record
     check_prescription
+    check_notification
     ;;
   *) fail "Unknown smoke target '$target'" ;;
 esac

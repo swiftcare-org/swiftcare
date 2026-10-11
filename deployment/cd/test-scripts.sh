@@ -36,6 +36,7 @@ export KAFKA_PATIENT_CHECKED_IN_TOPIC=patient-checked-in KAFKA_QUEUE_CONSUMER_GR
 export FRONTEND_ORIGIN=https://app.example.test FRONTEND_WWW_ORIGIN=https://www.example.test
 export AZURE_AUTH_APP=swiftcare-auth AZURE_PATIENT_APP=swiftcare-patient AZURE_QUEUE_APP=swiftcare-queue
 export AZURE_MEDICAL_RECORD_APP=swiftcare-medical-record AZURE_PRESCRIPTION_APP=swiftcare-prescription
+export AZURE_NOTIFICATION_APP=swiftcare-notification
 export AZURE_GATEWAY_APP=swiftcare-gateway AUTH_BOOTSTRAP_JOB=swiftcare-auth-bootstrap
 export INITIAL_ADMIN_USERNAME=dummy-admin INITIAL_ADMIN_PASSWORD=dummy-dummy
 
@@ -142,6 +143,22 @@ expect_success "updates AuthService with JWT settings" bash "$HERE/deploy-servic
 expect_logged "passes the JWT secret reference" "Jwt__SecretKey=secretref:jwt-key"
 
 reset
+add_app swiftcare-notification "$OLD" Running 5005
+add_app swiftcare-queue "$OLD" Running 5003
+expect_success "deploys NotificationService on its own" bash "$HERE/deploy-service.sh" notification
+expect_equal "runs the new notification image" "$(image_of swiftcare-notification)" "ghcr.io/org/swiftcare-notification:$NEW"
+expect_equal "leaves the queue image alone" "$(image_of swiftcare-queue)" "ghcr.io/org/swiftcare-queue:$OLD"
+expect_logged "listens on its own port" "ASPNETCORE_URLS=http://+:5005"
+expect_logged "passes its scoped connection setting" "ConnectionStrings__NotificationDb=secretref:notification-db"
+expect_logged "passes the Kafka server" "Kafka__BootstrapServers=kafka.example.test:9092"
+expect_not_logged "does not give it JWT settings" "Jwt__SecretKey"
+expect_not_logged "does not touch the queue app" "--name swiftcare-queue"
+export SERVICE_MIGRATE_JOB=swiftcare-notification-migrate
+expect_success "migrates only the notification database" bash "$HERE/migrate-service.sh" notification
+expect_logged "runs the notification migration job" "containerapp job start --resource-group rg --name swiftcare-notification-migrate"
+export SERVICE_MIGRATE_JOB=swiftcare-patient-migrate
+
+reset
 add_app swiftcare-prescription "$OLD" Stopped 5001
 expect_success "starts a stopped service" bash "$HERE/deploy-service.sh" prescription
 expect_logged "requests a start" "/start?api-version="
@@ -201,7 +218,7 @@ expect_not_logged "does not redeploy the same image" "containerapp update"
 echo "== deploy-gateway"
 reset
 for entry in "swiftcare-auth:5000" "swiftcare-patient:5002" "swiftcare-queue:5003" \
-  "swiftcare-medical-record:5004" "swiftcare-prescription:5001"; do
+  "swiftcare-medical-record:5004" "swiftcare-prescription:5001" "swiftcare-notification:5005"; do
   add_app "${entry%%:*}" "$OLD" Running "${entry##*:}"
 done
 add_app swiftcare-prescription "$OLD" Stopped 5001
@@ -210,7 +227,7 @@ expect_success "deploys the gateway" bash "$HERE/deploy-gateway.sh"
 expect_equal "runs the new gateway image" "$(image_of swiftcare-gateway)" "ghcr.io/org/swiftcare-gateway:$NEW"
 expect_equal "starts a stopped service the gateway routes to" "$(cat "$FAKE_AZ_STATE/swiftcare-prescription.running")" "Running"
 expect_equal "leaves service images alone" "$(image_of swiftcare-auth)" "ghcr.io/org/swiftcare-auth:$OLD"
-for cluster in auth patient queue medical-record prescription; do
+for cluster in auth patient queue medical-record prescription notification; do
   expect_logged "routes the $cluster cluster to its internal address" \
     "ReverseProxy__Clusters__${cluster}-cluster__Destinations__${cluster}-destination__Address=https://swiftcare-${cluster}.internal.example.test"
 done
@@ -223,7 +240,7 @@ expect_not_logged "adds no address for the missing app" "medical-record-destinat
 
 reset
 for entry in "swiftcare-auth:5000" "swiftcare-patient:5002" "swiftcare-queue:5003" \
-  "swiftcare-medical-record:5004" "swiftcare-prescription:5001"; do
+  "swiftcare-medical-record:5004" "swiftcare-prescription:5001" "swiftcare-notification:5005"; do
   add_app "${entry%%:*}" "$OLD" Running "${entry##*:}"
 done
 expect_success "creates a gateway that does not exist" bash "$HERE/deploy-gateway.sh"
@@ -279,7 +296,7 @@ export SMOKE_RECEPTIONIST_USERNAME=receptionist-smoke SMOKE_RECEPTIONIST_PASSWOR
 export SMOKE_DOCTOR_USERNAME=doctor-smoke SMOKE_DOCTOR_PASSWORD=pw-d
 
 start_stub
-for target in auth patient queue medical-record prescription gateway; do
+for target in auth patient queue medical-record prescription notification gateway; do
   expect_success "smoke $target passes against a healthy gateway" bash "$HERE/smoke.sh" "$target"
 done
 : > "$STUB_LOG"
@@ -289,6 +306,13 @@ expect_equal "does not sign in a role the target does not need" "$(grep -c 'POST
 # The runner consumes ::add-mask:: commands and does not print them, so they are not output.
 out=$(bash "$HERE/smoke.sh" gateway 2>&1 | grep -v '^::add-mask::')
 if grep -q 'tok-r\|tok-d\|pw-r\|pw-d' <<<"$out"; then bad "smoke output hides tokens and passwords" "$out"; else ok "smoke output hides tokens and passwords"; fi
+stop_stub
+
+export STUB_BROKEN="GET /api/notifications/today"
+start_stub
+expect_failure "smoke notification fails when the feed route answers 500" bash "$HERE/smoke.sh" notification
+expect_success "smoke patient still passes when only notification is broken" bash "$HERE/smoke.sh" patient
+expect_failure "smoke gateway fails when the notification route is broken" bash "$HERE/smoke.sh" gateway
 stop_stub
 
 export STUB_BROKEN="GET /api/patients/search"
@@ -312,7 +336,7 @@ SMOKE_FORCE_FAIL=prescription expect_failure "forced failure fails the chosen ta
 expect_equal "forced failure makes no request" "$(wc -l < "$STUB_LOG" | tr -d ' ')" "0"
 SMOKE_FORCE_FAIL=prescription expect_success "forced failure leaves other targets alone" bash "$HERE/smoke.sh" patient
 (unset SMOKE_DOCTOR_PASSWORD; expect_failure "names a missing smoke secret" bash "$HERE/smoke.sh" medical-record)
-expect_failure "rejects an unknown target" bash "$HERE/smoke.sh" notification
+expect_failure "rejects an unknown target" bash "$HERE/smoke.sh" billing
 stop_stub
 
 echo "== prepare-smoke"
