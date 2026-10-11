@@ -90,6 +90,7 @@ builder.Services.AddSingleton<IProducer<string, string>>(sp =>
     }).Build();
 });
 builder.Services.AddSingleton<IPatientEventPublisher, KafkaPatientEventPublisher>();
+builder.Services.AddHostedService<OutboxRelay>();
 builder.Services.AddScoped<IPatientRegistrationService, PatientRegistrationService>();
 builder.Services.AddScoped<IPatientCheckInService, PatientCheckInService>();
 builder.Services.AddScoped<IPatientSearchService, PatientSearchService>();

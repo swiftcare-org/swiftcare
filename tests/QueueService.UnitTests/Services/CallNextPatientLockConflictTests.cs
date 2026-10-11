@@ -41,7 +41,8 @@ public class CallNextPatientLockConflictTests
 
         Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
         Assert.Equal("Q-001", result.CalledPatient!.QueueNumber);
-        Assert.Equal(2, conflicts.SaveAttempts);
+        Assert.Equal(3, conflicts.SaveAttempts); // Failed assignment, committed assignment/event, acknowledgement.
+        Assert.Empty(dbContext.OutboxMessages);
         publisher.Verify(
             item => item.PublishPatientCalledAsync(It.IsAny<PatientCalledEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
@@ -225,6 +226,75 @@ public class CallNextPatientLockConflictTests
         Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
         Assert.Equal(second.Id, result.CalledPatient!.QueueId);
         Assert.Equal("Q-002", result.CalledPatient.QueueNumber);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CommitFailureDoesNotPublishOrPersistAnAssignment(bool lockConflict)
+    {
+        using var connection = OpenConnection();
+        var commits = new CommitFailureInterceptor(lockConflict);
+        await using var context = await CreateDbContextAsync(connection, commits);
+        context.QueueEntries.Add(NewEntry("Q-001"));
+        await context.SaveChangesAsync();
+        var publisher = new Mock<IQueueEventPublisher>(MockBehavior.Strict);
+        var service = CreateService(context, publisher, maxAttempts: 1);
+        commits.Armed = true;
+        if (lockConflict)
+        {
+            Assert.Equal(CallNextPatientOutcome.ConcurrentCallConflict,
+                (await service.CallNextAsync(DoctorId, "Doctor", "R-204", "corr")).Outcome);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CallNextAsync(DoctorId, "Doctor", "R-204", "corr"));
+        }
+        publisher.VerifyNoOtherCalls();
+        Assert.Equal(QueueStatus.Waiting, Assert.Single(await ReadEntriesAsync(connection)).Status);
+        await using var reader = new QueueDbContext(new DbContextOptionsBuilder<QueueDbContext>().UseSqlite(connection).Options);
+        Assert.Empty(await reader.OutboxMessages.ToListAsync());
+    }
+
+    [Fact]
+    public async Task PublishingSeesTheCommittedAssignmentAndPendingEvent()
+    {
+        using var connection = OpenConnection();
+        await using var context = await CreateDbContextAsync(connection);
+        var entry = NewEntry("Q-001");
+        context.QueueEntries.Add(entry);
+        await context.SaveChangesAsync();
+        var publisher = new Mock<IQueueEventPublisher>();
+        publisher.Setup(item => item.PublishPatientCalledAsync(It.IsAny<PatientCalledEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<PatientCalledEvent, CancellationToken>((message, _) =>
+            {
+                Assert.Null(context.Database.CurrentTransaction);
+                using var reader = new QueueDbContext(new DbContextOptionsBuilder<QueueDbContext>().UseSqlite(connection).Options);
+                Assert.Equal(QueueStatus.InConsultation, reader.QueueEntries.Single().Status);
+                Assert.Equal(message.EventId, reader.OutboxMessages.Single().Id);
+                Assert.Equal(entry.Id, message.QueueId);
+            }).ReturnsAsync(true);
+        var result = await CreateService(context, publisher).CallNextAsync(DoctorId, "Doctor", "R-204", "corr");
+        Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
+        Assert.False(result.CalledPatient!.NotificationPending);
+        Assert.Empty(await context.OutboxMessages.ToListAsync());
+    }
+
+    private sealed class CommitFailureInterceptor(bool lockConflict) : DbTransactionInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(
+            System.Data.Common.DbTransaction transaction, TransactionEventData eventData,
+            InterceptionResult result, CancellationToken cancellationToken = default)
+        {
+            if (!Armed) return ValueTask.FromResult(result);
+            throw (lockConflict
+                ? (MySqlException)Activator.CreateInstance(typeof(MySqlException), BindingFlags.NonPublic | BindingFlags.Instance,
+                    binder: null, args: [MySqlErrorCode.LockDeadlock, "Simulated commit collision"], culture: null)!
+                : new InvalidOperationException("Commit failed"));
+        }
     }
 
     private static CallNextPatientService CreateService(

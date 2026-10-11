@@ -4,6 +4,9 @@ namespace MedicalRecordService.Services;
 
 public interface IConsultationCompletionService
 {
+    Task<IReadOnlyList<CompletedConsultationContextResponse>> FindCompletedPageAsync(
+        Guid doctorId, int page, CancellationToken cancellationToken = default);
+
     Task<CompletedConsultationContextResponse?> FindLatestCompletedAsync(
         Guid doctorId,
         CancellationToken cancellationToken = default);

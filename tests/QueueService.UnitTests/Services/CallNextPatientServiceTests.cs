@@ -164,7 +164,7 @@ public class CallNextPatientServiceTests
     }
 
     [Fact]
-    public async Task EventPublishFailureRollsBackQueueAssignment()
+    public async Task EventPublishFailureKeepsAssignmentAndPendingEvent()
     {
         using var connection = OpenConnection();
         await using var dbContext = await CreateDbContextAsync(connection);
@@ -184,15 +184,17 @@ public class CallNextPatientServiceTests
             "R-204",
             "corr-failure");
 
-        Assert.Equal(CallNextPatientOutcome.EventPublishFailed, result.Outcome);
+        Assert.Equal(CallNextPatientOutcome.Success, result.Outcome);
+        Assert.True(result.CalledPatient!.NotificationPending);
+        Assert.Single(dbContext.OutboxMessages);
         var persisted = await dbContext.QueueEntries
             .AsNoTracking()
             .SingleAsync(entry => entry.Id == waitingEntry.Id);
-        Assert.Equal(QueueStatus.Waiting, persisted.Status);
-        Assert.Null(persisted.DoctorId);
-        Assert.Null(persisted.DoctorName);
-        Assert.Null(persisted.RoomNumber);
-        Assert.Null(persisted.CalledAt);
+        Assert.Equal(QueueStatus.InConsultation, persisted.Status);
+        Assert.Equal(result.CalledPatient.DoctorId, persisted.DoctorId);
+        Assert.Equal("Dr. Amara Chen", persisted.DoctorName);
+        Assert.Equal("R-204", persisted.RoomNumber);
+        Assert.NotNull(persisted.CalledAt);
     }
 
     private static CallNextPatientService CreateService(
@@ -203,6 +205,27 @@ public class CallNextPatientServiceTests
             Options.Create(new QueueOptions { ClinicTimeZone = "Asia/Colombo" }),
             new FixedTimeProvider(FixedUtcNow),
             NullLogger<CallNextPatientService>.Instance);
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PreviousDayAssignmentStillOccupiesDoctorOrRoom(bool sameDoctor)
+    {
+        using var connection = OpenConnection();
+        await using var context = await CreateDbContextAsync(connection);
+        var doctorId = Guid.NewGuid();
+        var active = NewEntry("Q-001", QueueStatus.InConsultation);
+        active.QueueDate = active.QueueDate.AddDays(-1);
+        active.DoctorId = sameDoctor ? doctorId : Guid.NewGuid();
+        active.RoomNumber = sameDoctor ? "R-205" : "R-204";
+        context.QueueEntries.AddRange(active, NewEntry("Q-002"));
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context, new Mock<IQueueEventPublisher>(MockBehavior.Strict).Object)
+            .CallNextAsync(doctorId, "Dr. Chen", "R-204", "midnight");
+
+        Assert.Equal(CallNextPatientOutcome.DoctorOrRoomOccupied, result.Outcome);
+    }
 
     private static Mock<IQueueEventPublisher> SuccessfulPublisher(
         out StrongBox<PatientCalledEvent?> publishedEvent)

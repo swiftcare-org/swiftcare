@@ -46,6 +46,7 @@ public class JwtTokenServiceTests
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
 
         Assert.Equal(user.Id.ToString(), jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Sub).Value);
+        Assert.Equal(user.SessionVersion.ToString(), jwt.Claims.Single(c => c.Type == "sessionVersion").Value);
         Assert.Equal(user.FullName, jwt.Claims.Single(c => c.Type == "fullName").Value);
         Assert.Equal(nameof(UserRole.Doctor), jwt.Claims.Single(c => c.Type == "role").Value);
         Assert.Equal("R-204", jwt.Claims.Single(c => c.Type == "roomNumber").Value);

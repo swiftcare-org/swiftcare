@@ -4,7 +4,7 @@
 
 .EXAMPLE
     ./run-mutation-tests.ps1
-    Full run of all six services.
+    Full run of all seven services.
 
 .EXAMPLE
     ./run-mutation-tests.ps1 -Service PrescriptionService -Mutate "**/Services/PrescriptionManagementService.cs" -OpenReport
@@ -34,7 +34,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$allServices = @('ApiGateway', 'AuthService', 'MedicalRecordService', 'PatientService', 'PrescriptionService', 'QueueService')
+$allServices = @('ApiGateway', 'AuthService', 'MedicalRecordService', 'NotificationService', 'PatientService', 'PrescriptionService', 'QueueService')
 
 # powershell -File passes "A, B" as separate raw strings, so split and trim every value.
 $requested = @($Service | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })

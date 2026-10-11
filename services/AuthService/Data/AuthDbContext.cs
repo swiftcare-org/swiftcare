@@ -6,12 +6,19 @@ namespace AuthService.Data;
 public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<RevokedSession> RevokedSessions => Set<RevokedSession>();
     public DbSet<LoginAuditEntry> LoginAuditEntries => Set<LoginAuditEntry>();
     public DbSet<LogoutAuditEntry> LogoutAuditEntries => Set<LogoutAuditEntry>();
     public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<RevokedSession>(entity =>
+        {
+            entity.HasKey(session => session.TokenId);
+            entity.Property(session => session.TokenId).HasMaxLength(128).ValueGeneratedNever();
+            entity.HasIndex(session => session.ExpiresAtUtc);
+        });
         modelBuilder.Entity<User>(entity =>
         {
             entity.Property(u => u.Id).ValueGeneratedNever();
@@ -55,6 +62,14 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
+
+        foreach (var entry in ChangeTracker.Entries<User>().Where(entry => entry.State == EntityState.Modified))
+        {
+            if (entry.Property(user => user.PasswordHash).IsModified || entry.Property(user => user.IsActive).IsModified
+                || entry.Property(user => user.IsDeleted).IsModified || entry.Property(user => user.Role).IsModified
+                || entry.Property(user => user.RoomNumber).IsModified)
+                entry.Entity.SessionVersion = Guid.NewGuid();
+        }
 
         foreach (var entry in ChangeTracker.Entries<IHasTimestamps>())
         {

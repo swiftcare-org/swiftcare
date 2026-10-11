@@ -41,6 +41,7 @@ export interface CalledPatient {
   doctorName: string;
   roomNumber: string;
   calledAt: string;
+  notificationPending?: boolean;
 }
 
 export function callNextPatient(): Promise<CalledPatient> {

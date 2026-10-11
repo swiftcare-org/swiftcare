@@ -10,4 +10,5 @@ public sealed class CalledPatientResponse
     public required string DoctorName { get; init; }
     public required string RoomNumber { get; init; }
     public required DateTime CalledAt { get; init; }
+    public bool NotificationPending { get; init; }
 }

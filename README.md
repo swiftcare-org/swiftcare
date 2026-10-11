@@ -1,5 +1,13 @@
 # SwiftCare
 
+## Clinical visit validation (SWC-154)
+
+The gateway validates consultation creation, prescription creation and no-prescription decisions before forwarding writes. Consultation creation requires an active queue assignment owned by the authenticated doctor with the same patient. Prescription outcomes require a completed consultation owned by that doctor with matching patient and queue identifiers. The patient must still exist.
+
+Invalid identifiers return 400; a missing, mismatched, unfinished or unowned visit returns 422; unavailable authoritative validation returns 503 without forwarding the write. QueueService and MedicalRecordService provide gateway-secret-protected internal visit lookups. No public gateway route exposes those lookups, and no service reads another service's database.
+
+Deploy the two lookup endpoints before updating the gateway. No schema migration is needed. Validation uses the existing YARP cluster destinations, including Azure overrides. This closes the deferred cross-service validation scope recorded in issue #48.
+
 SwiftCare is a healthcare queue and medical-record management system built as six independently deployable microservices behind an API Gateway. It supports authentication, patient administration, clinical records, prescriptions, queue operations, notifications, and reporting.
 
 ## Features
