@@ -37,4 +37,18 @@ public sealed class DailyReportPage
     public bool ActivityUnavailable => _driver.PageSource.Contains("Activity data currently unavailable.", StringComparison.Ordinal);
     public bool PrescriptionsUnavailable => _driver.PageSource.Contains("Prescription data currently unavailable.", StringComparison.Ordinal);
     public bool ContainsDiagnosis(string diagnosis) => _driver.PageSource.Contains(diagnosis, StringComparison.Ordinal);
+
+    public void WaitForDiagnosis(string diagnosis, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(25));
+        while (DateTime.UtcNow < deadline)
+        {
+            WaitUntilLoaded();
+            if (ContainsDiagnosis(diagnosis)) return;
+            Thread.Sleep(750);
+            _driver.Navigate().Refresh();
+        }
+
+        throw new WebDriverTimeoutException($"Diagnosis '{diagnosis}' did not reach the daily report before the timeout.");
+    }
 }

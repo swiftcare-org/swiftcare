@@ -45,6 +45,11 @@ public sealed class ActivityFeedPage
             .Until(d => d.FindElements(By.CssSelector("[data-testid='activity-entry']"))
                 .Any(entry => entry.Text.Contains(text, StringComparison.Ordinal)));
 
+    public void WaitForEntryContainingAll(TimeSpan timeout, params string[] text) =>
+        new WebDriverWait(_driver, timeout)
+            .Until(d => d.FindElements(By.CssSelector("[data-testid='activity-entry']"))
+                .Any(entry => text.All(part => entry.Text.Contains(part, StringComparison.Ordinal))));
+
     public bool ContainsText(string text) =>
         _driver.FindElements(By.CssSelector("[data-testid='activity-entry']"))
             .Any(entry => entry.Text.Contains(text, StringComparison.Ordinal));
