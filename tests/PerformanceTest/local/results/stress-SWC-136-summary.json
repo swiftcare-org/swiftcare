@@ -1,0 +1,37 @@
+﻿{
+    "Jtl":  "C:\\Users\\OmiraNimsath\\Desktop\\Onel SwiftCare\\swiftcare\\results\\stress-SWC-136.jtl",
+    "WarmupSeconds":  90,
+    "Samples":  141447,
+    "Classes":  {
+                    "READ":  {
+                                 "Samples":  135699,
+                                 "P95Ms":  1264,
+                                 "P99Ms":  5520,
+                                 "FunctionalErrors":  36725,
+                                 "ErrorRatePercent":  27.0636,
+                                 "DurationAssertionBreaches":  672,
+                                 "FirstThirdP95Ms":  506,
+                                 "LastThirdP95Ms":  1293,
+                                 "DriftPercent":  155.53,
+                                 "P95Pass":  false,
+                                 "P99Pass":  false,
+                                 "ErrorRatePass":  false,
+                                 "DriftPass":  false
+                             },
+                    "WRITE":  {
+                                  "Samples":  5748,
+                                  "P95Ms":  1310,
+                                  "P99Ms":  3599,
+                                  "FunctionalErrors":  1613,
+                                  "ErrorRatePercent":  28.0619,
+                                  "DurationAssertionBreaches":  3,
+                                  "FirstThirdP95Ms":  492,
+                                  "LastThirdP95Ms":  1794,
+                                  "DriftPercent":  264.63,
+                                  "P95Pass":  true,
+                                  "P99Pass":  false,
+                                  "ErrorRatePass":  false,
+                                  "DriftPass":  false
+                              }
+                }
+}
