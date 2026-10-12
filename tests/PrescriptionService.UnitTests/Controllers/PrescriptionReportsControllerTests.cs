@@ -1,0 +1,158 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Moq;
+using PrescriptionService.Controllers;
+using PrescriptionService.Models.Dtos;
+using PrescriptionService.Services;
+
+namespace PrescriptionService.UnitTests.Controllers;
+
+// SWC-142: the daily prescription report.
+public class PrescriptionReportsControllerTests
+{
+    [Fact]
+    public async Task DailyReportAsAdminReturnsTotalsForTheRequestedDate()
+    {
+        var date = new DateOnly(2026, 10, 2);
+        var report = new PrescriptionDailyReportResponse(date, 5, 3, 2);
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+        service.Setup(item => item.GetDailyReportAsync(date, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(report);
+
+        var result = await CreateReportController(service, "Admin")
+            .GetDailyReport(date, CancellationToken.None);
+
+        Assert.Same(report, Assert.IsType<OkObjectResult>(result).Value);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task DailyReportWithoutADatePassesNullSoTheServiceUsesToday()
+    {
+        var report = new PrescriptionDailyReportResponse(new DateOnly(2026, 10, 2), 0, 0, 0);
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+        service.Setup(item => item.GetDailyReportAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(report);
+
+        var result = await CreateReportController(service, "Admin")
+            .GetDailyReport(date: null, CancellationToken.None);
+
+        Assert.Same(report, Assert.IsType<OkObjectResult>(result).Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    public async Task DailyReportAsNonAdminReturnsForbidden(string role)
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await CreateReportController(service, role)
+            .GetDailyReport(new DateOnly(2026, 10, 2), CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        Assert.Equal("Forbidden", Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DailyReportWithoutRoleHeaderReturnsForbidden()
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+        var controller = new PrescriptionReportsController(service.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.GetDailyReport(new DateOnly(2026, 10, 2), CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        Assert.Equal("Forbidden", Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    // SWC-145: the monthly prescription totals.
+    [Fact]
+    public async Task MonthlyReportAsAdminReturnsTotalsForTheRequestedMonth()
+    {
+        var report = new PrescriptionMonthlyReportResponse("2026-10", 5, 2);
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+        service.Setup(item => item.GetMonthlyReportAsync(new DateOnly(2026, 10, 1), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(report);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport("Admin", "2026-10", CancellationToken.None);
+
+        Assert.Same(report, Assert.IsType<OkObjectResult>(result).Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("October")]
+    [InlineData("2026-13")]
+    [InlineData("2026-00")]
+    [InlineData("2026-10-02")]
+    [InlineData("2026")]
+    public async Task MonthlyReportWithAMissingOrInvalidMonthReturns400(string? month)
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport("Admin", month, CancellationToken.None);
+
+        var response = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(
+            "Month is required in the format yyyy-MM",
+            Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("admin")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task MonthlyReportAsNonAdminReturnsForbidden(string? role)
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport(role, "2026-10", CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        Assert.Equal("Forbidden", Assert.IsType<MessageResponse>(response.Value).Message);
+        service.VerifyNoOtherCalls();
+    }
+
+    // The role is checked before the month, so a caller without access learns nothing about the input.
+    [Fact]
+    public async Task MonthlyReportChecksTheRoleBeforeTheMonth()
+    {
+        var service = new Mock<IPrescriptionReportService>(MockBehavior.Strict);
+
+        var result = await new PrescriptionReportsController(service.Object)
+            .GetMonthlyReport("Doctor", "October", CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    private static PrescriptionReportsController CreateReportController(
+        Mock<IPrescriptionReportService> service,
+        string role) => WithRole(new PrescriptionReportsController(service.Object), role);
+
+    private static TController WithRole<TController>(TController controller, string role)
+        where TController : ControllerBase
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-User-Role"] = role;
+        controller.ControllerContext = new ControllerContext { HttpContext = context };
+        return controller;
+    }
+}

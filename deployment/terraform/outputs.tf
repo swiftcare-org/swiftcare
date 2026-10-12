@@ -23,6 +23,17 @@ output "container_apps_environment_name" {
   value       = azurerm_container_app_environment.swiftcare.name
 }
 
+output "application_insights_name" {
+  description = "Application Insights resource that receives telemetry from the services."
+  value       = azurerm_application_insights.swiftcare.name
+}
+
+output "application_insights_connection_string" {
+  description = "GitHub Environment secret for APPLICATIONINSIGHTS_CONNECTION_STRING."
+  value       = azurerm_application_insights.swiftcare.connection_string
+  sensitive   = true
+}
+
 output "mysql_server_name" {
   description = "GitHub Environment value for MYSQL_SERVER_NAME."
   value       = azurerm_mysql_flexible_server.swiftcare.name

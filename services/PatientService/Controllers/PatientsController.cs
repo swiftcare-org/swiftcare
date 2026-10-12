@@ -15,17 +15,20 @@ public sealed class PatientsController : ControllerBase
     private const string CorrelationIdHeaderName = "X-Correlation-ID";
 
     private readonly IPatientRegistrationService _patientRegistrationService;
+    private readonly IPatientCheckInService _patientCheckInService;
     private readonly IPatientSearchService _patientSearchService;
     private readonly IPatientProfileService _patientProfileService;
     private readonly ILogger<PatientsController> _logger;
 
     public PatientsController(
         IPatientRegistrationService patientRegistrationService,
+        IPatientCheckInService patientCheckInService,
         IPatientSearchService patientSearchService,
         IPatientProfileService patientProfileService,
         ILogger<PatientsController> logger)
     {
         _patientRegistrationService = patientRegistrationService;
+        _patientCheckInService = patientCheckInService;
         _patientSearchService = patientSearchService;
         _patientProfileService = patientProfileService;
         _logger = logger;
@@ -110,6 +113,80 @@ public sealed class PatientsController : ControllerBase
         {
             return NotFound(new MessageResponse("Patient not found"));
         }
+
+        return Ok(profile);
+    }
+
+    [HttpPost("{id:guid}/check-in")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> CheckInPatient(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfRoleNotIn("Receptionist") is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        var correlationIdHeader = HttpContext.Request.Headers[CorrelationIdHeaderName].FirstOrDefault();
+        var correlationId = string.IsNullOrWhiteSpace(correlationIdHeader)
+            ? Guid.NewGuid().ToString()
+            : correlationIdHeader;
+
+        var outcome = await _patientCheckInService.CheckInPatientAsync(
+            id,
+            correlationId,
+            cancellationToken);
+
+        if (outcome == CheckInPatientOutcome.PatientNotFound)
+        {
+            return NotFound(new MessageResponse("Patient not found"));
+        }
+
+        if (outcome == CheckInPatientOutcome.EventPublishFailed)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new MessageResponse("Unable to check in patient. Please try again."));
+        }
+
+        _logger.LogInformation(
+            "Returning patient check-in accepted: patientId={PatientId} by userId={UserId}",
+            id,
+            ParseUserIdHeader());
+
+        return Accepted(new MessageResponse("Patient check-in accepted"));
+    }
+
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(PatientProfileResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdatePatient(
+        Guid id,
+        [FromBody] UpdatePatientRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfRoleNotIn("Receptionist") is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        var profile = await _patientProfileService.UpdatePatientAsync(id, request, cancellationToken);
+
+        if (profile is null)
+        {
+            return NotFound(new MessageResponse("Patient not found"));
+        }
+
+        _logger.LogInformation(
+            "Patient profile updated: patientId={PatientId} by userId={UserId}",
+            id,
+            ParseUserIdHeader());
 
         return Ok(profile);
     }

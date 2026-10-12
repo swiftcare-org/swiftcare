@@ -1,13 +1,49 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { DashboardShell } from '../dashboards/DashboardShell';
-import { createUser, listUsers } from '../api/users';
+import { createUser, deactivateUser, listUsers, reactivateUser } from '../api/users';
 import type { CreateUserRequestBody, UserSummary } from '../api/users';
 import { ApiError } from '../api/client';
 import type { UserRole } from '../auth/types';
+import { useAuth } from '../auth/useAuth';
+import { Banner } from '../components/ui/Banner';
+import { Button } from '../components/ui/Button';
+import { ConfirmPanel } from '../components/ui/ConfirmPanel';
+import { EmptyState, LoadingText } from '../components/ui/Feedback';
+import { Field, RequiredLegend } from '../components/ui/Field';
+import { SectionCard } from '../components/ui/SectionCard';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import {
+  tableBodyClassName,
+  tableCellClassName,
+  tableClassName,
+  tableHeadClassName,
+  tableHeaderCellClassName,
+  tableKeyCellClassName,
+  tableWrapperClassName,
+  textLinkClassName,
+} from '../components/ui/table';
+import { EditUserForm } from '../users/EditUserForm';
+import { ResetPasswordForm } from '../users/ResetPasswordForm';
+import { MINIMUM_PASSWORD_LENGTH } from '../users/passwordPolicy';
 
 type SubmissionStatus = 'idle' | 'submitting' | 'created' | 'failed';
 type ListStatus = 'loading' | 'loaded' | 'error';
+type PanelKind = 'edit' | 'reset' | 'deactivate' | 'reactivate';
+
+// The one panel open under a row. Only one is open at a time, so two unsaved forms
+// can never be on screen together.
+interface RowPanel {
+  userId: string;
+  kind: PanelKind;
+}
+
+interface Notice {
+  tone: 'success' | 'error';
+  title: string;
+  message: string;
+}
+
+const COLUMNS = ['Username', 'Full Name', 'Role', 'Room', 'Status', 'Actions'];
 
 interface FieldErrors {
   username: string | null;
@@ -25,20 +61,9 @@ const EMPTY_FIELD_ERRORS: FieldErrors = {
   roomnumber: null,
 };
 
-// Mirrors AuthService's PasswordPolicy.MinimumLength. The frontend has no way to import a
-// C# constant, so this must be kept in sync by hand - the server remains authoritative
-// regardless of what this pre-submit check catches.
-const MINIMUM_PASSWORD_LENGTH = 8;
-
 const ROLE_OPTIONS: UserRole[] = ['Doctor', 'Receptionist', 'Admin'];
 
 const GENERIC_ERROR_MESSAGE = 'Unable to create the account. Please try again.';
-
-function inputClassName(hasError: boolean): string {
-  return `mt-1.5 block w-full border-2 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:bg-slate-100 disabled:text-slate-400 ${
-    hasError ? 'border-red-600' : 'border-slate-400 focus:border-brand-blue'
-  }`;
-}
 
 // Server errors are keyed by lowercased field name (see ApiError.fieldErrors); an unknown
 // key is silently ignored rather than merged, since this form has a fixed field set.
@@ -53,10 +78,12 @@ function applyServerFieldErrors(prev: FieldErrors, serverErrors: Readonly<Record
 }
 
 export function UserManagementPage() {
+  const { user: currentUser } = useAuth();
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<UserRole>('Doctor');
+  const [role, setRole] = useState<UserRole | ''>('');
   const [roomNumber, setRoomNumber] = useState('');
 
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(EMPTY_FIELD_ERRORS);
@@ -66,10 +93,14 @@ export function UserManagementPage() {
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [listStatus, setListStatus] = useState<ListStatus>('loading');
 
+  const [panel, setPanel] = useState<RowPanel | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
   const isBusy = status === 'submitting';
 
   const loadUsers = useCallback(async () => {
-    setListStatus('loading');
     try {
       const result = await listUsers();
       setUsers(result);
@@ -85,7 +116,7 @@ export function UserManagementPage() {
 
   function clearFieldError(field: keyof FieldErrors) {
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: null } : prev));
-    if (status === 'failed') {
+    if (status === 'failed' || status === 'created') {
       setStatus('idle');
       setServerMessage(null);
     }
@@ -97,6 +128,89 @@ export function UserManagementPage() {
     if (value !== 'Doctor') {
       setRoomNumber('');
       clearFieldError('roomnumber');
+    }
+  }
+
+  function openPanel(target: UserSummary, kind: PanelKind) {
+    setNotice(null);
+    setStatusError(null);
+    if (status === 'created' || status === 'failed') {
+      setStatus('idle');
+      setServerMessage(null);
+    }
+
+    // The server refuses this too; saying so here saves a confirmation that cannot succeed.
+    if (kind === 'deactivate' && target.userId === currentUser?.userId) {
+      setPanel(null);
+      setNotice({
+        tone: 'error',
+        title: 'Account Not Deactivated',
+        message: 'You cannot deactivate your own account.',
+      });
+      return;
+    }
+
+    setPanel({ userId: target.userId, kind });
+  }
+
+  function closePanel() {
+    setPanel(null);
+    setStatusError(null);
+  }
+
+  function replaceUser(updated: UserSummary) {
+    setUsers((prev) => prev.map((existing) => (existing.userId === updated.userId ? updated : existing)));
+  }
+
+  function handleEdited(updated: UserSummary) {
+    replaceUser(updated);
+    setPanel(null);
+    setNotice({
+      tone: 'success',
+      title: 'Account Updated',
+      message: `The details for ${updated.username} were saved.`,
+    });
+  }
+
+  function handlePasswordReset(target: UserSummary) {
+    setPanel(null);
+    setNotice({
+      tone: 'success',
+      title: 'Password Reset',
+      message: `${target.username} can sign in with the new password now.`,
+    });
+  }
+
+  async function handleStatusChange(target: UserSummary, deactivate: boolean) {
+    setStatusBusy(true);
+    setStatusError(null);
+
+    try {
+      replaceUser(deactivate ? await deactivateUser(target.userId) : await reactivateUser(target.userId));
+      setPanel(null);
+      setNotice(
+        deactivate
+          ? {
+              tone: 'success',
+              title: 'Account Deactivated',
+              message: `${target.username} can no longer sign in.`,
+            }
+          : {
+              tone: 'success',
+              title: 'Account Reactivated',
+              message: `${target.username} can sign in again.`,
+            },
+      );
+    } catch (error) {
+      if (deactivate && error instanceof ApiError && error.status === 400) {
+        setStatusError('You cannot deactivate your own account.');
+      } else if (error instanceof ApiError && error.status === 404) {
+        setStatusError('This account no longer exists. Please refresh the page.');
+      } else {
+        setStatusError(`Unable to ${deactivate ? 'deactivate' : 'reactivate'} the account. Please try again.`);
+      }
+    } finally {
+      setStatusBusy(false);
     }
   }
 
@@ -112,11 +226,11 @@ export function UserManagementPage() {
       password: !password
         ? 'Password is required.'
         : password.length < MINIMUM_PASSWORD_LENGTH
-          ? `Password must be at least ${MINIMUM_PASSWORD_LENGTH} characters`
+          ? `Password must be at least ${MINIMUM_PASSWORD_LENGTH} characters.`
           : null,
       fullname: trimmedFullName ? null : 'Full name is required.',
       role: role ? null : 'Role is required.',
-      roomnumber: role === 'Doctor' && !trimmedRoomNumber ? 'Room number is required for doctors' : null,
+      roomnumber: role === 'Doctor' && !trimmedRoomNumber ? 'Room number is required for doctors.' : null,
     };
     setFieldErrors(nextFieldErrors);
 
@@ -127,12 +241,13 @@ export function UserManagementPage() {
 
     setStatus('submitting');
     setServerMessage(null);
+    setNotice(null);
 
     const request: CreateUserRequestBody = {
       username: trimmedUsername,
       password,
       fullName: trimmedFullName,
-      role,
+      role: role as UserRole,
       roomNumber: role === 'Doctor' ? trimmedRoomNumber : undefined,
     };
 
@@ -142,7 +257,7 @@ export function UserManagementPage() {
       setUsername('');
       setPassword('');
       setFullName('');
-      setRole('Doctor');
+      setRole('');
       setRoomNumber('');
       setFieldErrors(EMPTY_FIELD_ERRORS);
       await loadUsers();
@@ -158,225 +273,276 @@ export function UserManagementPage() {
     }
   }
 
-  return (
-    <DashboardShell sectionLabel="User Management">
-      <Link
-        to="/admin"
-        className="mt-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-brand-blue hover:text-brand-blue-dark"
-      >
-        ← Back to Dashboard
-      </Link>
+  const accountCount =
+    listStatus === 'loaded' && users.length > 0
+      ? `${users.length} ${users.length === 1 ? 'account' : 'accounts'}.`
+      : undefined;
 
+  return (
+    <DashboardShell sectionLabel="Staff Accounts">
       {/* Status region - one persistent aria-live container, content swapped by status */}
-      <div aria-live="polite">
+      <div aria-live="polite" className="empty:hidden">
         {status === 'created' && (
-          <div className="mt-6 border-t-4 border-b border-emerald-700 bg-emerald-50 px-6 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-emerald-800">Account Created</p>
-            <p className="mt-1 text-sm text-emerald-900">The new account was created successfully.</p>
-          </div>
+          <Banner tone="success" title="Account Created">
+            The new account was created successfully.
+          </Banner>
         )}
         {status === 'failed' && serverMessage && (
-          <div className="mt-6 border-t-4 border-b border-red-700 bg-red-50 px-6 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-800">Account Not Created</p>
-            <p className="mt-1 text-sm text-red-900">{serverMessage}</p>
-          </div>
+          <Banner tone="error" title="Account Not Created">
+            {serverMessage}
+          </Banner>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-5 border border-slate-300 bg-white px-6 py-6">
-        <div>
-          <label htmlFor="username" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Username
-          </label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            autoComplete="off"
-            value={username}
-            onChange={(event) => {
-              setUsername(event.target.value);
-              clearFieldError('username');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.username ? true : undefined}
-            aria-describedby={fieldErrors.username ? 'username-error' : undefined}
-            className={inputClassName(!!fieldErrors.username)}
-          />
-          {fieldErrors.username && (
-            <p id="username-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.username}
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="password" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => {
-              setPassword(event.target.value);
-              clearFieldError('password');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.password ? true : undefined}
-            aria-describedby={fieldErrors.password ? 'password-error' : undefined}
-            className={inputClassName(!!fieldErrors.password)}
-          />
-          {fieldErrors.password && (
-            <p id="password-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.password}
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="fullName" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Full Name
-          </label>
-          <input
-            id="fullName"
-            name="fullName"
-            type="text"
-            autoComplete="off"
-            value={fullName}
-            onChange={(event) => {
-              setFullName(event.target.value);
-              clearFieldError('fullname');
-            }}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.fullname ? true : undefined}
-            aria-describedby={fieldErrors.fullname ? 'fullName-error' : undefined}
-            className={inputClassName(!!fieldErrors.fullname)}
-          />
-          {fieldErrors.fullname && (
-            <p id="fullName-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.fullname}
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="role" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-            Role
-          </label>
-          <select
-            id="role"
-            name="role"
-            value={role}
-            onChange={(event) => handleRoleChange(event.target.value as UserRole)}
-            disabled={isBusy}
-            aria-invalid={fieldErrors.role ? true : undefined}
-            aria-describedby={fieldErrors.role ? 'role-error' : undefined}
-            className={inputClassName(!!fieldErrors.role)}
-          >
-            {ROLE_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          {fieldErrors.role && (
-            <p id="role-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-              {fieldErrors.role}
-            </p>
-          )}
-        </div>
-
-        {role === 'Doctor' && (
-          <div>
-            <label htmlFor="roomNumber" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-              Room Number
-            </label>
-            <input
-              id="roomNumber"
-              name="roomNumber"
-              type="text"
-              autoComplete="off"
-              value={roomNumber}
-              onChange={(event) => {
-                setRoomNumber(event.target.value);
-                clearFieldError('roomnumber');
-              }}
-              disabled={isBusy}
-              aria-invalid={fieldErrors.roomnumber ? true : undefined}
-              aria-describedby={fieldErrors.roomnumber ? 'roomNumber-error' : undefined}
-              className={inputClassName(!!fieldErrors.roomnumber)}
-            />
-            {fieldErrors.roomnumber && (
-              <p id="roomNumber-error" className="mt-1 border-l-2 border-red-600 pl-2 text-xs font-medium text-red-700">
-                {fieldErrors.roomnumber}
-              </p>
-            )}
+      <SectionCard title="Create Account" description="Add a doctor, receptionist or administrator.">
+        <form onSubmit={handleSubmit} noValidate className="grid max-w-3xl gap-5 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <RequiredLegend />
           </div>
-        )}
 
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="relative w-full overflow-hidden bg-brand-blue px-4 py-3 text-sm font-bold uppercase tracking-[0.15em] text-white hover:bg-brand-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
-        >
-          {isBusy ? 'Creating…' : 'Create Account'}
-          {isBusy && (
-            <span className="absolute inset-x-0 bottom-0 block h-0.5 overflow-hidden bg-white/20" aria-hidden="true">
-              <span className="block h-full w-1/3 animate-[loading-sweep_1.1s_ease-in-out_infinite] bg-white" />
-            </span>
+          <Field id="username" label="Username" required error={fieldErrors.username}>
+            {(control) => (
+              <input
+                {...control}
+                name="username"
+                type="text"
+                autoComplete="off"
+                value={username}
+                onChange={(event) => {
+                  setUsername(event.target.value);
+                  clearFieldError('username');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
+
+          <Field
+            id="password"
+            label="Password"
+            required
+            hint={`At least ${MINIMUM_PASSWORD_LENGTH} characters.`}
+            error={fieldErrors.password}
+          >
+            {(control) => (
+              <input
+                {...control}
+                name="password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  clearFieldError('password');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
+
+          <Field id="fullName" label="Full Name" required error={fieldErrors.fullname} className="sm:col-span-2">
+            {(control) => (
+              <input
+                {...control}
+                name="fullName"
+                type="text"
+                autoComplete="off"
+                value={fullName}
+                onChange={(event) => {
+                  setFullName(event.target.value);
+                  clearFieldError('fullname');
+                }}
+                disabled={isBusy}
+              />
+            )}
+          </Field>
+
+          <Field id="role" label="Role" required error={fieldErrors.role}>
+            {(control) => (
+              <select
+                {...control}
+                name="role"
+                value={role}
+                onChange={(event) => handleRoleChange(event.target.value as UserRole)}
+                disabled={isBusy}
+              >
+                <option value="" disabled>
+                  Select role
+                </option>
+                {ROLE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+
+          {role === 'Doctor' && (
+            <Field
+              id="roomNumber"
+              label="Room Number"
+              required
+              hint="Patients are called to this room."
+              error={fieldErrors.roomnumber}
+            >
+              {(control) => (
+                <input
+                  {...control}
+                  name="roomNumber"
+                  type="text"
+                  autoComplete="off"
+                  value={roomNumber}
+                  onChange={(event) => {
+                    setRoomNumber(event.target.value);
+                    clearFieldError('roomnumber');
+                  }}
+                  disabled={isBusy}
+                />
+              )}
+            </Field>
           )}
-        </button>
-      </form>
 
-      <div className="mt-8">
-        <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Staff Accounts</p>
+          <div className="sm:col-span-2">
+            <Button type="submit" fullWidth loading={isBusy}>
+              {isBusy ? 'Creating…' : 'Create Account'}
+            </Button>
+          </div>
+        </form>
+      </SectionCard>
 
-        {listStatus === 'loading' && <p className="mt-3 text-sm text-slate-500">Loading users…</p>}
-        {listStatus === 'error' && <p className="mt-3 text-sm text-red-700">Unable to load the user list.</p>}
-        {listStatus === 'loaded' && users.length === 0 && (
-          <p className="mt-3 text-sm text-slate-500">No accounts yet.</p>
+      <SectionCard title="All Accounts" description={accountCount}>
+        {listStatus === 'loading' && <LoadingText>Loading users…</LoadingText>}
+        {listStatus === 'error' && (
+          <Banner tone="error" title="Staff Accounts Unavailable" role="alert">
+            Unable to load the user list. Please refresh the page.
+          </Banner>
         )}
+        {listStatus === 'loaded' && users.length === 0 && <EmptyState>No accounts yet.</EmptyState>}
+
+        {/* Outcome of a row action, shown beside the table it changed. */}
+        <div aria-live="polite" className="empty:hidden" data-testid="user-action-notice">
+          {notice && (
+            <Banner tone={notice.tone} title={notice.title} className="mb-4">
+              {notice.message}
+            </Banner>
+          )}
+        </div>
 
         {listStatus === 'loaded' && users.length > 0 && (
-          <div className="mt-3 overflow-x-auto border border-slate-300">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
+          <div className={tableWrapperClassName}>
+            <table className={`${tableClassName} w-full table-fixed [&_th]:whitespace-normal [&_th]:px-2 [&_td]:px-2 [&_td]:[overflow-wrap:anywhere]`}>
+              <colgroup>
+                <col className="w-[20%]" />
+                <col className="w-[23%]" />
+                <col className="w-[12%]" />
+                <col className="w-[8%]" />
+                <col className="w-[12%]" />
+                <col className="w-[25%]" />
+              </colgroup>
+              <thead className={tableHeadClassName}>
                 <tr>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Username
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Full Name
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Role
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Room
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-slate-600">
-                    Status
-                  </th>
+                  {COLUMNS.map((heading) => (
+                    <th key={heading} scope="col" className={tableHeaderCellClassName}>
+                      {heading}
+                    </th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {users.map((listedUser) => (
-                  <tr key={listedUser.userId}>
-                    <td className="px-4 py-2 text-slate-900">{listedUser.username}</td>
-                    <td className="px-4 py-2 text-slate-900">{listedUser.fullName}</td>
-                    <td className="px-4 py-2 text-slate-700">{listedUser.role}</td>
-                    <td className="px-4 py-2 text-slate-700">{listedUser.roomNumber ?? '—'}</td>
-                    <td className="px-4 py-2 text-slate-700">{listedUser.isActive ? 'Active' : 'Inactive'}</td>
-                  </tr>
-                ))}
+              <tbody className={tableBodyClassName}>
+                {users.map((listedUser) => {
+                  const openKind = panel?.userId === listedUser.userId ? panel.kind : null;
+                  const rowAction = (kind: PanelKind, label: string, testId: string) => (
+                    <button
+                      type="button"
+                      className={`${textLinkClassName} text-left`}
+                      aria-expanded={openKind === kind}
+                      data-testid={testId}
+                      onClick={() => (openKind === kind ? closePanel() : openPanel(listedUser, kind))}
+                    >
+                      {label}
+                      <span className="sr-only"> for {listedUser.username}</span>
+                    </button>
+                  );
+
+                  return (
+                    <Fragment key={listedUser.userId}>
+                      <tr data-testid="user-row">
+                        <td className={tableKeyCellClassName}>{listedUser.username}</td>
+                        <td className={tableCellClassName}>{listedUser.fullName}</td>
+                        <td className={tableCellClassName}>{listedUser.role}</td>
+                        <td className={tableCellClassName}>{listedUser.roomNumber ?? '-'}</td>
+                        <td className={tableCellClassName} data-testid="user-status">
+                          <StatusBadge tone={listedUser.isActive ? 'success' : 'neutral'}>
+                            {listedUser.isActive ? 'Active' : 'Inactive'}
+                          </StatusBadge>
+                        </td>
+                        <td className={tableCellClassName}>
+                          <div className="flex flex-wrap gap-x-3 gap-y-2">
+                            {rowAction('edit', 'Edit', 'user-edit')}
+                            {rowAction('reset', 'Reset Password', 'user-reset-password')}
+                            {listedUser.isActive
+                              ? rowAction('deactivate', 'Deactivate', 'user-deactivate')
+                              : rowAction('reactivate', 'Reactivate', 'user-reactivate')}
+                          </div>
+                        </td>
+                      </tr>
+
+                      {openKind && (
+                        <tr data-testid="user-panel">
+                          <td colSpan={COLUMNS.length} className="bg-slate-50 px-4 py-5">
+                            {openKind === 'edit' && (
+                              <EditUserForm user={listedUser} onSaved={handleEdited} onCancel={closePanel} />
+                            )}
+                            {openKind === 'reset' && (
+                              <ResetPasswordForm
+                                user={listedUser}
+                                onReset={() => handlePasswordReset(listedUser)}
+                                onCancel={closePanel}
+                              />
+                            )}
+                            {openKind === 'deactivate' && (
+                              <ConfirmPanel
+                                labelId={`deactivate-${listedUser.userId}`}
+                                title={`Deactivate ${listedUser.username}`}
+                                confirmLabel="Deactivate"
+                                busyLabel="Deactivating…"
+                                busy={statusBusy}
+                                error={statusError}
+                                onConfirm={() => handleStatusChange(listedUser, true)}
+                                onCancel={closePanel}
+                                className="max-w-xl"
+                              >
+                                Are you sure you want to deactivate this account?
+                              </ConfirmPanel>
+                            )}
+                            {openKind === 'reactivate' && (
+                              <ConfirmPanel
+                                labelId={`reactivate-${listedUser.userId}`}
+                                title={`Reactivate ${listedUser.username}`}
+                                confirmLabel="Reactivate"
+                                busyLabel="Reactivating…"
+                                tone="primary"
+                                busy={statusBusy}
+                                error={statusError}
+                                onConfirm={() => handleStatusChange(listedUser, false)}
+                                onCancel={closePanel}
+                                className="max-w-xl"
+                              >
+                                Are you sure you want to reactivate this account?
+                              </ConfirmPanel>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </SectionCard>
     </DashboardShell>
   );
 }

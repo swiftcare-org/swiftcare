@@ -1,9 +1,20 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { UserManagementPage } from './pages/UserManagementPage';
+import { AuditLogPage } from './pages/AuditLogPage';
+import { ActivityFeedPage } from './pages/ActivityFeedPage';
+import { DailyReportPage } from './pages/DailyReportPage';
+import { MonthlyReportPage } from './pages/MonthlyReportPage';
 import { PatientRegistrationPage } from './pages/PatientRegistrationPage';
 import { PatientSearchPage } from './pages/PatientSearchPage';
 import { PatientProfilePage } from './pages/PatientProfilePage';
+import { PatientHistoryPage } from './pages/PatientHistoryPage';
+import { QueueManagementPage } from './pages/QueueManagementPage';
+import { WaitingRoomDisplayPage } from './pages/WaitingRoomDisplayPage';
+import { ConsultationPage } from './pages/ConsultationPage';
+import { PrescriptionPage } from './pages/PrescriptionPage';
+import { PrescriptionDetailsPage } from './pages/PrescriptionDetailsPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DoctorDashboard } from './dashboards/DoctorDashboard';
 import { ReceptionistDashboard } from './dashboards/ReceptionistDashboard';
@@ -13,11 +24,36 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/queue/display" element={<WaitingRoomDisplayPage />} />
       <Route
         path="/doctor"
         element={
           <ProtectedRoute allowedRole="Doctor">
             <DoctorDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/doctor/consultation"
+        element={
+          <ProtectedRoute allowedRole="Doctor">
+            <ConsultationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/doctor/prescription"
+        element={
+          <ProtectedRoute allowedRole="Doctor">
+            <PrescriptionPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/prescriptions/queue/:queueId"
+        element={
+          <ProtectedRoute allowedRole={['Doctor', 'Receptionist', 'Admin']}>
+            <PrescriptionDetailsPage />
           </ProtectedRoute>
         }
       />
@@ -46,10 +82,50 @@ function App() {
         }
       />
       <Route
+        path="/admin/audit-log"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <AuditLogPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/daily"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <DailyReportPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/monthly"
+        element={
+          <ProtectedRoute allowedRole="Admin">
+            <MonthlyReportPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/activity"
+        element={
+          <ProtectedRoute allowedRole={['Receptionist', 'Admin']}>
+            <ActivityFeedPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/reception/patients/new"
         element={
           <ProtectedRoute allowedRole="Receptionist">
             <PatientRegistrationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reception/queue"
+        element={
+          <ProtectedRoute allowedRole="Receptionist">
+            <QueueManagementPage />
           </ProtectedRoute>
         }
       />
@@ -69,7 +145,16 @@ function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route
+        path="/patients/:patientId/history"
+        element={
+          <ProtectedRoute allowedRole="Doctor">
+            <PatientHistoryPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

@@ -1,0 +1,21 @@
+namespace PrescriptionService.Models.Entities;
+
+public sealed class Prescription
+{
+    public const string PendingStatus = "PENDING";
+    public const string DispensedStatus = "DISPENSED";
+
+    public Guid Id { get; set; }
+    public Guid ConsultationId { get; set; }
+    public Guid QueueId { get; set; }
+    public Guid PatientId { get; set; }
+    public Guid DoctorId { get; set; }
+    public required string DoctorName { get; set; }
+    public string Status { get; set; } = PendingStatus;
+    public string? DispensedBy { get; set; }
+    public DateTime? DispensedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public Guid Version { get; set; } = Guid.NewGuid();
+    public ICollection<PrescriptionItem> Items { get; } = new List<PrescriptionItem>();
+}

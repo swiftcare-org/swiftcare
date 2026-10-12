@@ -1,0 +1,9 @@
+# Production state: same storage account, separate key, so neither environment can read or
+# overwrite the other's state. Copy to backend-production.hcl (ignored) and set the real IDs.
+resource_group_name  = "swiftcare-tfstate-rg"
+storage_account_name = "swiftcaretfstate"
+container_name       = "tfstate"
+key                  = "azure-production.tfstate"
+subscription_id      = "00000000-0000-0000-0000-000000000000"
+tenant_id            = "00000000-0000-0000-0000-000000000000"
+use_azuread_auth     = true

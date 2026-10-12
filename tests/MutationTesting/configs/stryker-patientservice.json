@@ -1,0 +1,35 @@
+{
+  "stryker-config": {
+    "project": "PatientService.csproj",
+    "mutate": [
+      "**/*.cs",
+      "!**/Migrations/**/*.cs",
+      "!**/Data/**/*.cs",
+      "!**/Properties/**/*.cs",
+      "!**/Program.cs"
+    ],
+    "ignore-methods": [
+      "Log",
+      "LogTrace",
+      "LogDebug",
+      "LogInformation",
+      "LogWarning",
+      "LogError",
+      "LogCritical",
+      "ConfigureAwait"
+    ],
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "reporters": [
+      "html",
+      "json",
+      "progress",
+      "cleartext"
+    ],
+    "thresholds": {
+      "high": 90,
+      "low": 85,
+      "break": 85
+    }
+  }
+}

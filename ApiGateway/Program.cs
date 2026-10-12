@@ -2,10 +2,20 @@ using System.Text;
 using ApiGateway.Middleware;
 using ApiGateway.Models;
 using ApiGateway.Security;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Resources;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-gateway"));
+}
 
 builder.Services.AddHealthChecks();
 
@@ -75,10 +85,21 @@ builder.Services.AddAuthorization(options =>
     // resource-level rules (e.g. ownership) on top of the identity headers this forwards.
     options.AddPolicy("AdminOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Admin"));
     options.AddPolicy("ReceptionistOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Receptionist"));
-    // SWC-17: patient search, patient profile, and allergy reads are open to all clinical
-    // staff, since a doctor's only route to a patient's allergy alert is through search.
+    options.AddPolicy("DoctorOnly", policy => policy.RequireAuthenticatedUser().RequireRole("Doctor"));
+    // The list of active doctors holds only names, rooms and specializations, so every
+    // staff role may read it. Managing accounts stays AdminOnly.
+    options.AddPolicy("StaffDirectoryPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Doctor", "Receptionist", "Admin"));
+    // Patient search, patient profile, allergy reads, and chronic-condition reads are open
+    // to all authorized profile roles so doctors can see clinical alerts before consulting.
     options.AddPolicy("PatientSearchAndReadPolicy", policy => policy.RequireAuthenticatedUser()
         .RequireRole("Doctor", "Receptionist", "Admin"));
+    options.AddPolicy("PrescriptionReadPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Doctor", "Receptionist", "Admin"));
+    // The activity feed is the front desk's view of the department, so reception and
+    // administrators may read it. Doctors work from their own dashboard.
+    options.AddPolicy("ActivityFeedPolicy", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("Receptionist", "Admin"));
     // Admin is read-only for allergies by stakeholder decision - only Doctor and
     // Receptionist may record, update, or remove one.
     options.AddPolicy("AllergyWritePolicy", policy => policy.RequireAuthenticatedUser()
@@ -86,6 +107,8 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddSingleton<RevokedTokenStore>();
+builder.Services.AddHttpClient<IClinicalVisitValidator, ClinicalVisitValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddHttpClient<ISessionValidator, SessionValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
 
 var app = builder.Build();
 
@@ -143,8 +166,10 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseMiddleware<SessionValidationMiddleware>();
 app.UseMiddleware<TokenRevocationMiddleware>();
 app.UseAuthorization();
+app.UseMiddleware<ClinicalVisitValidationMiddleware>();
 
 app.UseMiddleware<GatewayForwardingMiddleware>();
 

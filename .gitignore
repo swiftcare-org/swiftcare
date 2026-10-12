@@ -25,6 +25,9 @@ TestResults/
 coverage/
 coverage.*
 *.trx
+StrykerOutput/
+tests/MutationTesting/results/*
+!tests/MutationTesting/results/RESULT-*.md
 
 # Logs and temporary files
 logs/

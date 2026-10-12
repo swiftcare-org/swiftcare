@@ -5,8 +5,12 @@ using QueueService.Middleware;
 using QueueService.Models.Configuration;
 using QueueService.Services;
 using Scalar.AspNetCore;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 // Azure Container Apps Jobs run maintenance commands to completion without
 // starting Kestrel or exposing an application endpoint.
@@ -17,6 +21,15 @@ if (maintenanceCommand != MaintenanceCommand.None)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-queue"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -32,8 +45,27 @@ builder.Services.AddDbContext<QueueDbContext>(options =>
 
 builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection("Queue"));
 builder.Services.AddScoped<IQueueEntryCreationService, QueueEntryCreationService>();
+builder.Services.AddScoped<IQueueCompletionService, QueueCompletionService>();
+builder.Services.AddScoped<IPatientQueueStatusService, PatientQueueStatusService>();
+builder.Services.AddScoped<ITodayQueueService, TodayQueueService>();
+builder.Services.AddScoped<ICallNextPatientService, CallNextPatientService>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+
+// IProducer is thread-safe and expensive to construct, so one instance is shared by all
+// call-next requests. Keeping it injectable lets unit tests replace the Kafka dependency.
+builder.Services.AddSingleton<IProducer<string, string>>(sp =>
+{
+    var kafkaOptions = sp.GetRequiredService<IOptions<KafkaOptions>>().Value;
+    return new ProducerBuilder<string, string>(new ProducerConfig
+    {
+        BootstrapServers = kafkaOptions.BootstrapServers,
+        MessageTimeoutMs = kafkaOptions.MessageTimeoutMs
+    }).Build();
+});
+builder.Services.AddSingleton<IQueueEventPublisher, KafkaQueueEventPublisher>();
+builder.Services.AddHostedService<OutboxRelay>();
 
 // Registered as a singleton - IConsumer is not thread-safe for concurrent Consume() calls,
 // but this app only ever has one loop calling it (PatientCheckedInConsumer), so a single
@@ -50,6 +82,24 @@ builder.Services.AddSingleton<IConsumer<string, string>>(sp =>
     }).Build();
 });
 builder.Services.AddHostedService<PatientCheckedInConsumer>();
+// Each background loop needs its own Kafka consumer: Confluent consumers are not thread-safe.
+builder.Services.AddHostedService<ConsultationCompletedConsumer>(services =>
+{
+    var options = services.GetRequiredService<IOptions<KafkaOptions>>();
+    var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
+    {
+        BootstrapServers = options.Value.BootstrapServers,
+        GroupId = options.Value.ConsultationCompletedConsumerGroup,
+        EnableAutoCommit = false,
+        AutoOffsetReset = AutoOffsetReset.Earliest
+    }).Build();
+
+    return new ConsultationCompletedConsumer(
+        consumer,
+        services.GetRequiredService<IServiceScopeFactory>(),
+        options,
+        services.GetRequiredService<ILogger<ConsultationCompletedConsumer>>());
+});
 
 var app = builder.Build();
 

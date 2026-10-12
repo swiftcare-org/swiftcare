@@ -3,3 +3,5 @@
 Dockerfile text eol=lf
 *.dockerfile text eol=lf
 .dockerignore text eol=lf
+.shellcheckrc text eol=lf
+deployment/cd/testdata/fake-az text eol=lf

@@ -323,6 +323,461 @@ public class ReverseProxyAuthorizationTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task PatientUpdateRouteWithAReceptionistTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var response = await client.PutAsync(
+            $"/api/patients/{Guid.NewGuid()}", new StringContent("{}"));
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task PatientUpdateRouteWithANonReceptionistTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.PutAsync(
+            $"/api/patients/{Guid.NewGuid()}", new StringContent("{}"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PatientUpdateRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PutAsync(
+            $"/api/patients/{Guid.NewGuid()}", new StringContent("{}"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PatientCheckInRouteWithAReceptionistTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var response = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/check-in", content: null);
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task PatientCheckInRouteWithANonReceptionistTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/check-in", content: null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PatientCheckInRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/check-in", content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PatientQueueStatusRouteWithAReceptionistTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var response = await client.GetAsync($"/api/queue/today/patient/{Guid.NewGuid()}");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task PatientQueueStatusRouteWithANonReceptionistTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync($"/api/queue/today/patient/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PatientQueueStatusRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/queue/today/patient/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WaitingRoomDisplayRouteWithoutBearerTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+
+        var response = await client.GetAsync("/api/queue/display");
+
+        // QueueService isn't running in this environment, so a successful proxy attempt
+        // fails downstream rather than succeeding. The Gateway must not reject the public
+        // waiting-room display for lacking a bearer token.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TodayQueueRouteWithAReceptionistTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task TodayQueueRouteWithANonReceptionistTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TodayQueueRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/queue/today");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WaitingPoolRouteWithADoctorTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.GetAsync("/api/queue/today/waiting");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task WaitingPoolRouteWithANonDoctorTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync("/api/queue/today/waiting");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WaitingPoolRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/queue/today/waiting");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CurrentPatientRouteWithADoctorTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task CurrentPatientRouteWithANonDoctorTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CurrentPatientRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/queue/today/current");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CallNextRouteWithADoctorTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.PutAsync(
+            "/api/queue/call-next",
+            new StringContent(string.Empty));
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task CallNextRouteWithANonDoctorTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.PutAsync(
+            "/api/queue/call-next",
+            new StringContent(string.Empty));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CallNextRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PutAsync(
+            "/api/queue/call-next",
+            new StringContent(string.Empty));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConsultationCreateRouteWithADoctorTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.PostAsync(
+            "/api/consultations",
+            new StringContent("{}"));
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task ConsultationCreateRouteWithANonDoctorTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.PostAsync(
+            "/api/consultations",
+            new StringContent("{}"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConsultationCreateRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            "/api/consultations",
+            new StringContent("{}"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConsultationTemplatesRouteWithADoctorTokenPassesGatewayAuthorization()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.GetAsync("/api/templates");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task ConsultationTemplatesRouteWithANonDoctorTokenReturns403(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync("/api/templates");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConsultationTemplatesRouteWithoutBearerTokenReturns401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/templates");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    public async Task PatientHistoryRoutesWithADoctorTokenPassGatewayAuthorization(string path)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Doctor"));
+
+        var response = await client.GetAsync(path);
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Receptionist")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Admin")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest", "Receptionist")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest", "Admin")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Receptionist")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11", "Admin")]
+    public async Task PatientHistoryRoutesWithANonDoctorTokenReturn403(string path, string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    [InlineData("/api/consultations/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11/latest")]
+    [InlineData("/api/vitals/patient/4d8f6f0e-3b0f-4b5a-9d6e-7f1c2a9b8c11")]
+    public async Task PatientHistoryRoutesWithoutBearerTokenReturn401(string path)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     [Theory]
     [InlineData("Doctor")]
     [InlineData("Receptionist")]
@@ -396,6 +851,84 @@ public class ReverseProxyAuthorizationTests
 
         var postResponse = await client.PostAsync($"/api/patients/{Guid.NewGuid()}/allergies", new StringContent("{}"));
         Assert.Equal(HttpStatusCode.Unauthorized, postResponse.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task ChronicConditionReadRouteIsReachableByAuthorizedProfileRoles(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var response = await client.GetAsync($"/api/patients/{Guid.NewGuid()}/conditions");
+
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChronicConditionMutationRoutesAreReachableByReceptionist()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(5);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: "Receptionist"));
+
+        var postResponse = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions",
+            new StringContent("{}"));
+        Assert.NotEqual(HttpStatusCode.Unauthorized, postResponse.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, postResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions/{Guid.NewGuid()}");
+        Assert.NotEqual(HttpStatusCode.Unauthorized, deleteResponse.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task ChronicConditionMutationRoutesRejectNonReceptionists(string role)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.CreateSignedToken(role: role));
+
+        var postResponse = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions",
+            new StringContent("{}"));
+        Assert.Equal(HttpStatusCode.Forbidden, postResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChronicConditionRoutesWithoutBearerTokenAreRejectedWith401()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var getResponse = await client.GetAsync($"/api/patients/{Guid.NewGuid()}/conditions");
+        Assert.Equal(HttpStatusCode.Unauthorized, getResponse.StatusCode);
+
+        var postResponse = await client.PostAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions",
+            new StringContent("{}"));
+        Assert.Equal(HttpStatusCode.Unauthorized, postResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/patients/{Guid.NewGuid()}/conditions/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.Unauthorized, deleteResponse.StatusCode);
     }
 
     [Fact]

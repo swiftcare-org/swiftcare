@@ -16,15 +16,26 @@ namespace PatientService.UnitTests.Controllers;
 // isolation. The database is swapped for EF Core InMemory, IPatientRegistrationService and
 // IPatientSearchService are swapped for mocks (their own behavior is covered by
 // PatientRegistrationServiceTests and PatientSearchServiceTests respectively), and
-// IPatientEventPublisher is swapped for a mock so no real Kafka producer is constructed.
+// IPatientCheckInService is also mocked for controller-level check-in coverage, and
+// IPatientEventPublisher is swapped so no real Kafka producer is constructed.
 public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<Program>
 {
     public const string ValidGatewaySecret = "integration-test-gateway-secret-value";
+    public static readonly DateTimeOffset FixedUtcNow =
+        new(2026, 9, 9, 20, 30, 0, TimeSpan.Zero);
+    public static readonly DateOnly FixedClinicToday = new(2026, 9, 10);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 
     public Mock<IPatientRegistrationService> PatientRegistrationServiceMock { get; } = new();
+    public Mock<IPatientCheckInService> PatientCheckInServiceMock { get; } = new();
     public Mock<IPatientSearchService> PatientSearchServiceMock { get; } = new();
     public Mock<IPatientProfileService> PatientProfileServiceMock { get; } = new();
     public Mock<IAllergyService> AllergyServiceMock { get; } = new();
+    public Mock<IChronicConditionService> ChronicConditionServiceMock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -40,6 +51,7 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
             {
                 ["ConnectionStrings:PatientDb"] = "Server=localhost;Database=unused;User=unused;Password=unused;",
                 ["Gateway:InternalSecret"] = ValidGatewaySecret,
+                ["Clinic:TimeZoneId"] = "Asia/Colombo",
                 ["Kafka:BootstrapServers"] = "unused:9092",
                 ["Kafka:PatientCheckedInTopic"] = "patient-checked-in"
             });
@@ -51,8 +63,14 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
             services.AddDbContext<PatientDbContext>(options =>
                 options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
 
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedUtcNow));
+
             services.RemoveAll<IPatientRegistrationService>();
             services.AddScoped(_ => PatientRegistrationServiceMock.Object);
+
+            services.RemoveAll<IPatientCheckInService>();
+            services.AddScoped(_ => PatientCheckInServiceMock.Object);
 
             services.RemoveAll<IPatientSearchService>();
             services.AddScoped(_ => PatientSearchServiceMock.Object);
@@ -62,6 +80,9 @@ public sealed class PatientServiceWebApplicationFactory : WebApplicationFactory<
 
             services.RemoveAll<IAllergyService>();
             services.AddScoped(_ => AllergyServiceMock.Object);
+
+            services.RemoveAll<IChronicConditionService>();
+            services.AddScoped(_ => ChronicConditionServiceMock.Object);
 
             services.RemoveAll<Confluent.Kafka.IProducer<string, string>>();
             services.AddSingleton(_ => new Mock<Confluent.Kafka.IProducer<string, string>>().Object);

@@ -25,14 +25,35 @@ Configured in `appsettings.json` under `ReverseProxy`:
 | `auth-login-route` | `POST /api/auth/login` | `Anonymous` | `http://localhost:5000` (AuthService) |
 | `auth-route` | `/api/auth/{**catch-all}` | `Default` (requires a valid, non-revoked JWT) | `http://localhost:5000` (AuthService) |
 | `users-route` | `GET, POST /api/users` | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `users-doctors-route` | `GET /api/users/doctors` | `StaffDirectoryPolicy` (Doctor, Receptionist, Admin) | `http://localhost:5000` (AuthService) |
+| `user-item-route` | `PUT /api/users/{id:guid}` | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `user-action-route` | `PUT /api/users/{id:guid}/{action}` (`reset-password`, `deactivate`, `activate`) | `AdminOnly` | `http://localhost:5000` (AuthService) |
+| `audit-logs-route` | `GET /api/audit-logs` | `AdminOnly` | `http://localhost:5000` (AuthService) |
 | `patients-route` | `POST /api/patients` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
 | `patients-search-route` | `GET /api/patients/search` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
 | `patient-allergies-read-route` | `GET /api/patients/{id:guid}/allergies` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
 | `patient-allergies-write-route` | `POST /api/patients/{id:guid}/allergies` | `AllergyWritePolicy` | `http://localhost:5002` (PatientService) |
 | `patient-allergy-item-route` | `PUT, DELETE /api/patients/{id:guid}/allergies/{aid:guid}` | `AllergyWritePolicy` | `http://localhost:5002` (PatientService) |
+| `patient-conditions-read-route` | `GET /api/patients/{id:guid}/conditions` | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
+| `patient-conditions-create-route` | `POST /api/patients/{id:guid}/conditions` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
+| `patient-condition-delete-route` | `DELETE /api/patients/{id:guid}/conditions/{conditionId:guid}` | `ReceptionistOnly` | `http://localhost:5002` (PatientService) |
 | `patient-read-route` | `GET /api/patients/{id:guid}` (`Order: 2`) | `PatientSearchAndReadPolicy` | `http://localhost:5002` (PatientService) |
+| `patient-queue-status-route` | `GET /api/queue/today/patient/{patientId:guid}` | `ReceptionistOnly` | `http://localhost:5003` (QueueService) |
+| `call-next-route` | `PUT /api/queue/call-next` | `DoctorOnly` | `http://localhost:5003` (QueueService) |
+| `waiting-room-display-route` | `GET /api/queue/display` | `Anonymous` | `http://localhost:5003` (QueueService) |
+| `waiting-pool-route` | `GET /api/queue/today/waiting` | `DoctorOnly` | `http://localhost:5003` (QueueService) |
+| `current-patient-route` | `GET /api/queue/today/current` | `DoctorOnly` | `http://localhost:5003` (QueueService) |
+| `today-queue-route` | `GET /api/queue/today` | `ReceptionistOnly` | `http://localhost:5003` (QueueService) |
+| `consultations-create-route` | `POST /api/consultations` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
+| `consultation-no-prescription-route` | `POST /api/consultations/{consultationId:guid}/no-prescription` | `DoctorOnly` | `http://localhost:5001` (PrescriptionService) |
+| `notifications-route` | `GET /api/notifications` | `ActivityFeedPolicy` | `http://localhost:5005` (NotificationService) |
+| `reports-daily-route` | `GET /api/reports/daily` | `AdminOnly` | `http://localhost:5005` (NotificationService) |
+| `reports-monthly-route` | `GET /api/reports/monthly` | `AdminOnly` | `http://localhost:5005` (NotificationService) |
+| `prescription-monthly-report-route` | `GET /api/prescriptions/report/monthly` | `AdminOnly` | `http://localhost:5001` (PrescriptionService) |
+| `consultation-templates-route` | `GET, POST /api/templates` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
+| `consultation-template-item-route` | `DELETE /api/templates/{id:guid}` | `DoctorOnly` | `http://localhost:5004` (MedicalRecordService) |
 
-`patient-read-route` is deliberately constrained to `{id:guid}` and ordered after `patients-search-route`: this guarantees `/api/patients/search` can never be shadowed by the parameterized route regardless of Order, since `"search"` fails the guid constraint outright. `PatientSearchAndReadPolicy` (Doctor, Receptionist, Admin) and `AllergyWritePolicy` (Doctor, Receptionist — Admin is read-only for allergies by stakeholder decision) are defined alongside `AdminOnly` and `ReceptionistOnly` in `Program.cs`.
+`patient-read-route` is deliberately constrained to `{id:guid}` and ordered after `patients-search-route`: this guarantees `/api/patients/search` can never be shadowed by the parameterized route regardless of Order, since `"search"` fails the guid constraint outright. `PatientSearchAndReadPolicy` permits Doctor, Receptionist, and Admin access to patient-profile clinical reads. Chronic-condition creation and removal reuse `ReceptionistOnly`; no condition update route is configured. `AllergyWritePolicy` remains limited to Doctor and Receptionist. `DoctorOnly` restricts the shared waiting-pool, current-patient, and call-next routes to authenticated doctors. Only the exact `GET /api/queue/display` route is anonymous; all other queue routes retain their role policies.
 
 As more services come online (PatientService, QueueService, etc.), add a route + cluster entry per service rather than a shared routing abstraction — each route maps one URL prefix to one service's base address. Give each new protected route an explicit `AuthorizationPolicy` rather than relying on an implicit default.
 
@@ -61,7 +82,7 @@ export ASPNETCORE_ENVIRONMENT=Development
 dotnet run
 ```
 
-Start the backend services it proxies to (currently AuthService on port 5000) before exercising routed endpoints — `GET /health` on the Gateway itself works standalone.
+Start the backend service for the route being exercised (AuthService on port 5000, PatientService on port 5002, QueueService on port 5003, or MedicalRecordService on port 5004) — `GET /health` on the Gateway itself works standalone.
 
 ## Testing
 
@@ -91,9 +112,25 @@ curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/
 | `POST` | `/api/auth/logout` | Bearer JWT | Revokes the token's `jti`, then proxies to AuthService |
 | `*` | `/api/auth/{**catch-all}` | Bearer JWT | Proxied to AuthService |
 | `GET`, `POST` | `/api/users` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `GET` | `/api/users/doctors` | Bearer JWT, any staff role | Proxied to AuthService |
+| `PUT` | `/api/users/{id}` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `PUT` | `/api/users/{id}/reset-password`, `/deactivate`, `/activate` | Bearer JWT, `Admin` role | Proxied to AuthService |
+| `GET` | `/api/audit-logs` | Bearer JWT, `Admin` role | Proxied to AuthService |
 | `POST` | `/api/patients` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
 | `GET` | `/api/patients/search` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
 | `GET` | `/api/patients/{id}` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
 | `GET` | `/api/patients/{id}/allergies` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
 | `POST` | `/api/patients/{id}/allergies` | Bearer JWT, `Doctor`\|`Receptionist` role | Proxied to PatientService |
 | `PUT`, `DELETE` | `/api/patients/{id}/allergies/{allergyId}` | Bearer JWT, `Doctor`\|`Receptionist` role | Proxied to PatientService |
+| `GET` | `/api/patients/{id}/conditions` | Bearer JWT, `Doctor`\|`Receptionist`\|`Admin` role | Proxied to PatientService |
+| `POST` | `/api/patients/{id}/conditions` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
+| `DELETE` | `/api/patients/{id}/conditions/{conditionId}` | Bearer JWT, `Receptionist` role | Proxied to PatientService |
+| `GET` | `/api/queue/today/patient/{patientId}` | Bearer JWT, `Receptionist` role | Proxied to QueueService |
+| `PUT` | `/api/queue/call-next` | Bearer JWT, `Doctor` role | Proxied to QueueService |
+| `GET` | `/api/queue/display` | none | Proxied to QueueService with no user identity required |
+| `GET` | `/api/queue/today/waiting` | Bearer JWT, `Doctor` role | Proxied to QueueService |
+| `GET` | `/api/queue/today/current` | Bearer JWT, `Doctor` role | Proxied to QueueService; returns `204` when no assignment exists |
+| `GET` | `/api/queue/today` | Bearer JWT, `Receptionist` role | Proxied to QueueService |
+| `GET`, `POST` | `/api/templates` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |
+| `DELETE` | `/api/templates/{id}` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |
+| `POST` | `/api/consultations` | Bearer JWT, `Doctor` role | Proxied to MedicalRecordService |

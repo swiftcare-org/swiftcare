@@ -18,6 +18,7 @@ public sealed class SeedClient : IDisposable
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _http;
+    private readonly HashSet<string> _registeredPatientIds = [];
 
     public SeedClient()
     {
@@ -27,11 +28,124 @@ public sealed class SeedClient : IDisposable
     public SeededPatient RegisterPatient(string? fullName = null) =>
         RegisterPatientAsync(fullName).GetAwaiter().GetResult();
 
+    // Most profile/search tests need a patient record, not a queue entry. Registration
+    // necessarily publishes patient-checked-in, so wait for that asynchronous side effect
+    // and remove only this test's row before the browser steps begin.
+    public SeededPatient RegisterPatientOutsideQueue(string? fullName = null)
+    {
+        var patient = RegisterPatient(fullName);
+        RemovePatientFromTodayQueue(patient.PatientId);
+        _registeredPatientIds.Remove(patient.PatientId);
+        return patient;
+    }
+
+    // UI registration tests do not receive the new patient id from their page object.
+    // Resolve the unique generated name through the same Gateway search endpoint, then
+    // remove the registration-created queue entry without touching another test's data.
+    public SeededPatient FindPatientByName(string fullName) =>
+        FindPatientByNameAsync(fullName).GetAwaiter().GetResult();
+
+    public void RemovePatientFromTodayQueue(string patientId)
+    {
+        WaitUntilWaiting(patientId);
+        if (!QueueDatabase.DeleteTodayQueueEntry(patientId))
+        {
+            throw new InvalidOperationException(
+                $"Could not remove today's queue entry for E2E patient {patientId}.");
+        }
+        _registeredPatientIds.Remove(patientId);
+    }
+
     public string AddAllergy(string patientId, string allergyName, string severity, string? notes = null) =>
         AddAllergyAsync(patientId, allergyName, severity, notes).GetAwaiter().GetResult();
 
-    public SeededUser CreateUser(string role, string? username = null, string? password = null) =>
-        CreateUserAsync(role, username, password).GetAwaiter().GetResult();
+    // dateDiagnosed defaults to UTC-today: PatientService rejects a date after the
+    // Asia/Colombo clinic-local calendar date (see ClinicDateProvider), and UTC is never
+    // ahead of Colombo (UTC+5:30, no DST), so UTC-today is always a safe, never-future value.
+    public string AddChronicCondition(
+        string patientId, string conditionName, string? dateDiagnosed = null, string? notes = null) =>
+        AddChronicConditionAsync(patientId, conditionName, dateDiagnosed, notes).GetAwaiter().GetResult();
+
+    public SeededUser CreateUser(
+        string role,
+        string? username = null,
+        string? password = null,
+        string? fullName = null) =>
+        CreateUserAsync(role, username, password, fullName).GetAwaiter().GetResult();
+
+    // SWC-110 names SWC-96 as the repeatable setup for empty-state tests, but no SWC-96 work
+    // exists. This stands in for it: the queue screen's pending list only counts PENDING
+    // prescriptions for today's COMPLETED queue entries, and every test removes its own queue
+    // rows on disposal, so only data created outside the suite (API collections, manual QA)
+    // can keep the list from being empty. Those are dispensed only when the environment opts
+    // in with E2E_ALLOW_EMPTY_STATE_SETUP=true, as a clearly named throwaway receptionist;
+    // otherwise the test fails rather than changing data it does not own.
+    public void EnsureNoOtherPendingPrescriptionsToday(params string[] ownQueueIds) =>
+        EnsureNoOtherPendingPrescriptionsTodayAsync(ownQueueIds).GetAwaiter().GetResult();
+
+    // Waits for the patient-checked-in Kafka consumer to place a registered patient
+    // into the WAITING pool. Needed before CallNext, which acts on whichever entry is
+    // first in line - without this wait, a call made immediately after RegisterPatient
+    // can race the consumer and act on a leftover entry from a previous run instead.
+    public void WaitUntilWaiting(string patientId, TimeSpan? timeout = null) =>
+        WaitUntilWaitingAsync(patientId, timeout ?? TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
+
+    // Call Next selects the clinic-wide first waiting entry. Fail before calling if an
+    // older entry would be taken instead of this test's patient; never consume another
+    // person's queue entry just to satisfy a browser-test precondition.
+    public void EnsureNextWaitingPatientIs(string patientId) =>
+        EnsureNextWaitingPatientIsAsync(patientId).GetAwaiter().GetResult();
+
+    // Calls next as the given account (any active Doctor, seeded or created via
+    // CreateUser) and returns the room/queue-number pair QueueService assigned.
+    public CalledQueueEntry CallNext(string username, string password) =>
+        CallNextAsync(username, password).GetAwaiter().GetResult();
+
+    public CurrentQueueAssignment GetCurrentForDoctor(string username, string password) =>
+        GetCurrentForDoctorAsync(username, password).GetAwaiter().GetResult();
+
+    // Plain consultation with no follow-up, for tests that only care about the
+    // completion/queue behaviour - CreateConsultationWithFollowUp below always attaches
+    // follow-up fields, which are SWC-28's concern rather than SWC-26/SWC-38's.
+    public SeededConsultation CreateConsultation(
+        CurrentQueueAssignment assignment, string username, string password) =>
+        CreateConsultationAsync(assignment, username, password).GetAwaiter().GetResult();
+
+    public SeededConsultation CreateConsultationWithFollowUp(
+        CurrentQueueAssignment assignment,
+        string username,
+        string password,
+        DateOnly followUpDate,
+        string followUpInstructions) =>
+        CreateConsultationWithFollowUpAsync(
+            assignment,
+            username,
+            password,
+            followUpDate,
+            followUpInstructions).GetAwaiter().GetResult();
+
+    public void RecordVitalSigns(string consultationId, string username, string password) =>
+        RecordVitalSignsAsync(consultationId, username, password).GetAwaiter().GetResult();
+
+    public void CompleteConsultation(string consultationId, string username, string password) =>
+        CompleteConsultationAsync(consultationId, username, password).GetAwaiter().GetResult();
+
+    // Saves a PENDING prescription through the real API and returns its id, for tests that
+    // need an existing prescription rather than exercising the creation form itself.
+    public string CreatePrescription(
+        SeededConsultation consultation,
+        string username,
+        string password,
+        params SeededMedicine[] medicines) =>
+        CreatePrescriptionAsync(consultation, username, password, medicines).GetAwaiter().GetResult();
+
+    // Dispenses a prescription through the real SWC-41 API as a receptionist. The seeded
+    // reception.silva is used when no throwaway receptionist is supplied.
+    public void DispensePrescription(
+        string prescriptionId,
+        string username = "reception.silva",
+        string? password = null) =>
+        DispensePrescriptionAsync(prescriptionId, username, password).GetAwaiter().GetResult();
 
     private async Task<SeededPatient> RegisterPatientAsync(string? fullName)
     {
@@ -56,7 +170,32 @@ public sealed class SeedClient : IDisposable
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<RegisteredPatientBody>(Json)
                    ?? throw new InvalidOperationException("Empty response registering a seed patient.");
-        return new SeededPatient(body.PatientId, nic, name, phone, bloodGroup);
+        var patient = new SeededPatient(body.PatientId, nic, name, phone, bloodGroup);
+        _registeredPatientIds.Add(patient.PatientId);
+        return patient;
+    }
+
+    private async Task<SeededPatient> FindPatientByNameAsync(string fullName)
+    {
+        var token = await TokenForAsync("reception.silva");
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/patients/search?q={Uri.EscapeDataString(fullName)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var matches = await response.Content.ReadFromJsonAsync<List<SearchPatientBody>>(Json) ?? [];
+        var match = matches.SingleOrDefault(patient => patient.FullName == fullName)
+            ?? throw new InvalidOperationException(
+                $"Could not resolve the E2E patient registered as '{fullName}'.");
+
+        return new SeededPatient(
+            match.PatientId,
+            match.Nic,
+            match.FullName,
+            match.PhoneNumber,
+            match.BloodGroup);
     }
 
     private async Task<string> AddAllergyAsync(string patientId, string allergyName, string severity, string? notes)
@@ -71,7 +210,29 @@ public sealed class SeedClient : IDisposable
         return body.AllergyId;
     }
 
-    private async Task<SeededUser> CreateUserAsync(string role, string? username, string? password)
+    private async Task<string> AddChronicConditionAsync(
+        string patientId, string conditionName, string? dateDiagnosed, string? notes)
+    {
+        var request = new
+        {
+            conditionName,
+            dateDiagnosed = dateDiagnosed ?? DateTime.UtcNow.Date.ToString("yyyy-MM-dd"),
+            notes,
+        };
+
+        var token = await TokenForAsync("reception.silva");
+        using var response = await SendAsync(HttpMethod.Post, $"/api/patients/{patientId}/conditions", request, token);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ChronicConditionBody>(Json)
+                   ?? throw new InvalidOperationException("Empty response adding a seed chronic condition.");
+        return body.ConditionId;
+    }
+
+    private async Task<SeededUser> CreateUserAsync(
+        string role,
+        string? username,
+        string? password,
+        string? fullName)
     {
         var user = username ?? TestData.Username(role.ToLowerInvariant());
         var pw = password ?? TestData.Password();
@@ -80,7 +241,7 @@ public sealed class SeedClient : IDisposable
         {
             username = user,
             password = pw,
-            fullName = TestData.FullName(role),
+            fullName = fullName ?? TestData.FullName(role),
             role,
             roomNumber = role == "Doctor" ? TestData.RoomNumber() : null,
         };
@@ -88,13 +249,231 @@ public sealed class SeedClient : IDisposable
         var token = await TokenForAsync("admin.fernando");
         using var response = await SendAsync(HttpMethod.Post, "/api/users", request, token);
         response.EnsureSuccessStatusCode();
-        return new SeededUser(user, pw, role);
+        var createdUser = await response.Content.ReadFromJsonAsync<CreatedUserBody>(Json)
+            ?? throw new InvalidOperationException($"Empty response creating E2E user '{user}'.");
+        return new SeededUser(user, pw, role, request.roomNumber, createdUser.UserId, request.fullName);
     }
 
-    private async Task<string> TokenForAsync(string username)
+    private async Task EnsureNoOtherPendingPrescriptionsTodayAsync(string[] ownQueueIds)
+    {
+        var token = await TokenForAsync("reception.silva");
+        var completedToday = (await GetAsync<List<TodayQueueRowBody>>("/api/queue/today", token))
+            .Where(row => row.Status == "COMPLETED")
+            .Select(row => row.QueueId)
+            .ToHashSet();
+        var leftovers = (await GetAsync<List<PendingPrescriptionBody>>("/api/prescriptions/pending", token))
+            .Where(prescription => completedToday.Contains(prescription.QueueId)
+                && !ownQueueIds.Contains(prescription.QueueId))
+            .ToList();
+
+        if (leftovers.Count == 0)
+        {
+            return;
+        }
+
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("E2E_ALLOW_EMPTY_STATE_SETUP"),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"{leftovers.Count} pending prescription(s) for today's completed patients were not " +
+                "created by this test, so the empty pending list cannot be reached. Dispense them, or set " +
+                "E2E_ALLOW_EMPTY_STATE_SETUP=true on a disposable stack to let the suite dispense them.");
+        }
+
+        var setupUser = await CreateUserAsync("Receptionist", null, null, $"QA Empty-State Setup {TestData.RunId}");
+        foreach (var prescription in leftovers)
+        {
+            await DispensePrescriptionAsync(prescription.Id, setupUser.Username, setupUser.Password);
+        }
+    }
+
+    private async Task<T> GetAsync<T>(string path, string token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(Json)
+            ?? throw new InvalidOperationException($"Empty response from {path}.");
+    }
+
+    private async Task WaitUntilWaitingAsync(string patientId, TimeSpan timeout)
+    {
+        var token = await TokenForAsync("dr.chen");
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "/api/queue/today/waiting");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await _http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            var entries = await response.Content.ReadFromJsonAsync<List<WaitingEntryBody>>(Json) ?? [];
+            if (entries.Any(entry => entry.PatientId == patientId))
+            {
+                return;
+            }
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Patient {patientId} did not appear in the waiting pool within {timeout.TotalSeconds}s. " +
+                    "The patient-checked-in Kafka consumer may be down - see QueueService/README.md.");
+            }
+            await Task.Delay(500);
+        }
+    }
+
+    private async Task EnsureNextWaitingPatientIsAsync(string patientId)
+    {
+        var token = await TokenForAsync("dr.chen");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/queue/today/waiting");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var entries = await response.Content.ReadFromJsonAsync<List<WaitingEntryBody>>(Json) ?? [];
+        if (entries.FirstOrDefault()?.PatientId != patientId)
+        {
+            throw new InvalidOperationException(
+                $"E2E patient {patientId} is not first in the shared waiting queue. " +
+                "Run queue-dependent tests against an isolated queue; no other patient's entry was called.");
+        }
+    }
+
+    private async Task<CalledQueueEntry> CallNextAsync(string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Put, "/api/queue/call-next", new { }, token);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<CalledQueueEntryBody>(Json)
+                   ?? throw new InvalidOperationException("Empty response calling next.");
+        return new CalledQueueEntry(body.QueueNumber, body.RoomNumber);
+    }
+
+    private async Task<CurrentQueueAssignment> GetCurrentForDoctorAsync(string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/queue/today/current");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+        {
+            throw new InvalidOperationException($"Doctor '{username}' has no current queue assignment.");
+        }
+
+        return await response.Content.ReadFromJsonAsync<CurrentQueueAssignment>(Json)
+            ?? throw new InvalidOperationException($"Empty current-assignment response for doctor '{username}'.");
+    }
+
+    private async Task<SeededConsultation> CreateConsultationAsync(
+        CurrentQueueAssignment assignment, string username, string password)
+    {
+        var request = new
+        {
+            queueId = assignment.QueueId,
+            patientId = assignment.PatientId,
+            symptoms = "SWC-38 E2E completion fixture",
+            examinationFindings = "Stable during E2E assessment",
+            diagnosis = "SWC-38 E2E assessment",
+            notes = "Created by isolated Selenium test data",
+        };
+
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Post, "/api/consultations", request, token);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SeededConsultation>(Json)
+            ?? throw new InvalidOperationException("Empty response creating a seed consultation.");
+    }
+
+    private async Task<SeededConsultation> CreateConsultationWithFollowUpAsync(
+        CurrentQueueAssignment assignment,
+        string username,
+        string password,
+        DateOnly followUpDate,
+        string followUpInstructions)
+    {
+        var request = new
+        {
+            queueId = assignment.QueueId,
+            patientId = assignment.PatientId,
+            symptoms = "SWC-28 E2E follow-up fixture",
+            examinationFindings = "Stable during E2E assessment",
+            diagnosis = "SWC-28 E2E assessment",
+            notes = "Created by isolated Selenium test data",
+            followUpDate = followUpDate.ToString("yyyy-MM-dd"),
+            followUpInstructions,
+        };
+
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Post, "/api/consultations", request, token);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SeededConsultation>(Json)
+            ?? throw new InvalidOperationException("Empty response creating a seed consultation.");
+    }
+
+    private async Task RecordVitalSignsAsync(string consultationId, string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Post,
+            $"/api/consultations/{consultationId}/vitals",
+            new { temperatureCelsius = 37.0m },
+            token);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task CompleteConsultationAsync(string consultationId, string username, string password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Post,
+            $"/api/consultations/{consultationId}/complete",
+            new { },
+            token);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<string> CreatePrescriptionAsync(
+        SeededConsultation consultation,
+        string username,
+        string password,
+        SeededMedicine[] medicines)
+    {
+        var request = new
+        {
+            consultationId = consultation.Id,
+            queueId = consultation.QueueId,
+            patientId = consultation.PatientId,
+            medicines,
+        };
+
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(HttpMethod.Post, "/api/prescriptions", request, token);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<CreatedPrescriptionBody>(Json)
+                   ?? throw new InvalidOperationException("Empty response creating a seed prescription.");
+        return body.Id;
+    }
+
+    private async Task DispensePrescriptionAsync(string prescriptionId, string username, string? password)
+    {
+        var token = await TokenForAsync(username, password);
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"/api/prescriptions/{prescriptionId}/dispense",
+            new { },
+            token);
+        response.EnsureSuccessStatusCode();
+    }
+
+    // password is null for the dev-seeded accounts (dr.chen, reception.silva,
+    // admin.fernando), which all share TestConfig.SeedPassword; a throwaway account
+    // created via CreateUser carries its own generated password instead.
+    private async Task<string> TokenForAsync(string username, string? password = null)
     {
         using var response = await _http.PostAsJsonAsync(
-            "/api/auth/login", new { username, password = TestConfig.SeedPassword }, Json);
+            "/api/auth/login", new { username, password = password ?? TestConfig.SeedPassword }, Json);
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<LoginBody>(Json)
                    ?? throw new InvalidOperationException($"Empty login response for seed account '{username}'.");
@@ -111,15 +490,85 @@ public sealed class SeedClient : IDisposable
         return _http.SendAsync(request);
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        try
+        {
+            foreach (var patientId in _registeredPatientIds)
+            {
+                QueueDatabase.DeleteTodayQueueEntry(patientId);
+            }
+        }
+        finally
+        {
+            _http.Dispose();
+        }
+    }
 
     private sealed record LoginBody(string Token);
 
     private sealed record RegisteredPatientBody(string PatientId);
 
+    private sealed record CreatedUserBody(string UserId);
+
+    private sealed record SearchPatientBody(
+        string PatientId,
+        string FullName,
+        string Nic,
+        string PhoneNumber,
+        string BloodGroup);
+
     private sealed record AllergyBody(string AllergyId);
+
+    private sealed record ChronicConditionBody(string ConditionId);
+
+    private sealed record WaitingEntryBody(string PatientId);
+
+    private sealed record CalledQueueEntryBody(string QueueNumber, string RoomNumber);
+
+    private sealed record CreatedPrescriptionBody(string Id);
+
+    private sealed record TodayQueueRowBody(string QueueId, string Status);
+
+    private sealed record PendingPrescriptionBody(string Id, string QueueId);
 }
+
+public sealed record SeededMedicine(
+    string MedicineName,
+    string Dosage,
+    string Frequency,
+    string Duration,
+    string? Instructions = null);
 
 public sealed record SeededPatient(string PatientId, string Nic, string FullName, string PhoneNumber, string BloodGroup);
 
-public sealed record SeededUser(string Username, string Password, string Role);
+public sealed record SeededUser(
+    string Username,
+    string Password,
+    string Role,
+    string? RoomNumber,
+    string UserId,
+    string FullName);
+
+public sealed record CalledQueueEntry(string QueueNumber, string RoomNumber);
+
+public sealed record CurrentQueueAssignment(
+    string QueueId,
+    string PatientId,
+    string QueueNumber,
+    string Status,
+    string DoctorId,
+    string DoctorName,
+    string RoomNumber);
+
+public sealed record SeededConsultation(
+    string Id,
+    string QueueId,
+    string PatientId,
+    string DoctorId,
+    string DoctorName,
+    string RoomNumber,
+    string Symptoms,
+    string Diagnosis,
+    string? FollowUpDate,
+    string? FollowUpInstructions);

@@ -28,10 +28,19 @@ public class PatientRegistrationPage
 
     public void WaitUntilLoaded() => _wait.Until(d => d.FindElements(By.Id("nic")).Count > 0);
 
-    // Gender and blood group keep their defaults (Male / O+); those never trip
-    // validation, so the tests leave them alone.
-    public void FillForm(string nic, string fullName, string isoDateOfBirth, string address, string phone)
+    // Gender and blood group have no pre-selected value, so they are chosen like any
+    // other required field.
+    public void FillForm(
+        string nic,
+        string fullName,
+        string isoDateOfBirth,
+        string address,
+        string phone,
+        string gender = "Male",
+        string bloodGroup = "O+")
     {
+        new SelectElement(_driver.FindElement(By.Id("gender"))).SelectByValue(gender);
+        new SelectElement(_driver.FindElement(By.Id("bloodGroup"))).SelectByValue(bloodGroup);
         NicInput.Clear();
         NicInput.SendKeys(nic);
         FullNameInput.Clear();

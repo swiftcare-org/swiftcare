@@ -2,5 +2,7 @@ namespace QueueService.Models.Enums;
 
 public enum QueueStatus
 {
-    Waiting
+    Waiting,
+    InConsultation,
+    Completed
 }

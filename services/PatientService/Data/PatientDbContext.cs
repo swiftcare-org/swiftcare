@@ -7,9 +7,18 @@ public sealed class PatientDbContext(DbContextOptions<PatientDbContext> options)
 {
     public DbSet<Patient> Patients => Set<Patient>();
     public DbSet<Allergy> Allergies => Set<Allergy>();
+    public DbSet<ChronicCondition> ChronicConditions => Set<ChronicCondition>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.HasKey(message => message.Id);
+            entity.Property(message => message.Id).ValueGeneratedNever();
+            entity.Property(message => message.Payload).IsRequired();
+            entity.HasIndex(message => new { message.CreatedAt, message.Id });
+        });
         modelBuilder.Entity<Patient>(entity =>
         {
             entity.Property(p => p.Id).ValueGeneratedNever();
@@ -34,6 +43,19 @@ public sealed class PatientDbContext(DbContextOptions<PatientDbContext> options)
             entity.HasOne<Patient>()
                 .WithMany()
                 .HasForeignKey(a => a.PatientId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ChronicCondition>(entity =>
+        {
+            entity.Property(c => c.Id).ValueGeneratedNever();
+            entity.HasIndex(c => new { c.PatientId, c.IsDeleted });
+            entity.Property(c => c.ConditionName).HasMaxLength(128).IsRequired();
+            entity.Property(c => c.DateDiagnosed).HasColumnType("date").IsRequired();
+            entity.Property(c => c.Notes).HasMaxLength(512);
+            entity.HasOne<Patient>()
+                .WithMany()
+                .HasForeignKey(c => c.PatientId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

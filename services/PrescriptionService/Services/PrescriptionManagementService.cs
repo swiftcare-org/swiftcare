@@ -1,0 +1,412 @@
+using Microsoft.EntityFrameworkCore;
+using PrescriptionService.Data;
+using PrescriptionService.Models;
+using PrescriptionService.Models.Dtos;
+using PrescriptionService.Models.Entities;
+
+namespace PrescriptionService.Services;
+
+public sealed class PrescriptionManagementService(
+    PrescriptionDbContext dbContext,
+    TimeProvider timeProvider) : IPrescriptionService
+{
+    public async Task<CreatePrescriptionResult> CreateAsync(
+        CreatePrescriptionRequest request,
+        Guid doctorId,
+        string doctorName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(doctorName);
+
+        if (request.Medicines.Count == 0)
+        {
+            throw new ArgumentException("Add at least one medicine", nameof(request));
+        }
+
+        var alreadyExists = await dbContext.Prescriptions
+            .AsNoTracking()
+            .AnyAsync(
+                prescription => prescription.ConsultationId == request.ConsultationId,
+                cancellationToken);
+
+        if (alreadyExists)
+        {
+            return new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.ConsultationAlreadyHasPrescription);
+        }
+
+        // A consultation ends with a prescription or with a recorded decision that none
+        // is needed, never both.
+        var noPrescriptionRecorded = await dbContext.NoPrescriptionDecisions
+            .AsNoTracking()
+            .AnyAsync(
+                decision => decision.ConsultationId == request.ConsultationId,
+                cancellationToken);
+
+        if (noPrescriptionRecorded)
+        {
+            return new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var prescription = new Prescription
+        {
+            Id = Guid.NewGuid(),
+            ConsultationId = request.ConsultationId,
+            QueueId = request.QueueId,
+            PatientId = request.PatientId,
+            DoctorId = doctorId,
+            DoctorName = doctorName.Trim(),
+            Status = Prescription.PendingStatus,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        for (var index = 0; index < request.Medicines.Count; index++)
+        {
+            var medicine = request.Medicines[index];
+            prescription.Items.Add(new PrescriptionItem
+            {
+                Id = Guid.NewGuid(),
+                ItemOrder = index,
+                MedicineName = medicine.MedicineName.Trim(),
+                Dosage = medicine.Dosage.Trim(),
+                Frequency = medicine.Frequency.Trim(),
+                Duration = medicine.Duration.Trim(),
+                Instructions = NormalizeOptional(medicine.Instructions)
+            });
+        }
+
+        dbContext.Prescriptions.Add(prescription);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            if (await dbContext.NoPrescriptionDecisions.AsNoTracking()
+                .AnyAsync(candidate => candidate.ConsultationId == request.ConsultationId, cancellationToken))
+            {
+                return new CreatePrescriptionResult(CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded);
+            }
+            var duplicateWasPersisted = await dbContext.Prescriptions
+                .AsNoTracking()
+                .AnyAsync(
+                    candidate => candidate.ConsultationId == request.ConsultationId,
+                    cancellationToken);
+
+            if (!duplicateWasPersisted)
+            {
+                throw;
+            }
+
+            return new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.ConsultationAlreadyHasPrescription);
+        }
+
+        return new CreatePrescriptionResult(
+            CreatePrescriptionOutcome.Success,
+            ToResponse(prescription));
+    }
+
+    public async Task<IReadOnlyList<PrescriptionResponse>> GetForPatientAsync(
+        Guid patientId,
+        CancellationToken cancellationToken = default)
+    {
+        if (patientId == Guid.Empty)
+        {
+            throw new ArgumentException("Patient ID must be provided.", nameof(patientId));
+        }
+
+        var prescriptions = await dbContext.Prescriptions
+            .AsNoTracking()
+            .Include(prescription => prescription.Items)
+            .Where(prescription => prescription.PatientId == patientId)
+            .OrderByDescending(prescription => prescription.CreatedAt)
+            .ThenByDescending(prescription => prescription.Id)
+            .ToListAsync(cancellationToken);
+
+        return prescriptions.Select(ToResponse).ToArray();
+    }
+
+    public async Task<IReadOnlyList<PrescriptionResponse>> GetPendingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var prescriptions = await dbContext.Prescriptions
+            .AsNoTracking()
+            .Include(prescription => prescription.Items)
+            .Where(prescription => prescription.Status == Prescription.PendingStatus)
+            .OrderBy(prescription => prescription.CreatedAt)
+            .ThenBy(prescription => prescription.Id)
+            .ToListAsync(cancellationToken);
+
+        return prescriptions.Select(ToResponse).ToArray();
+    }
+
+    public async Task<PrescriptionResponse?> GetByQueueIdAsync(
+        Guid queueId,
+        CancellationToken cancellationToken = default)
+    {
+        if (queueId == Guid.Empty)
+        {
+            throw new ArgumentException("Queue ID must be provided.", nameof(queueId));
+        }
+
+        var prescription = await dbContext.Prescriptions
+            .AsNoTracking()
+            .Include(candidate => candidate.Items)
+            .SingleOrDefaultAsync(
+                candidate => candidate.QueueId == queueId,
+                cancellationToken);
+
+        if (prescription is not null)
+        {
+            return ToResponse(prescription);
+        }
+
+        // With no prescription, the queue entry may still have an outcome: the doctor
+        // recorded that none is needed. It is returned with the NOT_REQUIRED status so
+        // the counter can tell it apart from a prescription that is not written yet.
+        var decision = await dbContext.NoPrescriptionDecisions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.QueueId == queueId, cancellationToken);
+
+        return decision is null ? null : NoPrescriptionResponses.From(decision);
+    }
+
+    public async Task<DispensePrescriptionResult> DispenseAsync(
+        Guid prescriptionId,
+        string receptionistName,
+        CancellationToken cancellationToken = default)
+    {
+        if (prescriptionId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Prescription ID must be provided.",
+                nameof(prescriptionId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(receptionistName);
+
+        var prescription = await dbContext.Prescriptions
+            .Include(candidate => candidate.Items)
+            .SingleOrDefaultAsync(
+                candidate => candidate.Id == prescriptionId,
+                cancellationToken);
+        if (prescription is null)
+        {
+            return new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.PrescriptionNotFound);
+        }
+
+        if (IsDispensed(prescription))
+        {
+            return new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.AlreadyDispensed);
+        }
+
+        prescription.Status = Prescription.DispensedStatus;
+        prescription.DispensedBy = receptionistName.Trim();
+        prescription.DispensedAt = timeProvider.GetUtcNow().UtcDateTime;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return new DispensePrescriptionResult(DispensePrescriptionOutcome.ConcurrentModification);
+        }
+
+        return new DispensePrescriptionResult(
+            DispensePrescriptionOutcome.Success,
+            ToResponse(prescription));
+    }
+
+    public async Task<PrescriptionItemChangeResult> AddMedicineAsync(
+        Guid prescriptionId,
+        PrescriptionItemRequest medicine,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateMedicineChangeArguments(prescriptionId, doctorId);
+        ArgumentNullException.ThrowIfNull(medicine);
+
+        var prescription = await FindDoctorPrescriptionAsync(
+            prescriptionId,
+            doctorId,
+            cancellationToken);
+        if (prescription is null)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionNotFound);
+        }
+
+        if (IsDispensed(prescription))
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionDispensed);
+        }
+
+        var nextOrder = prescription.Items.Count == 0
+            ? 0
+            : prescription.Items.Max(item => item.ItemOrder) + 1;
+        prescription.Items.Add(new PrescriptionItem
+        {
+            Id = Guid.NewGuid(),
+            ItemOrder = nextOrder,
+            MedicineName = medicine.MedicineName.Trim(),
+            Dosage = medicine.Dosage.Trim(),
+            Frequency = medicine.Frequency.Trim(),
+            Duration = medicine.Duration.Trim(),
+            Instructions = NormalizeOptional(medicine.Instructions)
+        });
+
+        prescription.Version = Guid.NewGuid();
+        if (!await SaveMedicineChangeAsync(cancellationToken))
+            return new PrescriptionItemChangeResult(PrescriptionItemChangeOutcome.ConcurrentModification);
+
+        return new PrescriptionItemChangeResult(
+            PrescriptionItemChangeOutcome.Success,
+            ToResponse(prescription));
+    }
+
+    public async Task<PrescriptionItemChangeResult> RemoveMedicineAsync(
+        Guid prescriptionId,
+        Guid medicineId,
+        Guid doctorId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateMedicineChangeArguments(prescriptionId, doctorId);
+        if (medicineId == Guid.Empty)
+        {
+            throw new ArgumentException("Medicine ID must be provided.", nameof(medicineId));
+        }
+
+        var prescription = await FindDoctorPrescriptionAsync(
+            prescriptionId,
+            doctorId,
+            cancellationToken);
+        if (prescription is null)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionNotFound);
+        }
+
+        if (IsDispensed(prescription))
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.PrescriptionDispensed);
+        }
+
+        var medicine = prescription.Items.SingleOrDefault(item => item.Id == medicineId);
+        if (medicine is null)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.MedicineNotFound);
+        }
+
+        if (prescription.Items.Count <= 1)
+        {
+            return new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.MinimumOneMedicineRequired);
+        }
+
+        prescription.Items.Remove(medicine);
+        dbContext.PrescriptionItems.Remove(medicine);
+        prescription.Version = Guid.NewGuid();
+        if (!await SaveMedicineChangeAsync(cancellationToken))
+            return new PrescriptionItemChangeResult(PrescriptionItemChangeOutcome.ConcurrentModification);
+
+        return new PrescriptionItemChangeResult(
+            PrescriptionItemChangeOutcome.Success,
+            ToResponse(prescription));
+    }
+
+    private async Task<bool> SaveMedicineChangeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
+    private Task<Prescription?> FindDoctorPrescriptionAsync(
+        Guid prescriptionId,
+        Guid doctorId,
+        CancellationToken cancellationToken) =>
+        dbContext.Prescriptions
+            .Include(prescription => prescription.Items)
+            .SingleOrDefaultAsync(
+                prescription => prescription.Id == prescriptionId
+                    && prescription.DoctorId == doctorId,
+                cancellationToken);
+
+    private static void ValidateMedicineChangeArguments(Guid prescriptionId, Guid doctorId)
+    {
+        if (prescriptionId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Prescription ID must be provided.",
+                nameof(prescriptionId));
+        }
+
+        if (doctorId == Guid.Empty)
+        {
+            throw new ArgumentException("Doctor ID must be provided.", nameof(doctorId));
+        }
+    }
+
+    private static bool IsDispensed(Prescription prescription) => string.Equals(
+        prescription.Status,
+        Prescription.DispensedStatus,
+        StringComparison.Ordinal);
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static DateTime MarkAsUtc(DateTime value) =>
+        DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+    private static DateTime? MarkAsUtc(DateTime? value) =>
+        value.HasValue ? MarkAsUtc(value.Value) : null;
+
+    private static PrescriptionResponse ToResponse(Prescription prescription) => new(
+        prescription.Id,
+        prescription.ConsultationId,
+        prescription.QueueId,
+        prescription.PatientId,
+        prescription.DoctorId,
+        prescription.DoctorName,
+        prescription.Status,
+        MarkAsUtc(prescription.CreatedAt),
+        prescription.Items
+            .OrderBy(item => item.ItemOrder)
+            .Select(item => new PrescriptionItemResponse(
+                item.Id,
+                item.ItemOrder,
+                item.MedicineName,
+                item.Dosage,
+                item.Frequency,
+                item.Duration,
+                item.Instructions))
+            .ToArray(),
+        prescription.DispensedBy,
+        MarkAsUtc(prescription.DispensedAt));
+}

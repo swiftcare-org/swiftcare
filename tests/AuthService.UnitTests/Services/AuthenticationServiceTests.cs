@@ -172,6 +172,23 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task DeactivatedAccountLoginIsAuditedWithItsOwnOutcome()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateUser(isActive: false);
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext).LoginAsync(user.Username, ValidPassword, CorrelationId, IpAddress);
+
+        var entry = Assert.Single(dbContext.LoginAuditEntries);
+        Assert.Equal(LoginOutcome.AccountDeactivated, entry.Outcome);
+        Assert.Equal(user.Id, entry.UserId);
+        Assert.Equal(CorrelationId, entry.CorrelationId);
+        Assert.Equal(IpAddress, entry.IpAddress);
+    }
+
+    [Fact]
     public async Task LoginNeverPersistsTheAttemptedUsernameOnAFailedAttempt()
     {
         await using var dbContext = CreateDbContext();

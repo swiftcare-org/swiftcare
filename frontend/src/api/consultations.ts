@@ -1,0 +1,182 @@
+import { apiRequest } from './client';
+
+export interface ConsultationTemplate {
+  id: string;
+  name: string;
+  symptoms: string;
+  examinationFindings: string;
+  notes: string;
+  // False for a template the signed-in doctor saved: only they can see or remove it.
+  isBuiltIn: boolean;
+}
+
+export interface CreateConsultationTemplateRequestBody {
+  name: string;
+  symptoms: string;
+  examinationFindings: string;
+  notes: string;
+}
+
+export interface CreateConsultationRequestBody {
+  queueId: string;
+  patientId: string;
+  symptoms: string;
+  examinationFindings: string | null;
+  diagnosis: string;
+  notes: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
+  templateId: string | null;
+}
+
+export interface Consultation {
+  id: string;
+  queueId: string;
+  patientId: string;
+  doctorId: string;
+  doctorName: string;
+  roomNumber: string;
+  symptoms: string;
+  examinationFindings: string | null;
+  diagnosis: string;
+  notes: string | null;
+  followUpDate: string | null;
+  followUpInstructions: string | null;
+  templateId: string | null;
+  templateName: string | null;
+  consultationDate: string;
+}
+
+export interface RecordVitalSignsRequestBody {
+  systolicBloodPressure: number | null;
+  diastolicBloodPressure: number | null;
+  temperatureCelsius: number | null;
+  pulseRate: number | null;
+  respiratoryRate: number | null;
+  oxygenSaturation: number | null;
+  heightCentimeters: number | null;
+  weightKilograms: number | null;
+}
+
+export interface VitalSigns {
+  id: string;
+  consultationId: string;
+  systolicBloodPressure: number | null;
+  diastolicBloodPressure: number | null;
+  temperatureCelsius: number | null;
+  pulseRate: number | null;
+  respiratoryRate: number | null;
+  oxygenSaturation: number | null;
+  heightCentimeters: number | null;
+  weightKilograms: number | null;
+  bmi: number | null;
+  recordedAt: string;
+}
+
+export interface ConsultationProgress {
+  id: string;
+  queueId: string;
+  status: 'IN_PROGRESS' | 'COMPLETE';
+  hasVitalSigns: boolean;
+}
+
+export interface CompleteConsultationResponse {
+  eventId: string;
+}
+
+export interface CompletedConsultationContext {
+  consultationId: string;
+  queueId: string;
+  patientId: string;
+}
+
+export interface OverdueFollowUp {
+  consultationId: string;
+  followUpDate: string;
+  instructions: string;
+  doctorName: string;
+  daysOverdue: number;
+}
+
+export function getLatestOverdueFollowUp(
+  patientId: string,
+): Promise<OverdueFollowUp | undefined> {
+  return apiRequest<OverdueFollowUp | undefined>(
+    `/api/consultations/patient/${encodeURIComponent(patientId)}/latest-follow-up`,
+  );
+}
+
+export function getPatientConsultationHistory(patientId: string): Promise<Consultation[]> {
+  return apiRequest<Consultation[]>(
+    `/api/consultations/patient/${encodeURIComponent(patientId)}`,
+  );
+}
+
+export function getPatientVitalsHistory(patientId: string): Promise<VitalSigns[]> {
+  return apiRequest<VitalSigns[]>(`/api/vitals/patient/${encodeURIComponent(patientId)}`);
+}
+
+export function getConsultationTemplates(): Promise<ConsultationTemplate[]> {
+  return apiRequest<ConsultationTemplate[]>('/api/templates');
+}
+
+export function createConsultationTemplate(
+  request: CreateConsultationTemplateRequestBody,
+): Promise<ConsultationTemplate> {
+  return apiRequest<ConsultationTemplate>('/api/templates', {
+    method: 'POST',
+    body: request,
+  });
+}
+
+export function removeConsultationTemplate(templateId: string): Promise<void> {
+  return apiRequest<void>(`/api/templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' });
+}
+
+export function getLatestCompletedConsultation(): Promise<
+  CompletedConsultationContext | undefined
+> {
+  return apiRequest<CompletedConsultationContext | undefined>(
+    '/api/consultations/latest-completed',
+  );
+}
+
+export function getCompletedConsultations(page = 0): Promise<CompletedConsultationContext[]> {
+  return apiRequest<CompletedConsultationContext[]>(`/api/consultations/completed?page=${page}`);
+}
+
+export function createConsultation(
+  request: CreateConsultationRequestBody,
+): Promise<Consultation> {
+  return apiRequest<Consultation>('/api/consultations', {
+    method: 'POST',
+    body: request,
+  });
+}
+
+export function recordVitalSigns(
+  consultationId: string,
+  request: RecordVitalSignsRequestBody,
+): Promise<VitalSigns> {
+  return apiRequest<VitalSigns>(`/api/consultations/${encodeURIComponent(consultationId)}/vitals`, {
+    method: 'POST',
+    body: request,
+  });
+}
+
+export async function getConsultationForQueue(
+  queueId: string,
+): Promise<ConsultationProgress | null> {
+  return (await apiRequest<ConsultationProgress | undefined>(
+    `/api/consultations/by-queue/${encodeURIComponent(queueId)}`,
+  )) ?? null;
+}
+
+export function completeConsultation(
+  consultationId: string,
+): Promise<CompleteConsultationResponse> {
+  return apiRequest<CompleteConsultationResponse>(
+    `/api/consultations/${encodeURIComponent(consultationId)}/complete`,
+    { method: 'POST' },
+  );
+}

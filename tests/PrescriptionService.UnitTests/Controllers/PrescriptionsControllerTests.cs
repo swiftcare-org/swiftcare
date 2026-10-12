@@ -1,0 +1,384 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Moq;
+using PrescriptionService.Controllers;
+using PrescriptionService.Models;
+using PrescriptionService.Models.Dtos;
+using PrescriptionService.Services;
+
+namespace PrescriptionService.UnitTests.Controllers;
+
+public class PrescriptionsControllerTests
+{
+    [Fact]
+    public async Task CreateReadsDoctorIdentityFromTrustedHeaders()
+    {
+        var request = ValidRequest();
+        var doctorId = Guid.NewGuid();
+        var expected = ExpectedResponse(request, doctorId);
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.CreateAsync(
+                request,
+                doctorId,
+                "Dr. Amara Chen",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.Success,
+                expected));
+        var controller = CreateController(service, "Doctor", doctorId, "Dr. Amara Chen");
+
+        var result = await controller.CreatePrescription(request, CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status201Created, response.StatusCode);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task CreateAsNonDoctorReturnsForbidden(string role)
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, role, Guid.NewGuid(), "Staff Member");
+
+        var result = await controller.CreatePrescription(
+            ValidRequest(),
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CreateWithoutDoctorIdentityReturnsUnauthorized()
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, "Doctor");
+
+        var result = await controller.CreatePrescription(
+            ValidRequest(),
+            CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task AddMedicineReturnsCreatedPrescriptionForDoctor()
+    {
+        var prescriptionId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+        var request = ValidRequest().Medicines[0];
+        var expected = ExpectedResponse(ValidRequest(), doctorId);
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.AddMedicineAsync(
+                prescriptionId,
+                request,
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.Success,
+                expected));
+        var controller = CreateController(service, "Doctor", doctorId);
+
+        var result = await controller.AddMedicine(
+            prescriptionId,
+            request,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status201Created, response.StatusCode);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task RemoveMedicineReturnsUpdatedPrescriptionForDoctor()
+    {
+        var prescriptionId = Guid.NewGuid();
+        var medicineId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+        var expected = ExpectedResponse(ValidRequest(), doctorId);
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.RemoveMedicineAsync(
+                prescriptionId,
+                medicineId,
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrescriptionItemChangeResult(
+                PrescriptionItemChangeOutcome.Success,
+                expected));
+        var controller = CreateController(service, "Doctor", doctorId);
+
+        var result = await controller.RemoveMedicine(
+            prescriptionId,
+            medicineId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData(
+        PrescriptionItemChangeOutcome.MinimumOneMedicineRequired,
+        "Prescription must have at least one medicine")]
+    [InlineData(
+        PrescriptionItemChangeOutcome.PrescriptionDispensed,
+        "Cannot modify a dispensed prescription")]
+    public async Task RemoveMedicineMapsBusinessRuleConflict(
+        PrescriptionItemChangeOutcome outcome,
+        string expectedMessage)
+    {
+        var prescriptionId = Guid.NewGuid();
+        var medicineId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.RemoveMedicineAsync(
+                prescriptionId,
+                medicineId,
+                doctorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrescriptionItemChangeResult(outcome));
+        var controller = CreateController(service, "Doctor", doctorId);
+
+        var result = await controller.RemoveMedicine(
+            prescriptionId,
+            medicineId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ConflictObjectResult>(result);
+        var message = Assert.IsType<MessageResponse>(response.Value);
+        Assert.Equal(expectedMessage, message.Message);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task GetPendingAsReceptionistReturnsPrescriptions()
+    {
+        var expected = new[]
+        {
+            ExpectedResponse(ValidRequest(), Guid.NewGuid()),
+            ExpectedResponse(ValidRequest(), Guid.NewGuid())
+        };
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.GetPendingAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var controller = CreateController(service, "Receptionist");
+
+        var result = await controller.GetPending(CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task GetPendingAsNonReceptionistReturnsForbidden(string role)
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, role);
+
+        var result = await controller.GetPending(CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Receptionist")]
+    [InlineData("Admin")]
+    public async Task GetByQueueIdAllowsSupportedStaffRoles(string role)
+    {
+        var request = ValidRequest();
+        var expected = ExpectedResponse(request, Guid.NewGuid());
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.GetByQueueIdAsync(
+                request.QueueId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+        var controller = CreateController(service, role);
+
+        var result = await controller.GetByQueueId(
+            request.QueueId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Fact]
+    public async Task DispenseUsesTrustedReceptionistNameAndReturnsUpdatedPrescription()
+    {
+        var request = ValidRequest();
+        var expected = ExpectedResponse(request, Guid.NewGuid()) with
+        {
+            Status = "DISPENSED",
+            DispensedBy = "Nadia Silva",
+            DispensedAt = new DateTime(2026, 9, 23, 10, 30, 0, DateTimeKind.Utc)
+        };
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.DispenseAsync(
+                expected.Id,
+                "Nadia Silva",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.Success,
+                expected));
+        var controller = CreateController(
+            service,
+            "Receptionist",
+            doctorName: "Nadia Silva");
+
+        var result = await controller.DispensePrescription(
+            expected.Id,
+            CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        Assert.Same(expected, response.Value);
+        service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("Doctor")]
+    [InlineData("Admin")]
+    public async Task DispenseAsNonReceptionistReturnsForbidden(string role)
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, role, doctorName: "Staff Member");
+
+        var result = await controller.DispensePrescription(
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        var response = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DispenseWithoutReceptionistNameReturnsUnauthorized()
+    {
+        var service = new Mock<IPrescriptionService>();
+        var controller = CreateController(service, "Receptionist");
+
+        var result = await controller.DispensePrescription(
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DispenseAgainReturnsConflict()
+    {
+        var prescriptionId = Guid.NewGuid();
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.DispenseAsync(
+                prescriptionId,
+                "Nadia Silva",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DispensePrescriptionResult(
+                DispensePrescriptionOutcome.AlreadyDispensed));
+        var controller = CreateController(
+            service,
+            "Receptionist",
+            doctorName: "Nadia Silva");
+
+        var result = await controller.DispensePrescription(
+            prescriptionId,
+            CancellationToken.None);
+
+        var response = Assert.IsType<ConflictObjectResult>(result);
+        var message = Assert.IsType<MessageResponse>(response.Value);
+        Assert.Equal("Prescription has already been dispensed", message.Message);
+        service.VerifyAll();
+    }
+
+    private static PrescriptionsController CreateController(
+        Mock<IPrescriptionService> service,
+        string role,
+        Guid? doctorId = null,
+        string? doctorName = null)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-User-Role"] = role;
+        if (doctorId is Guid id)
+        {
+            context.Request.Headers["X-User-Id"] = id.ToString();
+        }
+
+        if (doctorName is not null)
+        {
+            context.Request.Headers["X-User-Name"] = doctorName;
+        }
+
+        return new PrescriptionsController(service.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = context }
+        };
+    }
+
+    private static CreatePrescriptionRequest ValidRequest() => new()
+    {
+        ConsultationId = Guid.NewGuid(),
+        QueueId = Guid.NewGuid(),
+        PatientId = Guid.NewGuid(),
+        Medicines =
+        [
+            new PrescriptionItemRequest
+            {
+                MedicineName = "Amoxicillin",
+                Dosage = "500 mg",
+                Frequency = "Twice daily",
+                Duration = "5 days"
+            }
+        ]
+    };
+
+    private static PrescriptionResponse ExpectedResponse(
+        CreatePrescriptionRequest request,
+        Guid doctorId) => new(
+            Guid.NewGuid(),
+            request.ConsultationId,
+            request.QueueId,
+            request.PatientId,
+            doctorId,
+            "Dr. Amara Chen",
+            "PENDING",
+            new DateTime(2026, 9, 23, 8, 30, 0, DateTimeKind.Utc),
+            []);
+
+    // SWC-130: a consultation recorded as needing no prescription cannot also receive one.
+    [Fact]
+    public async Task CreateForAConsultationMarkedAsNeedingNoneReturnsConflictWithItsOwnMessage()
+    {
+        var service = new Mock<IPrescriptionService>();
+        service.Setup(candidate => candidate.CreateAsync(
+                It.IsAny<CreatePrescriptionRequest>(),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreatePrescriptionResult(
+                CreatePrescriptionOutcome.NoPrescriptionRequiredRecorded));
+        var controller = CreateController(service, "Doctor", Guid.NewGuid(), "Dr. Amara Chen");
+
+        var result = await controller.CreatePrescription(ValidRequest(), CancellationToken.None);
+
+        var response = Assert.IsType<ConflictObjectResult>(result);
+        var message = Assert.IsType<MessageResponse>(response.Value);
+        Assert.Equal("This consultation is recorded as needing no prescription", message.Message);
+    }
+}

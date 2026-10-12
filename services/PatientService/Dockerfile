@@ -15,7 +15,9 @@ RUN dotnet publish services/PatientService/PatientService.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
 # curl is not in the runtime image and the HEALTHCHECK below needs it.
+# The upgrade applies OS security fixes the base image has not picked up yet.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 

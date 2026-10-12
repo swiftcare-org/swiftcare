@@ -1,0 +1,120 @@
+=== 13:42:35 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       10.11%    63.09MiB / 512MiB
+swiftcare-patientservice-1   0.01%     34.05MiB / 512MiB
+swiftcare-queueservice-1     24.81%    113.8MiB / 512MiB
+swiftcare-authservice-1      0.13%     74.68MiB / 512MiB
+swiftcare-mysql-1            17.95%    496.1MiB / 1GiB
+swiftcare-kafka-ui-1         0.14%     324.5MiB / 13.58GiB
+swiftcare-kafka-1            1.24%     761.9MiB / 13.58GiB
+swiftcare-zookeeper-1        0.14%     199.6MiB / 13.58GiB
+=== 13:43:32 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       16.97%    63.15MiB / 512MiB
+swiftcare-patientservice-1   0.02%     34.18MiB / 512MiB
+swiftcare-queueservice-1     52.16%    114.3MiB / 512MiB
+swiftcare-authservice-1      40.28%    79.03MiB / 512MiB
+swiftcare-mysql-1            18.07%    495.7MiB / 1GiB
+swiftcare-kafka-ui-1         0.15%     324.5MiB / 13.58GiB
+swiftcare-kafka-1            98.10%    762.3MiB / 13.58GiB
+swiftcare-zookeeper-1        0.15%     199.4MiB / 13.58GiB
+=== 13:44:30 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       21.93%    61.26MiB / 512MiB
+swiftcare-patientservice-1   0.02%     34.29MiB / 512MiB
+swiftcare-queueservice-1     46.26%    114.7MiB / 512MiB
+swiftcare-authservice-1      0.01%     80.64MiB / 512MiB
+swiftcare-mysql-1            20.28%    495.8MiB / 1GiB
+swiftcare-kafka-ui-1         0.16%     324.6MiB / 13.58GiB
+swiftcare-kafka-1            1.34%     762MiB / 13.58GiB
+swiftcare-zookeeper-1        0.15%     199.4MiB / 13.58GiB
+=== 13:45:27 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       28.54%    61.65MiB / 512MiB
+swiftcare-patientservice-1   0.01%     34.38MiB / 512MiB
+swiftcare-queueservice-1     73.41%    114.3MiB / 512MiB
+swiftcare-authservice-1      0.04%     80.61MiB / 512MiB
+swiftcare-mysql-1            36.17%    495.9MiB / 1GiB
+swiftcare-kafka-ui-1         0.16%     324.6MiB / 13.58GiB
+swiftcare-kafka-1            242.58%   841.9MiB / 13.58GiB
+swiftcare-zookeeper-1        0.26%     199.9MiB / 13.58GiB
+=== 13:46:25 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       18.49%    62.67MiB / 512MiB
+swiftcare-patientservice-1   0.01%     34.47MiB / 512MiB
+swiftcare-queueservice-1     77.20%    106.9MiB / 512MiB
+swiftcare-authservice-1      0.03%     83.46MiB / 512MiB
+swiftcare-mysql-1            26.47%    495.3MiB / 1GiB
+swiftcare-kafka-ui-1         0.14%     324.6MiB / 13.58GiB
+swiftcare-kafka-1            1.22%     762MiB / 13.58GiB
+swiftcare-zookeeper-1        0.12%     199.4MiB / 13.58GiB
+=== 13:47:23 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       27.19%    64.82MiB / 512MiB
+swiftcare-patientservice-1   0.01%     34.56MiB / 512MiB
+swiftcare-queueservice-1     85.47%    110.8MiB / 512MiB
+swiftcare-authservice-1      0.03%     88.33MiB / 512MiB
+swiftcare-mysql-1            31.25%    495.7MiB / 1GiB
+swiftcare-kafka-ui-1         0.15%     324.6MiB / 13.58GiB
+swiftcare-kafka-1            1.38%     762MiB / 13.58GiB
+swiftcare-zookeeper-1        10.88%    199.4MiB / 13.58GiB
+=== 13:48:20 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       42.70%    65.87MiB / 512MiB
+swiftcare-patientservice-1   0.01%     34.62MiB / 512MiB
+swiftcare-queueservice-1     96.48%    110.6MiB / 512MiB
+swiftcare-authservice-1      0.01%     88.37MiB / 512MiB
+swiftcare-mysql-1            50.96%    495.5MiB / 1GiB
+swiftcare-kafka-ui-1         0.14%     324.6MiB / 13.58GiB
+swiftcare-kafka-1            1.37%     762MiB / 13.58GiB
+swiftcare-zookeeper-1        0.14%     199.4MiB / 13.58GiB
+=== 13:49:17 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       45.03%    65.9MiB / 512MiB
+swiftcare-patientservice-1   0.08%     34.71MiB / 512MiB
+swiftcare-queueservice-1     87.02%    112.8MiB / 512MiB
+swiftcare-authservice-1      0.04%     88.56MiB / 512MiB
+swiftcare-mysql-1            39.44%    495.8MiB / 1GiB
+swiftcare-kafka-ui-1         0.16%     324.6MiB / 13.58GiB
+swiftcare-kafka-1            2.01%     762MiB / 13.58GiB
+swiftcare-zookeeper-1        0.12%     199.4MiB / 13.58GiB
+=== 13:50:15 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       31.51%    66.46MiB / 512MiB
+swiftcare-patientservice-1   3.19%     37.41MiB / 512MiB
+swiftcare-queueservice-1     104.29%   117.2MiB / 512MiB
+swiftcare-authservice-1      0.01%     88.7MiB / 512MiB
+swiftcare-mysql-1            48.57%    496.3MiB / 1GiB
+swiftcare-kafka-ui-1         0.14%     328.9MiB / 13.58GiB
+swiftcare-kafka-1            15.85%    764.4MiB / 13.58GiB
+swiftcare-zookeeper-1        13.67%    199.5MiB / 13.58GiB
+=== 13:51:13 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       1.88%     67.38MiB / 512MiB
+swiftcare-patientservice-1   0.02%     34.88MiB / 512MiB
+swiftcare-queueservice-1     4.30%     115.9MiB / 512MiB
+swiftcare-authservice-1      0.02%     88.69MiB / 512MiB
+swiftcare-mysql-1            6.61%     500.4MiB / 1GiB
+swiftcare-kafka-ui-1         0.15%     328.9MiB / 13.58GiB
+swiftcare-kafka-1            1.36%     762.5MiB / 13.58GiB
+swiftcare-zookeeper-1        0.13%     199.4MiB / 13.58GiB
+=== 13:52:10 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       8.04%     67.81MiB / 512MiB
+swiftcare-patientservice-1   0.01%     34.96MiB / 512MiB
+swiftcare-queueservice-1     17.08%    116.4MiB / 512MiB
+swiftcare-authservice-1      0.05%     88.68MiB / 512MiB
+swiftcare-mysql-1            5.91%     496.4MiB / 1GiB
+swiftcare-kafka-ui-1         2.13%     328.9MiB / 13.58GiB
+swiftcare-kafka-1            6.35%     762.6MiB / 13.58GiB
+swiftcare-zookeeper-1        0.73%     199.6MiB / 13.58GiB
+=== 13:53:08 ===
+NAME                         CPU %     MEM USAGE / LIMIT
+swiftcare-apigateway-1       19.15%    65.9MiB / 512MiB
+swiftcare-patientservice-1   0.01%     35.04MiB / 512MiB
+swiftcare-queueservice-1     19.49%    116.6MiB / 512MiB
+swiftcare-authservice-1      0.01%     89.23MiB / 512MiB
+swiftcare-mysql-1            10.56%    496.5MiB / 1GiB
+swiftcare-kafka-ui-1         0.13%     328.9MiB / 13.58GiB
+swiftcare-kafka-1            1.23%     762.5MiB / 13.58GiB
+swiftcare-zookeeper-1        0.12%     199.4MiB / 13.58GiB

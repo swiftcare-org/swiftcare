@@ -22,6 +22,48 @@ namespace AuthService.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("AuthService.Models.Entities.AdminAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("varchar(45)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("TargetUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAt");
+
+                    b.ToTable("AdminAuditEntries");
+                });
+
             modelBuilder.Entity("AuthService.Models.Entities.LoginAuditEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -56,6 +98,8 @@ namespace AuthService.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OccurredAt");
+
                     b.ToTable("LoginAuditEntries");
                 });
 
@@ -88,9 +132,27 @@ namespace AuthService.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OccurredAt");
+
                     b.HasIndex("UserId");
 
                     b.ToTable("LogoutAuditEntries");
+                });
+
+            modelBuilder.Entity("AuthService.Models.Entities.RevokedSession", b =>
+                {
+                    b.Property<string>("TokenId")
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("TokenId");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.ToTable("RevokedSessions");
                 });
 
             modelBuilder.Entity("AuthService.Models.Entities.User", b =>
@@ -125,6 +187,13 @@ namespace AuthService.Migrations
                     b.Property<string>("RoomNumber")
                         .HasMaxLength(16)
                         .HasColumnType("varchar(16)");
+
+                    b.Property<Guid>("SessionVersion")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Specialization")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(6)");

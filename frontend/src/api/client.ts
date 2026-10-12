@@ -25,12 +25,27 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  signal?: AbortSignal;
+}
+
+// Requests only ever go to the Gateway API. Callers encode their path parameters, but
+// encodeURIComponent leaves "." and ".." as they are, so a segment made only of dots is
+// refused here too: it could otherwise move the request, and the bearer token, to another route.
+function assertApiPath(path: string): void {
+  const segments = path.split(/[?#]/, 1)[0].split('/');
+  const climbs = segments.some((segment) => segment === '.' || segment === '..');
+
+  if (!path.startsWith('/api/') || climbs) {
+    throw new Error('Refusing to send a request to an unexpected path.');
+  }
 }
 
 // The single fetch chokepoint for the app: every call gets a correlation ID
 // for tracing across the Gateway and services, and the bearer token from
 // sessionStorage when one is present. No component should call fetch directly.
 export async function apiRequest<TResponse>(path: string, options: RequestOptions = {}): Promise<TResponse> {
+  assertApiPath(path);
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Correlation-ID': crypto.randomUUID(),
@@ -44,6 +59,7 @@ export async function apiRequest<TResponse>(path: string, options: RequestOption
   const response = await fetch(`${GATEWAY_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
+    signal: options.signal,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 

@@ -6,8 +6,12 @@ using Scalar.AspNetCore;
 using PatientService.Middleware;
 using PatientService.Models.Configuration;
 using PatientService.Services;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 // Azure Container Apps Jobs run maintenance commands to completion without
 // starting Kestrel or exposing an application endpoint.
@@ -18,6 +22,15 @@ if (maintenanceCommand != MaintenanceCommand.None)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-patient"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
 
 // Add services to the container.
 
@@ -35,6 +48,33 @@ builder.Services.AddHealthChecks();
 builder.Services.AddDbContext<PatientDbContext>(options =>
     options.UseMySql(builder.Configuration.GetConnectionString("PatientDb"), new MySqlServerVersion(new Version(8, 4, 0))));
 
+builder.Services.AddOptions<ClinicOptions>()
+    .Bind(builder.Configuration.GetSection(ClinicOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.TimeZoneId),
+        "Clinic:TimeZoneId is required.")
+    .Validate(
+        options =>
+        {
+            try
+            {
+                _ = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZoneId);
+                return true;
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return false;
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return false;
+            }
+        },
+        "Clinic:TimeZoneId must identify a valid time zone.")
+    .ValidateOnStart();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IClinicDateProvider, ClinicDateProvider>();
+
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 
 // Registered as a singleton - IProducer is thread-safe and expensive to construct, so one
@@ -50,10 +90,13 @@ builder.Services.AddSingleton<IProducer<string, string>>(sp =>
     }).Build();
 });
 builder.Services.AddSingleton<IPatientEventPublisher, KafkaPatientEventPublisher>();
+builder.Services.AddHostedService<OutboxRelay>();
 builder.Services.AddScoped<IPatientRegistrationService, PatientRegistrationService>();
+builder.Services.AddScoped<IPatientCheckInService, PatientCheckInService>();
 builder.Services.AddScoped<IPatientSearchService, PatientSearchService>();
 builder.Services.AddScoped<IPatientProfileService, PatientProfileService>();
 builder.Services.AddScoped<IAllergyService, AllergyService>();
+builder.Services.AddScoped<IChronicConditionService, ChronicConditionService>();
 
 var app = builder.Build();
 

@@ -17,6 +17,7 @@ export interface RegisterPatientRequestBody {
 export interface RegisteredPatient {
   patientId: string;
   createdAt: string;
+  queueDeliveryPending?: boolean;
 }
 
 export function registerPatient(request: RegisterPatientRequestBody): Promise<RegisteredPatient> {
@@ -52,4 +53,31 @@ export interface PatientProfile {
 
 export function getPatient(patientId: string): Promise<PatientProfile> {
   return apiRequest<PatientProfile>(`/api/patients/${encodeURIComponent(patientId)}`);
+}
+
+export interface UpdatePatientRequestBody {
+  address: string;
+  phoneNumber: string;
+  bloodGroup: BloodGroup;
+}
+
+export function updatePatient(
+  patientId: string,
+  request: UpdatePatientRequestBody,
+): Promise<PatientProfile> {
+  return apiRequest<PatientProfile>(`/api/patients/${encodeURIComponent(patientId)}`, {
+    method: 'PUT',
+    body: request,
+  });
+}
+
+export interface CheckInPatientAcceptedResponse {
+  message: string;
+}
+
+export function checkInPatient(patientId: string): Promise<CheckInPatientAcceptedResponse> {
+  return apiRequest<CheckInPatientAcceptedResponse>(
+    `/api/patients/${encodeURIComponent(patientId)}/check-in`,
+    { method: 'POST' },
+  );
 }

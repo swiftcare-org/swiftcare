@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace ApiGateway.UnitTests.Routing;
@@ -35,6 +37,12 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ISessionValidator>();
+            services.AddSingleton<ISessionValidator, ValidTestSession>();
+        });
 
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
@@ -47,7 +55,9 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
                 ["Cors:AllowedOrigins:0"] = TestFrontendOrigin,
                 // A port nothing binds to in a test environment - see class comment above.
                 ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999",
-                ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999"
+                ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:queue-cluster:Destinations:queue-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:medical-record-cluster:Destinations:medical-record-destination:Address"] = "http://localhost:59999"
             });
         });
     }
@@ -59,7 +69,8 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Jti, jti ?? Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, jti ?? Guid.NewGuid().ToString()),
+            new("sessionVersion", Guid.NewGuid().ToString())
         };
 
         if (role is not null)
@@ -78,5 +89,11 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private sealed class ValidTestSession : ISessionValidator
+    {
+        public Task<bool> ValidateAsync(ClaimsPrincipal user, bool revoke, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
     }
 }

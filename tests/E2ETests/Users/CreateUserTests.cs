@@ -1,3 +1,4 @@
+using System.Drawing;
 using E2ETests.Pages;
 using E2ETests.Support;
 
@@ -28,7 +29,18 @@ public class CreateUserTests : SeleniumTestBase
 
         Assert.Contains("created successfully", page.WaitForSuccessMessage());
         Assert.True(page.UserRowExists(username));
-        Assert.Equal("Active", page.UserRowStatus(username));
+        Assert.Equal("Active", page.UserRowStatus(username), ignoreCase: true);
+        Assert.Equal(new[] { "USERNAME", "FULL NAME", "ROLE", "ROOM", "STATUS", "ACTIONS" }, page.AccountHeaders);
+
+        foreach (var width in new[] { 1024, 1280 })
+        {
+            Driver.Manage().Window.Size = new Size(width, 900);
+            Assert.True(page.ActionsFitWithoutHorizontalScrolling(username),
+                $"Staff account actions should fit without horizontal scrolling at width {width}.");
+        }
+
+        page.OpenEditForm(username);
+        Assert.False(page.HasSpecializationField);
     }
 
     // Scenario 4 - missing required fields: client-side validation blocks the
@@ -41,13 +53,14 @@ public class CreateUserTests : SeleniumTestBase
 
         var page = new UserManagementPage(Driver);
         page.WaitUntilLoaded();
+        // No role is pre-selected, so Doctor is chosen for Scenario 5's room-number rule.
+        page.SelectRole("Doctor");
         page.Submit();
 
         Assert.Equal("Username is required.", page.GetFieldError("username"));
         Assert.Equal("Password is required.", page.GetFieldError("password"));
         Assert.Equal("Full name is required.", page.GetFieldError("fullName"));
-        // Role defaults to Doctor, so Scenario 5's room-number rule fires here too.
-        Assert.Equal("Room number is required for doctors", page.GetFieldError("roomNumber"));
+        Assert.Equal("Room number is required for doctors.", page.GetFieldError("roomNumber"));
         Assert.Contains(UserManagementPage.Path, Driver.Url);
         Assert.False(page.HasSuccessBanner);
     }
@@ -63,7 +76,11 @@ public class CreateUserTests : SeleniumTestBase
         var page = new UserManagementPage(Driver);
         page.WaitUntilLoaded();
 
-        Assert.True(page.HasRoomNumberField, "Room number should be visible for the default Doctor role.");
+        Assert.False(page.HasRoomNumberField, "Room number should be hidden until a role is chosen.");
+
+        page.SelectRole("Doctor");
+        Assert.True(page.HasRoomNumberField, "Room number should be visible for the Doctor role.");
+        Assert.False(page.HasSpecializationField);
 
         page.SelectRole("Receptionist");
         Assert.False(page.HasRoomNumberField, "Room number should be hidden for non-Doctor roles.");

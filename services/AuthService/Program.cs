@@ -6,7 +6,11 @@ using AuthService.Maintenance;
 using AuthService.Middleware;
 using AuthService.Models.Configuration;
 using AuthService.Services;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 // Maintenance commands run to completion and exit; they never start the web host.
 var maintenanceCommand = MaintenanceCommandParser.Parse(args);
@@ -17,6 +21,15 @@ if (maintenanceCommand != MaintenanceCommand.None)
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Telemetry is opt-in: local runs, CI and tests set no connection string and skip it entirely.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .UseAzureMonitor()
+        .ConfigureResource(resource => resource.AddService("swiftcare-auth"))
+        .WithTracing(tracing => tracing.AddSource("MySqlConnector"));
+}
+
 // Add services to the container.
 
 // CreateUserRequest.Role is bound from a JSON string ("Doctor"/"Receptionist"/"Admin"),
@@ -26,6 +39,8 @@ builder.Services.AddControllers()
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<SessionValidationService>();
 
 // The connection string is read lazily by EF Core when AuthDbContext is first resolved,
 // so a missing value here doesn't crash registration - the explicit check below (after
@@ -37,6 +52,7 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IUserAccountService, UserAccountService>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
 var app = builder.Build();
 

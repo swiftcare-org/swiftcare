@@ -20,13 +20,12 @@ public sealed class UserAccountService : IUserAccountService
 
     public async Task<CreateUserResult> CreateUserAsync(
         CreateUserRequest request,
-        string correlationId,
-        Guid actingAdminId,
+        AdminActionContext context,
         CancellationToken cancellationToken = default)
     {
         if (request.Password.Length < PasswordPolicy.MinimumLength)
         {
-            LogRejection(CreateUserOutcome.PasswordTooShort, actingAdminId);
+            LogRejection(CreateUserOutcome.PasswordTooShort, context.AdminUserId);
 
             // lgtm[cs/cleartext-storage-of-sensitive-information]
             // CreateUserOutcome.PasswordTooShort is an outcome discriminator, not password
@@ -38,7 +37,7 @@ public sealed class UserAccountService : IUserAccountService
 
         if (request.Role == UserRole.Doctor && string.IsNullOrWhiteSpace(request.RoomNumber))
         {
-            LogRejection(CreateUserOutcome.RoomNumberRequiredForDoctor, actingAdminId);
+            LogRejection(CreateUserOutcome.RoomNumberRequiredForDoctor, context.AdminUserId);
             return new CreateUserResult { Outcome = CreateUserOutcome.RoomNumberRequiredForDoctor };
         }
 
@@ -53,7 +52,7 @@ public sealed class UserAccountService : IUserAccountService
 
         if (usernameExists)
         {
-            LogRejection(CreateUserOutcome.DuplicateUsername, actingAdminId);
+            LogRejection(CreateUserOutcome.DuplicateUsername, context.AdminUserId);
             return new CreateUserResult { Outcome = CreateUserOutcome.DuplicateUsername };
         }
 
@@ -69,6 +68,7 @@ public sealed class UserAccountService : IUserAccountService
         };
 
         _dbContext.Users.Add(user);
+        RecordAudit(AdminAuditAction.UserCreated, user.Id, context);
 
         try
         {
@@ -78,7 +78,7 @@ public sealed class UserAccountService : IUserAccountService
         {
             // Two admins submitting the same username concurrently can both pass the
             // AnyAsync check above; the unique index is the final backstop.
-            LogRejection(CreateUserOutcome.DuplicateUsername, actingAdminId);
+            LogRejection(CreateUserOutcome.DuplicateUsername, context.AdminUserId);
             return new CreateUserResult { Outcome = CreateUserOutcome.DuplicateUsername };
         }
 
@@ -86,7 +86,7 @@ public sealed class UserAccountService : IUserAccountService
             "User account created: createdUserId={CreatedUserId} role={Role} by adminUserId={AdminUserId}",
             user.Id,
             user.Role,
-            actingAdminId);
+            context.AdminUserId);
 
         return new CreateUserResult
         {
@@ -107,11 +107,149 @@ public sealed class UserAccountService : IUserAccountService
                 FullName = u.FullName,
                 Role = u.Role.ToString(),
                 RoomNumber = u.RoomNumber,
+                Specialization = u.Specialization,
                 IsActive = u.IsActive,
                 CreatedAt = u.CreatedAt
             })
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<DoctorSummaryResponse>> GetActiveDoctorsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Role == UserRole.Doctor && u.IsActive && !u.IsDeleted)
+            .OrderBy(u => u.FullName)
+            .Select(u => new DoctorSummaryResponse
+            {
+                UserId = u.Id,
+                FullName = u.FullName,
+                RoomNumber = u.RoomNumber,
+                Specialization = u.Specialization
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<UserActionResult> UpdateUserAsync(
+        Guid userId,
+        UpdateUserRequest request,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await FindUserAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.NotFound };
+        }
+
+        var isDoctor = user.Role == UserRole.Doctor;
+        if (isDoctor && string.IsNullOrWhiteSpace(request.RoomNumber))
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.RoomNumberRequiredForDoctor };
+        }
+
+        // Room and specialization belong to doctors only, matching how accounts are created.
+        user.FullName = request.FullName.Trim();
+        user.RoomNumber = isDoctor ? request.RoomNumber!.Trim() : null;
+        user.Specialization = isDoctor && !string.IsNullOrWhiteSpace(request.Specialization)
+            ? request.Specialization.Trim()
+            : null;
+
+        RecordAudit(AdminAuditAction.UserUpdated, user.Id, context);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "User account updated: userId={UserId} by adminUserId={AdminUserId}",
+            user.Id,
+            context.AdminUserId);
+
+        return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
+    }
+
+    public async Task<UserActionResult> ResetPasswordAsync(
+        Guid userId,
+        string newPassword,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (newPassword.Length < PasswordPolicy.MinimumLength)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.PasswordTooShort };
+        }
+
+        var user = await FindUserAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.NotFound };
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+
+        RecordAudit(AdminAuditAction.PasswordReset, user.Id, context);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "User password reset: userId={UserId} by adminUserId={AdminUserId}",
+            user.Id,
+            context.AdminUserId);
+
+        return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
+    }
+
+    public Task<UserActionResult> DeactivateUserAsync(
+        Guid userId,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        // An admin who deactivated themselves could lock every admin out of the system.
+        if (userId == context.AdminUserId)
+        {
+            return Task.FromResult(new UserActionResult { Outcome = UserActionOutcome.CannotDeactivateOwnAccount });
+        }
+
+        return SetActiveAsync(userId, isActive: false, AdminAuditAction.UserDeactivated, context, cancellationToken);
+    }
+
+    public Task<UserActionResult> ReactivateUserAsync(
+        Guid userId,
+        AdminActionContext context,
+        CancellationToken cancellationToken = default) =>
+        SetActiveAsync(userId, isActive: true, AdminAuditAction.UserReactivated, context, cancellationToken);
+
+    private async Task<UserActionResult> SetActiveAsync(
+        Guid userId,
+        bool isActive,
+        AdminAuditAction action,
+        AdminActionContext context,
+        CancellationToken cancellationToken)
+    {
+        var user = await FindUserAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return new UserActionResult { Outcome = UserActionOutcome.NotFound };
+        }
+
+        // Repeating the request is harmless, and only a real change is audited.
+        if (user.IsActive != isActive)
+        {
+            user.IsActive = isActive;
+            RecordAudit(action, user.Id, context);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "User account status changed: action={Action} userId={UserId} by adminUserId={AdminUserId}",
+                action,
+                user.Id,
+                context.AdminUserId);
+        }
+
+        return new UserActionResult { Outcome = UserActionOutcome.Success, User = ToSummary(user) };
+    }
+
+    // A soft-deleted account is treated as absent, as it is for sign-in and the user list.
+    private Task<User?> FindUserAsync(Guid userId, CancellationToken cancellationToken) =>
+        _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken);
 
     private static UserSummaryResponse ToSummary(User user) => new()
     {
@@ -120,9 +258,25 @@ public sealed class UserAccountService : IUserAccountService
         FullName = user.FullName,
         Role = user.Role.ToString(),
         RoomNumber = user.RoomNumber,
+        Specialization = user.Specialization,
         IsActive = user.IsActive,
         CreatedAt = user.CreatedAt
     };
+
+    // Added to the same unit of work as the change itself, so an action is never saved
+    // without its audit entry, or the other way round.
+    private void RecordAudit(AdminAuditAction action, Guid targetUserId, AdminActionContext context)
+    {
+        _dbContext.AdminAuditEntries.Add(new AdminAuditEntry
+        {
+            ActorUserId = context.AdminUserId,
+            Action = action,
+            TargetUserId = targetUserId,
+            CorrelationId = context.CorrelationId,
+            IpAddress = context.IpAddress,
+            OccurredAt = DateTime.UtcNow
+        });
+    }
 
     private void LogRejection(CreateUserOutcome outcome, Guid actingAdminId)
     {

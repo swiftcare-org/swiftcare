@@ -19,7 +19,7 @@ resource "azurerm_static_web_app_custom_domain" "apex" {
 
   static_web_app_id = azurerm_static_web_app.swiftcare.id
   domain_name       = var.frontend_domain
-  validation_type   = "dns-txt-token"
+  validation_type   = var.frontend_domain_validation_type
 
   lifecycle {
     ignore_changes = [validation_type]
@@ -27,7 +27,7 @@ resource "azurerm_static_web_app_custom_domain" "apex" {
 }
 
 resource "azurerm_static_web_app_custom_domain" "www" {
-  count = var.frontend_custom_domains_enabled ? 1 : 0
+  count = var.frontend_custom_domains_enabled && var.frontend_www_domain != "" ? 1 : 0
 
   static_web_app_id = azurerm_static_web_app.swiftcare.id
   domain_name       = var.frontend_www_domain

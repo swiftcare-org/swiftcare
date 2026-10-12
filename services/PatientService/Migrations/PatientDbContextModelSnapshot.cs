@@ -60,6 +60,61 @@ namespace PatientService.Migrations
                     b.ToTable("Allergies");
                 });
 
+            modelBuilder.Entity("PatientService.Models.Entities.ChronicCondition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ConditionName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateOnly>("DateDiagnosed")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(512)
+                        .HasColumnType("varchar(512)");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "IsDeleted");
+
+                    b.ToTable("ChronicConditions");
+                });
+
+            modelBuilder.Entity("PatientService.Models.Entities.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt", "Id");
+
+                    b.ToTable("OutboxMessages");
+                });
+
             modelBuilder.Entity("PatientService.Models.Entities.Patient", b =>
                 {
                     b.Property<Guid>("Id")
@@ -116,6 +171,15 @@ namespace PatientService.Migrations
                 });
 
             modelBuilder.Entity("PatientService.Models.Entities.Allergy", b =>
+                {
+                    b.HasOne("PatientService.Models.Entities.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PatientService.Models.Entities.ChronicCondition", b =>
                 {
                     b.HasOne("PatientService.Models.Entities.Patient", null)
                         .WithMany()

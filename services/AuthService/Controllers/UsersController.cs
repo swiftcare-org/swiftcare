@@ -11,6 +11,11 @@ namespace AuthService.Controllers;
 public sealed class UsersController : ControllerBase
 {
     private const string ForbiddenMessage = "Forbidden";
+    private const string UserNotFoundMessage = "User not found";
+    private const string OwnAccountMessage = "You cannot deactivate your own account";
+    private const string RoomNumberRequiredMessage = "Room number is required for doctors";
+    private static readonly string PasswordTooShortMessage =
+        $"Password must be at least {PasswordPolicy.MinimumLength} characters";
     private const string UserRoleHeaderName = "X-User-Role";
     private const string UserIdHeaderName = "X-User-Id";
 
@@ -35,11 +40,7 @@ public sealed class UsersController : ControllerBase
             return forbidden;
         }
 
-        var correlationId = HttpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault()
-            ?? Guid.NewGuid().ToString();
-        var actingAdminId = ParseUserIdHeader();
-
-        var result = await _userAccountService.CreateUserAsync(request, correlationId, actingAdminId, cancellationToken);
+        var result = await _userAccountService.CreateUserAsync(request, CreateActionContext(), cancellationToken);
 
         if (result.Outcome != CreateUserOutcome.Success)
         {
@@ -67,6 +68,119 @@ public sealed class UsersController : ControllerBase
         return Ok(users);
     }
 
+    // Open to every staff role: it lists only who is on duty and where, which the
+    // waiting-room display already shows publicly.
+    [HttpGet("doctors")]
+    [ProducesResponseType(typeof(IReadOnlyList<DoctorSummaryResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetDoctors(CancellationToken cancellationToken)
+    {
+        var role = HttpContext.Request.Headers[UserRoleHeaderName].FirstOrDefault();
+        if (role is null || !Enum.GetNames<UserRole>().Contains(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
+        }
+
+        var doctors = await _userAccountService.GetActiveDoctorsAsync(cancellationToken);
+        return Ok(doctors);
+    }
+
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateUser(
+        Guid id,
+        [FromBody] UpdateUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.UpdateUserAsync(id, request, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("{id:guid}/reset-password")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ResetPassword(
+        Guid id,
+        [FromBody] ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.ResetPasswordAsync(
+            id, request.NewPassword, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("{id:guid}/deactivate")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeactivateUser(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.DeactivateUserAsync(id, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("{id:guid}/activate")]
+    [ProducesResponseType(typeof(UserSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReactivateUser(Guid id, CancellationToken cancellationToken)
+    {
+        if (RejectIfNotAdmin() is { } forbidden)
+        {
+            return forbidden;
+        }
+
+        if (RejectIfEmptyUserId(id) is { } badRequest)
+        {
+            return badRequest;
+        }
+
+        var result = await _userAccountService.ReactivateUserAsync(id, CreateActionContext(), cancellationToken);
+        return ToActionResult(result);
+    }
+
     // X-User-Role is trusted only because GatewaySecretMiddleware already rejected any
     // request that didn't originate from the Gateway, which is the sole source of this
     // header - it derives it from the validated JWT, never from the original client.
@@ -88,6 +202,34 @@ public sealed class UsersController : ControllerBase
         return StatusCode(StatusCodes.Status403Forbidden, new MessageResponse(ForbiddenMessage));
     }
 
+    // The route constraint accepts the all-zero GUID, which is not a real ID.
+    private IActionResult? RejectIfEmptyUserId(Guid id) =>
+        id == Guid.Empty ? BadRequest(new MessageResponse("User ID must be provided.")) : null;
+
+    private IActionResult ToActionResult(UserActionResult result)
+    {
+        switch (result.Outcome)
+        {
+            case UserActionOutcome.Success:
+                return Ok(result.User);
+            case UserActionOutcome.RoomNumberRequiredForDoctor:
+                ModelState.AddModelError(nameof(UpdateUserRequest.RoomNumber), RoomNumberRequiredMessage);
+                return ValidationProblem(ModelState);
+            case UserActionOutcome.PasswordTooShort:
+                ModelState.AddModelError(nameof(ResetPasswordRequest.NewPassword), PasswordTooShortMessage);
+                return ValidationProblem(ModelState);
+            case UserActionOutcome.CannotDeactivateOwnAccount:
+                return BadRequest(new MessageResponse(OwnAccountMessage));
+            default:
+                return NotFound(new MessageResponse(UserNotFoundMessage));
+        }
+    }
+
+    private AdminActionContext CreateActionContext() => new(
+        ParseUserIdHeader(),
+        HttpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString(),
+        HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+
     private Guid ParseUserIdHeader()
     {
         var userIdHeader = HttpContext.Request.Headers[UserIdHeaderName].FirstOrDefault();
@@ -104,10 +246,10 @@ public sealed class UsersController : ControllerBase
             case CreateUserOutcome.PasswordTooShort:
                 ModelState.AddModelError(
                     nameof(CreateUserRequest.Password),
-                    $"Password must be at least {PasswordPolicy.MinimumLength} characters");
+                    PasswordTooShortMessage);
                 break;
             case CreateUserOutcome.RoomNumberRequiredForDoctor:
-                ModelState.AddModelError(nameof(CreateUserRequest.RoomNumber), "Room number is required for doctors");
+                ModelState.AddModelError(nameof(CreateUserRequest.RoomNumber), RoomNumberRequiredMessage);
                 break;
         }
     }

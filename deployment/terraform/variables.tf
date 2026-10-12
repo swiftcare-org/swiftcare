@@ -37,6 +37,17 @@ variable "project_name" {
   }
 }
 
+variable "name_prefix" {
+  description = "Prefix for Azure resource names in this environment, for example swiftcare-prod. Empty uses project_name, which keeps the development names."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.name_prefix == "" || can(regex("^[a-z0-9-]+$", var.name_prefix))
+    error_message = "name_prefix may contain only lowercase letters, numbers, and hyphens."
+  }
+}
+
 variable "resource_group_name" {
   description = "Resource group containing the application environment."
   type        = string
@@ -133,13 +144,24 @@ variable "frontend_custom_domains_enabled" {
 }
 
 variable "frontend_domain" {
-  description = "Apex custom domain attached to the Static Web App."
+  description = "Primary custom domain attached to the Static Web App, for example swiftcare.me or dev.swiftcare.me."
   type        = string
   default     = "swiftcare.me"
 }
 
+variable "frontend_domain_validation_type" {
+  description = "Validation for frontend_domain: dns-txt-token for an apex domain, cname-delegation for a subdomain such as dev.swiftcare.me."
+  type        = string
+  default     = "dns-txt-token"
+
+  validation {
+    condition     = contains(["dns-txt-token", "cname-delegation"], var.frontend_domain_validation_type)
+    error_message = "frontend_domain_validation_type must be dns-txt-token or cname-delegation."
+  }
+}
+
 variable "frontend_www_domain" {
-  description = "WWW custom domain attached to the Static Web App."
+  description = "Optional second custom domain (CNAME delegation). Empty attaches none, as for development."
   type        = string
   default     = "www.swiftcare.me"
 }
@@ -180,8 +202,93 @@ variable "github_oidc_credentials" {
   }
 }
 
+variable "deployment_role_assignment_enabled" {
+  description = "Manage the deployment identity's Contributor assignment. Creating it needs the subscription Owner; keep false until the Owner has created it, then import it."
+  type        = bool
+  default     = true
+}
+
 variable "additional_tags" {
   description = "Optional tags merged with the standard project and environment tags."
   type        = map(string)
   default     = {}
+}
+
+variable "budget_monthly_amount" {
+  description = "Monthly cost budget for the application resource group in the billing currency (USD for Azure for Students). Set 0 to omit the budget."
+  type        = number
+  default     = 30
+  validation {
+    condition     = var.budget_monthly_amount >= 0
+    error_message = "budget_monthly_amount must be zero (no budget) or a positive amount."
+  }
+}
+
+variable "budget_start_date" {
+  description = "First day of the first budget month, in UTC. Changing it replaces the budget."
+  type        = string
+  default     = "2026-10-01T00:00:00Z"
+  validation {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.budget_start_date))
+    error_message = "budget_start_date must be the first day of a month, for example 2026-10-01T00:00:00Z."
+  }
+}
+
+variable "availability_enabled" {
+  description = "Enable both tests and alerts during the agreed uptime window; disabling retains resources."
+  type        = bool
+  default     = true
+}
+
+variable "availability_frontend_url" {
+  description = "Public frontend target; override only for a reviewed environment or authorized failure drill."
+  type        = string
+  default     = "https://swiftcare.me"
+  validation {
+    condition     = can(regex("^https://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.availability_frontend_url))
+    error_message = "Use an HTTPS URL without credentials, query strings or fragments."
+  }
+}
+
+variable "availability_gateway_url" {
+  description = "Public gateway liveness target; override only for a reviewed environment or authorized failure drill."
+  type        = string
+  default     = "https://api.swiftcare.me/health"
+  validation {
+    condition     = can(regex("^https://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.availability_gateway_url))
+    error_message = "Use an HTTPS URL without credentials, query strings or fragments."
+  }
+}
+
+variable "availability_locations" {
+  description = "Azure availability population IDs, independent of the resource deployment region."
+  type        = list(string)
+  default     = ["apac-sg-sin-azr", "apac-jp-kaw-edge", "emea-au-syd-edge", "emea-nl-ams-azr", "us-va-ash-azr"]
+  validation {
+    condition = length(var.availability_locations) >= 5 && length(var.availability_locations) <= 16 && length(distinct(var.availability_locations)) == length(var.availability_locations) && alltrue([
+      for location in var.availability_locations : contains(["emea-au-syd-edge", "latam-br-gru-edge", "us-fl-mia-edge", "apac-hk-hkn-azr", "us-va-ash-azr", "emea-ch-zrh-edge", "emea-fr-pra-edge", "apac-jp-kaw-edge", "emea-gb-db3-azr", "us-il-ch1-azr", "us-tx-sn1-azr", "apac-sg-sin-azr", "emea-se-sto-edge", "emea-nl-ams-azr", "us-ca-sjc-azr", "emea-ru-msa-edge"], location)
+    ])
+    error_message = "Choose 5 to 16 distinct supported AzureCloud availability population IDs."
+  }
+}
+
+variable "availability_failed_location_count" {
+  description = "Number of failed locations required for each target alert; default is three of five."
+  type        = number
+  default     = 3
+  validation {
+    condition     = var.availability_failed_location_count >= 2 && var.availability_failed_location_count <= length(var.availability_locations) && floor(var.availability_failed_location_count) == var.availability_failed_location_count
+    error_message = "The failure threshold must be an integer from 2 to the configured location count."
+  }
+}
+
+variable "availability_alert_emails" {
+  description = "Team email recipients supplied only in gitignored terraform.tfvars; never commit actual addresses."
+  type        = list(string)
+  sensitive   = true
+  default     = []
+  validation {
+    condition     = length(var.availability_alert_emails) <= 100 && length(distinct(var.availability_alert_emails)) == length(var.availability_alert_emails) && alltrue([for email in var.availability_alert_emails : can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", email))])
+    error_message = "Supply distinct valid email addresses, at most 100."
+  }
 }
