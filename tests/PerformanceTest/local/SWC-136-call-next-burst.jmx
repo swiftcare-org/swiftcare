@@ -1,0 +1,156 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="SWC-136 Call Next Concurrency Burst" enabled="true" guiclass="TestPlanGui" testclass="TestPlan">
+      <stringProp name="TestPlan.comments">SWC-128 real concurrency regression: unique doctors call next at the same instant.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="TestPlan.user_defined_variables">
+        <collectionProp name="Arguments.arguments" />
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath" />
+    </TestPlan>
+    <hashTree>
+      <ConfigTestElement testname="HTTP Request Defaults" enabled="true" guiclass="HttpDefaultsGui" testclass="ConfigTestElement">
+        <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+          <collectionProp name="Arguments.arguments" />
+        </elementProp>
+        <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+        <stringProp name="HTTPSampler.port">${__P(port,8000)}</stringProp>
+        <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">30000</stringProp>
+      </ConfigTestElement>
+      <hashTree />
+      <ThreadGroup testname="SWC-128 Synchronized Call Next" enabled="true" guiclass="ThreadGroupGui" testclass="ThreadGroup">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true" name="ThreadGroup.main_controller">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersBurst,10)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(burstRampUp,1)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController testname="Login once per thread" enabled="true" guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" />
+        <hashTree>
+          <CSVDataSet testname="clinic-doctors.csv" enabled="true" guiclass="TestBeanGUI" testclass="CSVDataSet">
+            <stringProp name="filename">data/clinic-doctors.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy testname="[SETUP] POST /api/auth/login" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp elementType="HTTPArgument" name="">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Unexpected response status for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">"token"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Response contract failed for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <JSONPostProcessor testname="Extract JWT" enabled="true" guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager testname="Authenticated JSON headers" enabled="true" guiclass="HeaderPanel" testclass="HeaderManager">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <SyncTimer testname="Release all doctors together" enabled="true" guiclass="TestBeanGUI" testclass="SyncTimer">
+          <stringProp name="groupSize">${__P(usersBurst,10)}</stringProp>
+          <stringProp name="timeoutInMs">30000</stringProp>
+        </SyncTimer>
+        <hashTree />
+        <HTTPSamplerProxy testname="[WRITE] PUT /api/queue/call-next (concurrent)" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/queue/call-next</stringProp>
+          <stringProp name="HTTPSampler.method">PUT</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[WRITE] PUT /api/queue/call-next (concurrent) status 200|503" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200|503</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [WRITE] PUT /api/queue/call-next (concurrent)</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[WRITE] PUT /api/queue/call-next (concurrent) within write p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+          <JSR223PostProcessor testname="Capture successful assignments" enabled="true" guiclass="TestBeanGUI" testclass="JSR223PostProcessor">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters" />
+            <stringProp name="filename" />
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script">if (prev.getResponseCode() == '200') {
+    def json = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString())
+    def output = new File(props.get('assignmentsFile') ?: 'results/call-next-assignments.csv')
+    output.parentFile?.mkdirs()
+    synchronized (props) { output.append("${ctx.getThreadNum()},${json.queueId},${json.patientId},${json.roomNumber}\n") }
+}</stringProp>
+          </JSR223PostProcessor>
+          <hashTree />
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>
