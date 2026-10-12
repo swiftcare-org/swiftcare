@@ -305,21 +305,28 @@ Authorization is required before running this: it writes to the shared MySQL ser
 
 Prerequisites: signed in to the Azure for Students subscription, the existing administrator password (`swiftcareadmin`) typed into the shell and never stored, and the database already created. The job image `mysql:8.4` is the public Docker Hub client image.
 
-Step 1 - set the shell variables. The new password uses letters and digits only so it is valid inside a connection string.
+Run the steps in Windows PowerShell from the repository folder. User names follow `swiftcare_<service>_user` (for example `swiftcare_auth_user`, `swiftcare_notification_user`), so the discovery query used in earlier versions of this procedure is no longer needed.
+
+Step 1 - set the shell variables. The new password uses letters and digits only so it is valid inside a connection string. The final line must show length 32 and many distinct characters; one distinct character means the random generator failed, so stop.
 
 ```powershell
 $sub = "0f585319-2092-4ed0-993a-b30886e4e07c"
 $rg = "swiftcare-rg"
 $mysqlHost = "swiftcare-mysql.mysql.database.azure.com"
 $jobName = "swiftcare-sqluser-tmp"
+$newUser = "swiftcare_notification_user"
+$database = "swiftcare_notification"
 $adminSecure = Read-Host "swiftcareadmin password" -AsSecureString
 $adminPassword = [Net.NetworkCredential]::new("", $adminSecure).Password
 $bytes = [byte[]]::new(32)
-[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
 $newPassword = ([Convert]::ToBase64String($bytes) -replace '[^A-Za-z0-9]', '').Substring(0, 32)
+"password length: $($newPassword.Length), distinct characters: $(($newPassword.ToCharArray() | Sort-Object -Unique).Count)"
 ```
 
-Step 2 - define a helper that runs one shell script as a short-lived job, prints its output and removes the job. The script is sent base64-encoded so it needs no quoting, holds variable names only, and the passwords travel as job secrets.
+Step 2 - define two helpers. `Invoke-SqlJob` runs one shell script as a short-lived job inside the VNet. The Azure CLI cannot take a bare `-c` argument, so the job is created with the secrets and settings first, and its command is then set from a small YAML file that holds no secrets. The script is sent base64-encoded so it needs no quoting. The function refuses to start a job whose command was not set, reports a delete that failed, and returns the execution name. `Show-SqlJobResult` reads the result lines from Log Analytics, because the job log stream is often empty for a job this short; ingestion can take a few minutes.
 
 ```powershell
 function Invoke-SqlJob([string]$Script) {
@@ -329,49 +336,100 @@ function Invoke-SqlJob([string]$Script) {
     --cpu 0.25 --memory 0.5Gi `
     --secrets "mysql-admin=$adminPassword" "new-db=$newPassword" `
     --env-vars "MYSQL_PWD=secretref:mysql-admin" "NEW_PWD=secretref:new-db" "SQL_HOST=$mysqlHost" "SQL_ADMIN=swiftcareadmin" "NEW_USER=$newUser" `
-    --command "/bin/sh" --args "-c" "echo $encoded | base64 -d | sh" --only-show-errors | Out-Null
-  $execution = az containerapp job start --subscription $sub -g $rg -n $jobName --query name -o tsv
-  do { Start-Sleep 10; $status = az containerapp job execution show --subscription $sub -g $rg -n $jobName --job-execution-name $execution --query properties.status -o tsv } while ($status -in "Running", "Processing", "")
-  "Execution $execution finished: $status"
-  az containerapp job logs show --subscription $sub -g $rg -n $jobName --execution $execution --container $jobName --format text 2>$null
-  az containerapp job delete --subscription $sub -g $rg -n $jobName --yes --only-show-errors | Out-Null
+    --only-show-errors --query name -o tsv
+  $yamlPath = Join-Path $env:TEMP "sqluser-job.yaml"
+  $yaml = @"
+properties:
+  template:
+    containers:
+      - name: $jobName
+        image: mysql:8.4
+        command: ["/bin/sh"]
+        args: ["-c", "echo $encoded | base64 -d | sh"]
+        resources:
+          cpu: 0.25
+          memory: 0.5Gi
+        env:
+          - name: MYSQL_PWD
+            secretRef: mysql-admin
+          - name: NEW_PWD
+            secretRef: new-db
+          - name: SQL_HOST
+            value: $mysqlHost
+          - name: SQL_ADMIN
+            value: swiftcareadmin
+          - name: NEW_USER
+            value: $newUser
+"@
+  [IO.File]::WriteAllText($yamlPath, $yaml, (New-Object Text.UTF8Encoding $false))
+  az containerapp job update --subscription $sub -g $rg -n $jobName --yaml $yamlPath --only-show-errors --query name -o tsv
+  Remove-Item $yamlPath -ErrorAction SilentlyContinue
+  $command = az containerapp job show --subscription $sub -g $rg -n $jobName --query "properties.template.containers[0].command[0]" -o tsv
+  $execution = $null
+  if ($command -eq "/bin/sh") {
+    $execution = az containerapp job start --subscription $sub -g $rg -n $jobName --query name -o tsv
+    do { Start-Sleep 10; $status = az containerapp job execution show --subscription $sub -g $rg -n $jobName --job-execution-name $execution --query properties.status -o tsv } while ($status -in "Running", "Processing", "")
+    "Execution $execution finished: $status"
+  } else {
+    "STOP: the job command was not set (got '$command'); the job was not started."
+  }
+  az containerapp job delete --subscription $sub -g $rg -n $jobName --yes --only-show-errors
+  $left = az containerapp job list --subscription $sub -g $rg --query "[?name=='$jobName'] | length(@)" -o tsv
+  if ($left -ne "0") { "WARNING: the temporary job $jobName still exists and holds the administrator password as a secret. Delete it before doing anything else." }
+  $script:lastExecution = $execution
+}
+
+function Show-SqlJobResult([string]$Execution = $script:lastExecution) {
+  $workspace = az monitor log-analytics workspace show --subscription $sub -g $rg -n swiftcare-logs --query customerId -o tsv
+  $query = "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(1h) | where ContainerGroupName_s startswith '$Execution' | where Log_s has 'PASS' or Log_s has 'FAIL' or Log_s has 'ERROR' | project Log_s"
+  $file = Join-Path $env:TEMP "sqluser-query.json"
+  [IO.File]::WriteAllText($file, (@{ query = $query } | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
+  for ($i = 0; $i -lt 12; $i++) {
+    $result = az rest --method post --resource https://api.loganalytics.io --uri "https://api.loganalytics.io/v1/workspaces/$workspace/query" --body "@$file" | ConvertFrom-Json
+    $rows = $result.tables[0].rows
+    if ($rows.Count -gt 0) { $rows | ForEach-Object { $_[0] }; break }
+    "waiting for the log lines to arrive ($($i + 1)/12)..."
+    Start-Sleep 30
+  }
+  Remove-Item $file -ErrorAction SilentlyContinue
 }
 ```
 
-Step 3 - read the existing user names so the new user follows the same convention. This step changes nothing.
+Step 3 - create the user and grant privileges on its own database only. The script is repeatable: it creates the user if missing and always sets the password. It must print `finished: Succeeded`.
 
 ```powershell
-$newUser = "discovery"
-Invoke-SqlJob @'
-mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$SQL_ADMIN" -e "SELECT user, host FROM mysql.user WHERE user NOT LIKE 'mysql.%'"
-'@
-```
-
-Step 4 - create the user and grant privileges on its own database only. Set `$newUser` to the name that matches the convention found in Step 3. The script is repeatable: it creates the user if missing and always sets the password. It is shown for Notification; change the database name for another service.
-
-```powershell
-$newUser = "<user name following the convention from Step 3>"
 Invoke-SqlJob @'
 mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$SQL_ADMIN" -e "CREATE USER IF NOT EXISTS '$NEW_USER'@'%' IDENTIFIED BY '$NEW_PWD'; ALTER USER '$NEW_USER'@'%' IDENTIFIED BY '$NEW_PWD'; GRANT ALL PRIVILEGES ON swiftcare_notification.* TO '$NEW_USER'@'%'; FLUSH PRIVILEGES;"
 '@
 ```
 
-Step 5 - verify as the new user. The first check must pass and the second must be refused; a refused `USE` on another database proves the grant is scoped.
+Change `swiftcare_notification` in the script for another service. A job that finishes `Succeeded` only means the script ran, so the next step is what proves the result.
+
+Step 4 - verify as the new user. Both lines must appear: `own database: PASS` and `other database: PASS (refused)`. A refused `USE` on another database proves the grant is scoped; stop if the second line says `FAIL`.
 
 ```powershell
 Invoke-SqlJob @'
 MYSQL_PWD="$NEW_PWD" mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$NEW_USER" -e "USE swiftcare_notification; SELECT 1" >/dev/null 2>&1 && echo "own database: PASS" || echo "own database: FAIL"
 MYSQL_PWD="$NEW_PWD" mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$NEW_USER" -e "USE swiftcare_auth" >/dev/null 2>&1 && echo "other database: FAIL (reachable)" || echo "other database: PASS (refused)"
 '@
+Show-SqlJobResult
 ```
 
-Step 6 - store the password where it is needed, then clear the shell. Set it as the GitHub Environment secret `<SERVICE>_DB_PASSWORD` in `azure-development` through the GitHub UI or `gh secret set` typed by the owner, and the user name as the matching variable. Do not print or paste the value.
+Step 5 - store the password where it is needed, then clear the shell. Copy it to the clipboard, paste it as the GitHub Environment secret `<SERVICE>_DB_PASSWORD` in `azure-development`, and set the user name as the matching variable `<SERVICE>_DB_USER`. Do not print or paste the value anywhere else. Do this before clearing the variables, because the password cannot be recovered afterwards; if it is lost, repeat Step 3, which sets a new one.
 
 ```powershell
-Remove-Variable adminPassword, adminSecure, newPassword, bytes
+Set-Clipboard $newPassword
 ```
 
-Confirm that no temporary job remains with `az containerapp job list --subscription $sub -g $rg --query "[].name" -o tsv`. If a run fails, delete the job with `az containerapp job delete` before retrying. Rotating a password means repeating Steps 1, 4 and 5 and updating the Environment secret before the next release.
+Step 6 - clear the shell and confirm that no temporary job remains.
+
+```powershell
+Set-Clipboard $null
+Remove-Variable adminPassword, adminSecure, newPassword, bytes, rng
+az containerapp job list --subscription $sub -g $rg --query "[].name" -o tsv
+```
+
+The list must not contain `swiftcare-sqluser-tmp`. If it does, delete it with `az containerapp job delete --subscription $sub -g $rg -n swiftcare-sqluser-tmp --yes`, because the job holds the administrator password as a secret. Rotating a password means repeating Steps 1 to 5 and updating the Environment secret before the next release.
 
 ## Cost controls
 
