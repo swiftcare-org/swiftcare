@@ -5,5 +5,10 @@
       "/assets/*",
       "/*.{css,js,mjs,map,json,png,jpg,jpeg,gif,svg,webp,ico,woff,woff2,ttf}"
     ]
+  },
+  "globalHeaders": {
+    "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
   }
 }

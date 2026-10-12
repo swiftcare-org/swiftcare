@@ -17,6 +17,10 @@ frontend_custom_domains_enabled = false
 # Kafka/ZooKeeper group while retaining their reusable network configuration.
 messaging_enabled = true
 
+# Monthly resource-group budget in the billing currency; 0 removes it. Alerts go to
+# availability_alert_emails and the subscription Owner role.
+budget_monthly_amount = 30
+
 # SWC-132: add actual team addresses only to ignored terraform.tfvars.
 # Enabled monitoring fails planning until at least one recipient is supplied.
 availability_enabled      = true

@@ -62,6 +62,8 @@ import_if_missing azurerm_subnet.messaging "${VNET_ID}/subnets/messaging-subnet"
 
 import_if_missing azurerm_log_analytics_workspace.swiftcare \
   "${BASE}/Microsoft.OperationalInsights/workspaces/${PROJECT_NAME}-logs"
+import_if_missing azurerm_application_insights.swiftcare \
+  "${BASE}/Microsoft.Insights/components/${PROJECT_NAME}-appinsights"
 import_if_missing azurerm_container_app_environment.swiftcare \
   "${BASE}/Microsoft.App/managedEnvironments/${PROJECT_NAME}-aca-env"
 
@@ -73,6 +75,14 @@ import_if_missing azurerm_mysql_flexible_database.auth \
   "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_auth"
 import_if_missing azurerm_mysql_flexible_database.patient \
   "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_patient"
+import_if_missing azurerm_mysql_flexible_database.queue \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_queue"
+import_if_missing azurerm_mysql_flexible_database.medical_record \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_medical_record"
+import_if_missing azurerm_mysql_flexible_database.prescription \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_prescription"
+import_if_missing azurerm_mysql_flexible_database.notification \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_notification"
 
 import_if_missing azurerm_private_dns_zone.messaging "$MESSAGING_DNS_ID"
 import_if_missing azurerm_private_dns_zone_virtual_network_link.messaging \
@@ -89,6 +99,23 @@ if [[ "$IMPORT_MESSAGING" == "true" ]]; then
     "${BASE}/Microsoft.ContainerInstance/containerGroups/${PROJECT_NAME}-messaging"
   import_if_missing 'azurerm_private_dns_a_record.kafka[0]' \
     "${MESSAGING_DNS_ID}/A/kafka"
+fi
+
+# SWC-132 availability monitoring. Importing reads the live enabled flags and recipients;
+# the next plan shows any difference from the local availability inputs.
+import_if_missing azurerm_monitor_action_group.availability \
+  "${BASE}/Microsoft.Insights/actionGroups/${PROJECT_NAME}-availability-team"
+for target in frontend gateway; do
+  import_if_missing "azurerm_application_insights_standard_web_test.availability[\"${target}\"]" \
+    "${BASE}/Microsoft.Insights/webTests/${PROJECT_NAME}-${target}-availability"
+  import_if_missing "azurerm_monitor_metric_alert.availability[\"${target}\"]" \
+    "${BASE}/Microsoft.Insights/metricAlerts/${PROJECT_NAME}-${target}-availability-failure"
+done
+
+BUDGET_NAME="${PROJECT_NAME}-monthly-budget"
+if az consumption budget show --resource-group "$RESOURCE_GROUP" --budget-name "$BUDGET_NAME" >/dev/null 2>&1; then
+  import_if_missing 'azurerm_consumption_budget_resource_group.monthly[0]' \
+    "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}"
 fi
 
 import_if_missing azurerm_static_web_app.swiftcare "$STATIC_WEB_APP_ID"
