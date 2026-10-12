@@ -462,6 +462,8 @@ CD releases to two environments in the same Azure subscription, and only during 
 | Window variable (repository) | `DEMO_WINDOW_DEVELOPMENT` | `DEMO_WINDOW_PRODUCTION` |
 | Public hosts | `dev.swiftcare.me`, `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me`, `api.swiftcare.me` |
 
+GitHub starts a `workflow_run` workflow from the copy of `cd.yml` on the default branch (`main`), so the automatic triggers follow whatever `cd.yml` is on `main`: a change to them takes effect only after it reaches `main`. Manual runs use `cd.yml` from the selected branch.
+
 The first job, `target`, picks the environment and reads its window variable. Unless the value is exactly `true`, the run ends there with a notice: no Environment approval is requested and Azure is not touched. A manual production run from any ref other than `main` fails in the same job. Each environment has its own concurrency queue. Open a window by setting the variable to `true` (repository Settings > Secrets and variables > Actions > Variables) and close it by setting `false` when the window ends.
 
 `workflow_dispatch` first runs the CI quality gate for the selected branch (without mutation testing, which stays in direct CI runs) and can then deploy that branch.
