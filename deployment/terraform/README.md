@@ -1,6 +1,6 @@
 # SwiftCare Azure infrastructure
 
-This directory defines stable infrastructure for one Azure development environment. Checked against repository configuration on 12 October 2026; this runbook does not establish live resource state or drift. Import pre-existing resources only when they are absent from the selected state; do not rerun adoption as a routine sprint handover.
+This directory defines stable infrastructure for the Azure development and production environments. Checked against repository configuration on 12 October 2026; this runbook does not establish live resource state or drift. Import pre-existing resources only when they are absent from the selected state; do not rerun adoption as a routine sprint handover.
 
 ## Ownership boundary
 
@@ -77,6 +77,43 @@ sprint_name                     = "sprint-4"
 
 Both real files are ignored by Git. Never add passwords to either file.
 
+## Development and production environments
+
+The same configuration manages two isolated environments in one subscription. Each has its own state key, tfvars file, resource group, network, MySQL server, Container Apps environment, Static Web App, monitoring, budget and deployment identity. Both run only in approved demo windows.
+
+| | Development | Production |
+|---|---|---|
+| tfvars example | `environments/development.tfvars.example` | `environments/production.tfvars.example` |
+| Backend example | `environments/backend-development.hcl.example` | `environments/backend-production.hcl.example` |
+| State key | `azure-development.tfstate` | `azure-production.tfstate` |
+| `name_prefix` | empty (keeps the original `swiftcare-*` names) | `swiftcare-prod` |
+| Resource group | `swiftcare-rg` | `swiftcare-prod-rg` |
+| Address space | `10.20.0.0/16` | `10.30.0.0/16` |
+| Frontend / gateway hosts | `dev.swiftcare.me` / `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me` / `api.swiftcare.me` |
+| OIDC subject | `...:environment:azure-development` | `...:environment:azure-production` |
+
+`name_prefix` changes only Azure resource names. Database names stay `swiftcare_<service>` in both environments because each has its own server and the CD release manifest uses those names. The development gateway host is `api-dev`, not `api.dev`, because Cloudflare's free edge certificate covers one subdomain level.
+
+Copy the examples to the ignored files without `.example`, set real IDs, then select an environment at init time. Always use `-reconfigure` when switching, and keep each environment's MySQL administrator password separate:
+
+```powershell
+terraform -chdir=deployment/terraform init -reconfigure -backend-config="environments/backend-production.hcl"
+terraform -chdir=deployment/terraform plan -input=false -var-file="environments/production.tfvars" -out="production.tfplan"
+```
+
+Existing operators may keep `backend.hcl` and `terraform.tfvars` for development; they are equivalent to the development files.
+
+Creating role assignments needs the subscription Owner, so a new environment starts with `deployment_role_assignment_enabled = false`. After the first apply, the Owner creates the assignment, then the operator sets the variable to `true` and imports it:
+
+```powershell
+$principal = terraform -chdir=deployment/terraform output -raw github_cd_principal_id
+az role assignment create --assignee-object-id $principal --assignee-principal-type ServicePrincipal --role Contributor --scope "/subscriptions/<subscription-id>/resourceGroups/swiftcare-prod-rg"
+$assignment = az role assignment list --assignee $principal --scope "/subscriptions/<subscription-id>/resourceGroups/swiftcare-prod-rg" --role Contributor --query "[0].id" -o tsv
+terraform -chdir=deployment/terraform import -var-file="environments/production.tfvars" "azurerm_role_assignment.github_cd_contributor[0]" $assignment
+```
+
+Domain order: add the `dev.swiftcare.me` and `api-dev.swiftcare.me` records first and move development to them (tfvars values in the development example), which releases `swiftcare.me` and `www.swiftcare.me`; then point those records at production and set `frontend_custom_domains_enabled = true` in production. A domain can be attached to only one Static Web App at a time. The gateway hostnames are bound manually on each gateway Container App, as before.
+
 ## Initialize the backend
 
 From the repository root:
@@ -122,6 +159,8 @@ $env:FRONTEND_WWW_DOMAIN = "www.swiftcare.me"
 $env:IMPORT_CUSTOM_DOMAINS = "true"
 $env:IMPORT_MESSAGING = "true"
 ```
+
+For production also set `$env:NAME_PREFIX = "swiftcare-prod"` and the production resource group, server, Static Web App and identity names; for development after the domain move set `$env:FRONTEND_DOMAIN = "dev.swiftcare.me"` and `$env:FRONTEND_WWW_DOMAIN = ""`. The script uses whichever backend was last initialized, so initialize the intended environment first.
 
 Run the import script from the Terraform directory so its `terraform` commands use the correct configuration:
 

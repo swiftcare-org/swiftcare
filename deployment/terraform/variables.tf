@@ -37,6 +37,17 @@ variable "project_name" {
   }
 }
 
+variable "name_prefix" {
+  description = "Prefix for Azure resource names in this environment, for example swiftcare-prod. Empty uses project_name, which keeps the development names."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.name_prefix == "" || can(regex("^[a-z0-9-]+$", var.name_prefix))
+    error_message = "name_prefix may contain only lowercase letters, numbers, and hyphens."
+  }
+}
+
 variable "resource_group_name" {
   description = "Resource group containing the application environment."
   type        = string
@@ -133,13 +144,24 @@ variable "frontend_custom_domains_enabled" {
 }
 
 variable "frontend_domain" {
-  description = "Apex custom domain attached to the Static Web App."
+  description = "Primary custom domain attached to the Static Web App, for example swiftcare.me or dev.swiftcare.me."
   type        = string
   default     = "swiftcare.me"
 }
 
+variable "frontend_domain_validation_type" {
+  description = "Validation for frontend_domain: dns-txt-token for an apex domain, cname-delegation for a subdomain such as dev.swiftcare.me."
+  type        = string
+  default     = "dns-txt-token"
+
+  validation {
+    condition     = contains(["dns-txt-token", "cname-delegation"], var.frontend_domain_validation_type)
+    error_message = "frontend_domain_validation_type must be dns-txt-token or cname-delegation."
+  }
+}
+
 variable "frontend_www_domain" {
-  description = "WWW custom domain attached to the Static Web App."
+  description = "Optional second custom domain (CNAME delegation). Empty attaches none, as for development."
   type        = string
   default     = "www.swiftcare.me"
 }
@@ -178,6 +200,12 @@ variable "github_oidc_credentials" {
       subject = "repo:swiftcare-org@317644346/swiftcare@1336209668:environment:azure-development"
     }
   }
+}
+
+variable "deployment_role_assignment_enabled" {
+  description = "Manage the deployment identity's Contributor assignment. Creating it needs the subscription Owner; keep false until the Owner has created it, then import it."
+  type        = bool
+  default     = true
 }
 
 variable "additional_tags" {
