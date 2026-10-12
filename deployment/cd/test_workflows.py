@@ -18,11 +18,12 @@ def jobs(text):
 
 
 JOBS = jobs(CD)
+ENVIRONMENT_LINE = "    environment: ${{ needs.target.outputs.environment }}\n"
 
 
 class CdWorkflowTests(unittest.TestCase):
     def test_expected_jobs_exist(self):
-        for job in ("plan", "deploy-auth", "deploy-services", "gateway-image", "deploy-gateway",
+        for job in ("target", "plan", "deploy-auth", "deploy-services", "gateway-image", "deploy-gateway",
                     "deploy-frontend", "summary"):
             self.assertIn(job, JOBS)
 
@@ -38,7 +39,37 @@ class CdWorkflowTests(unittest.TestCase):
         for job, block in JOBS.items():
             names = set(re.findall(r"secrets(?:\.([A-Z0-9_]+)|\[)", block)) - {"GITHUB_TOKEN"}
             if names:
-                self.assertIn("    environment: azure-development\n", block, job)
+                self.assertIn(ENVIRONMENT_LINE, block, job)
+
+    def test_environment_jobs_wait_for_the_target_job(self):
+        # needs.target is empty in a job that does not list it, which would leave the job
+        # without an Environment and without its secrets.
+        for job, block in JOBS.items():
+            if ENVIRONMENT_LINE in block:
+                needs = re.search(r"(?m)^    needs: (.*)$", block)
+                self.assertIsNotNone(needs, job)
+                self.assertIn("target", needs.group(1), job)
+
+    def test_target_job_runs_before_any_environment(self):
+        # A closed demo window must end the run before any approval request or Azure step.
+        block = JOBS["target"]
+        self.assertIsNone(re.search(r"(?m)^    environment:", block))
+        self.assertNotIn("secrets.", block)
+        self.assertIn("bash deployment/cd/resolve-target.sh", block)
+        self.assertIn("vars.DEMO_WINDOW_DEVELOPMENT", block)
+        self.assertIn("vars.DEMO_WINDOW_PRODUCTION", block)
+        self.assertIn("needs.target.outputs.proceed == 'true'", JOBS["plan"])
+        self.assertIn("needs.target.outputs.proceed == 'true'", JOBS["manual-quality-gate"])
+
+    def test_both_branches_trigger_and_each_environment_has_its_own_queue(self):
+        trigger = CD[CD.index("  workflow_run:\n"):CD.index("  workflow_dispatch:\n")]
+        self.assertIn("      - main\n", trigger)
+        self.assertIn("      - develop\n", trigger)
+        # Pull request CI from develop into main reports head branch develop; only pushes deploy.
+        self.assertIn("github.event.workflow_run.event == 'push'", JOBS["target"])
+        group = re.search(r"(?m)^  group: (.*)$", CD).group(1)
+        self.assertIn("'azure-production'", group)
+        self.assertIn("'azure-development'", group)
 
     def test_only_the_ci_quality_gate_is_called_as_a_workflow(self):
         # A called workflow does not receive environment secrets, so deploy steps stay in cd.yml.
