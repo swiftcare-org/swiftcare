@@ -1,9 +1,9 @@
 # SwiftCare - Azure Deployment Performance Test Plan
 
-**Jira:** SWC-67, extended by SWC-88 and SWC-127  **Tool:** Apache JMeter 5.6.3
+**Jira:** SWC-67, extended by SWC-88, SWC-127 and SWC-137  **Tool:** Apache JMeter 5.6.3
 **Target:** Real Azure deployment (AuthService, PatientService, API Gateway; QueueService present but see section 6.2)
 
-Sections 1 to 10 are the original SWC-67 round, unchanged. Section 11 adds the Sprint 2 endpoints (SWC-20, SWC-21, SWC-23, SWC-24) to the same suite. Section 12 adds the Sprint 3 clinical workflow (SWC-127).
+Sections 1 to 10 are the original SWC-67 round, unchanged. Section 11 adds the Sprint 2 endpoints (SWC-20, SWC-21, SWC-23, SWC-24) to the same suite. Section 12 adds the Sprint 3 clinical workflow (SWC-127). Section 13 adds the Sprint 4 endpoints (SWC-137).
 
 This is the additive Azure counterpart to the local plan at
 [`../local/TEST-PLAN.md`](../local/TEST-PLAN.md). Nothing in the local setup
@@ -466,3 +466,164 @@ A seeded run adds these to the deployed databases:
 A few consultations and prescriptions stay open where the run's end cut a cycle off, until the next `-QueueVolume 0` reset. There is no reset equivalent on Azure, so agree with DevOps beforehand whether the data stays. All of it is synthetic.
 
 After the run, shut the environment down as described in `deployment/terraform/README.md`, "Cost controls", unless DevOps says otherwise.
+
+## 13. Sprint 4 extension (SWC-137)
+
+Sections 1 to 12 still hold for their rounds. This section adds the Sprint 4 endpoints to the same deployed-environment suite. It keeps the same tool, the section 6.1 thresholds and the no-Stress decision. The workload is the six role groups of the local Sprint 4 suite (`../local/TEST-PLAN.md` section 10, SWC-136), sized to the 20-user clinic peak of assumption A2 and of every earlier Azure round.
+
+### 13.1 Scope
+
+**In**, all through the development environment's public Gateway:
+
+| Story | Endpoint | Group | Class |
+|---|---|---|---|
+| SWC-43 | `GET /api/notifications` | Activity Feed (Receptionist) | read |
+| SWC-44 | `GET /api/notifications/today` | Activity Feed (Receptionist) | read |
+| SWC-27 | `GET /api/patients/{id}` | Patient History (Doctor) | read |
+| SWC-27 | `GET /api/consultations/patient/{id}` | Patient History (Doctor) | read |
+| SWC-27 | `GET /api/vitals/patient/{id}` | Patient History (Doctor) | read |
+| SWC-42 | `GET /api/prescriptions/patient/{id}` | Patient History (Doctor) | read |
+| SWC-31 | `GET /api/reports/daily`, `GET /api/prescriptions/report/daily` | Admin Reports | read |
+| SWC-45 | `GET /api/reports/monthly`, `GET /api/prescriptions/report/monthly` | Admin Reports | read |
+| SWC-10 | `GET /api/users`, `GET /api/audit-logs` | Admin Operations | read |
+| SWC-10 | `PUT /api/users/{id}` | Admin Operations | write |
+
+The Sprint 3 Doctor clinical workflow and Receptionist counter (section 12.1) run alongside them and stay pass/fail. As in section 12.1, the Sprint 2 endpoints that workflow depends on (`GET /api/queue/today/current`, `PUT /api/queue/call-next`, `POST /api/consultations`, `GET /api/queue/today`) are reported, not pass/fail.
+
+**Out:** Stress against Azure (unchanged from section 5). The production environment. Database row checks and Kafka consumer lag (unchanged from section 6.2); the local integrity checks of SWC-136 cover consistency instead. SWC-39, SWC-129 and SWC-131, which the local Sprint 4 workload does not model separately. The Sprint 1 and Sprint 2 groups are not re-run.
+
+### 13.2 Workload model
+
+Four Thread Groups added to `swiftcare-load-azure.jmx`, copied from `../local/SWC-136-sprint4.jmx` with the same samplers, assertions, labels and pacing. Only these changed: they default to 0 users, they use this plan's `rampup` property, and their Duration Assertions default to this plan's p99 budgets (`readSlaMs` 2000 ms, `writeSlaMs` 3500 ms). Every earlier command line keeps its meaning.
+
+| Group | `-J` property | Load | Smoke | Pacing (local SWC-136 Load defaults) |
+|---|---|---:|---:|---|
+| SWC-127 Doctor Clinical Workflow | `usersClinicDoctor` | 5 | 1 | as section 12.2 |
+| SWC-127 Receptionist Counter | `usersClinicCounter` | 4 | 1 | as section 12.2 |
+| SWC-137 Reception Activity Feed | `usersActivity` | 4 | 1 | 10 s between cycles (`activityDelayMs`) |
+| SWC-137 Doctor Patient History | `usersHistory` | 4 | 1 | 8 s (`historyDelayMs`) |
+| SWC-137 Admin Reports | `usersReports` | 2 | 1 | 30 s (`reportDelayMs`) |
+| SWC-137 Admin Operations | `usersAdmin` | 1 | 1 | 15 s (`adminDelayMs`) |
+| **Total** | | **20** | **6** | |
+
+The 5:4:4:4:2:1 split halves the local 40-user Sprint 4 Load (10:8:8:8:4:2), so the role mix is the same and only the concurrency differs. Load is 30 s ramp-up and 900 s, as in sections 5, 11.2 and 12.2.
+
+Sampler classes for this round: a `GET` is a read and a `POST`, `PUT` or `DELETE` is a write, whether or not the label carries the local suite's `[READ]`/`[WRITE]` prefix. Logins are setup and are excluded.
+
+### 13.3 Test data
+
+`seed-sprint4-azure.ps1` runs `seed-clinical-flow-azure.ps1` (section 12.3) and then:
+
+- creates Admin accounts `perf.sprint4.admin.NNN`, each paired with a Receptionist target `perf.sprint4.target.NNN`. `PUT /api/users/{id}` updates only that target and re-saves its own name, so no real or bootstrapped account is changed;
+- pairs every seeded patient with a clinic doctor for the Patient History group (`data/sprint4-history.csv`);
+- writes `data/sprint4-run.properties` with today's `reportDate` and `reportMonth`, passed to JMeter with a second `-q`. The file is written as ASCII: a UTF-8 byte order mark would rename the first key, and `reportDate` would silently fall back to the plan's default date.
+
+`seed-clinical-flow-azure.ps1` now also writes `data/clinic-patients.csv` when it checks patients in. A `-QueueVolume 0` reset leaves the file unchanged.
+
+`-GatewayUrl` has no default. Section 12.3's constraints still apply: seed on the day of the run, and reset doctors after the warm-up and after Smoke. Seed well before midnight, so seeding and the run fall on the same clinic day (section 12.7 records the midnight failure).
+
+### 13.4 Environment since SWC-127
+
+- **Target host.** SWC-161 separates development (`api-dev.swiftcare.me`) from production (`api.swiftcare.me`) while sharing one Container Apps environment. The run targets development only. DevOps confirms the host before seeding, because the domain move may not have happened yet. The host is passed with `-Jhost`; `user-azure.properties` still names `api.swiftcare.me`.
+- **NotificationService** is deployed with its migrations applied, and the current `develop` is deployed through CD.
+- **Cloudflare.** The rate-limiting rule blocked logins in SWC-127 (error 1015). Any change for this window is agreed with DevOps beforehand, recorded, and reverted after the run.
+- **Window.** Apps run only in an approved demo or test window (`deployment/terraform/README.md`, "Cost controls"), so the warm-up still runs after the environment starts.
+
+### 13.5 Pass / fail criteria
+
+Section 12.5 applies unchanged: reads p95 1200 ms or less, reads p99 2000 ms or less, writes p95 2000 ms or less, writes p99 3500 ms or less, error rate 0.5% or less, and last-third p95 within 20% of first-third p95. Classes are as in 13.2, over the pass/fail endpoints in 13.1. The measurement window discards the warm-up, the ramp-up and the first 30 s of steady state (t at or after 60 s).
+
+Smoke passes when every sample returns its expected status and all 31 sampler labels of the six groups are present.
+
+### 13.6 Validation against the local stack
+
+Before Azure, the same seed and plan run against the isolated local SWC-136 stack (`../local/README.md`, SWC-136, Gateway `http://127.0.0.1:8016`), signing in as the local seeded administrator. This proves the new groups and the Azure seed work end to end, and gives a local result for the same 20-user profile to compare with Azure.
+
+```powershell
+# from tests/PerformanceTest/azure/, with .env.swc136 loaded (AUTH_SEED_PASSWORD) and JMeter on Java 21
+./seed-sprint4-azure.ps1 -GatewayUrl http://127.0.0.1:8016 `
+  -AdminUsername admin.fernando -AdminPassword $env:AUTH_SEED_PASSWORD
+
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties -q data/sprint4-run.properties `
+  '-Jhost=127.0.0.1' '-Jport=8016' '-Jprotocol=http' '-Jthreads=0' `
+  '-JusersClinicDoctor=1' '-JusersClinicCounter=1' '-JusersActivity=1' '-JusersHistory=1' `
+  '-JusersReports=1' '-JusersAdmin=1' '-Jrampup=6' '-Jduration=60' `
+  '-JcycleDelay=5000' '-JcycleRange=0' '-JdispenseAfterMs=5000' `
+  -l results/local-smoke-swc137.jtl -e -o results/local-smoke-swc137-report
+
+./seed-sprint4-azure.ps1 -GatewayUrl http://127.0.0.1:8016 `
+  -AdminUsername admin.fernando -AdminPassword $env:AUTH_SEED_PASSWORD -QueueVolume 0
+
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties -q data/sprint4-run.properties `
+  '-Jhost=127.0.0.1' '-Jport=8016' '-Jprotocol=http' '-Jthreads=0' `
+  '-JusersClinicDoctor=5' '-JusersClinicCounter=4' '-JusersActivity=4' '-JusersHistory=4' `
+  '-JusersReports=2' '-JusersAdmin=1' '-Jrampup=30' '-Jduration=900' `
+  -l results/local-load-swc137.jtl -e -o results/local-load-swc137-report
+```
+
+Quote every `-J` argument: an unquoted value containing a dot was split by PowerShell in SWC-136.
+
+### 13.7 Execution
+
+From `tests/PerformanceTest/azure/`, non-GUI only, within the window agreed with DevOps. Set `$gw` to the development Gateway host confirmed by DevOps, and `AZURE_ADMIN_PASSWORD` first.
+
+```powershell
+$gw = 'api-dev.swiftcare.me'   # confirm with DevOps (13.4)
+
+# 1. Connection check: all 20 must be 200 and under 1 s (precondition from section 12.7)
+1..20 | ForEach-Object { curl.exe -s -o NUL -w "%{http_code} %{time_total}`n" "https://$gw/health" }
+
+# 2. Seed, on the day of the run
+./seed-sprint4-azure.ps1 -GatewayUrl "https://$gw"
+
+# 3. Warm-up, results discarded, then reset doctors
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties -q data/sprint4-run.properties `
+  "-Jhost=$gw" '-Jthreads=0' `
+  '-JusersClinicDoctor=1' '-JusersClinicCounter=1' '-JusersActivity=1' '-JusersHistory=1' `
+  '-JusersReports=1' '-JusersAdmin=1' '-Jrampup=6' '-Jduration=60' `
+  '-JcycleDelay=5000' '-JcycleRange=0' '-JdispenseAfterMs=5000' -l results/warmup-swc137.jtl
+./seed-sprint4-azure.ps1 -GatewayUrl "https://$gw" -QueueVolume 0
+
+# 4. Smoke gate (13.5), then reset doctors
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties -q data/sprint4-run.properties `
+  "-Jhost=$gw" '-Jthreads=0' `
+  '-JusersClinicDoctor=1' '-JusersClinicCounter=1' '-JusersActivity=1' '-JusersHistory=1' `
+  '-JusersReports=1' '-JusersAdmin=1' '-Jrampup=6' '-Jduration=60' `
+  '-JcycleDelay=5000' '-JcycleRange=0' '-JdispenseAfterMs=5000' `
+  -l results/smoke-swc137.jtl -e -o results/smoke-swc137-report
+./seed-sprint4-azure.ps1 -GatewayUrl "https://$gw" -QueueVolume 0
+
+# 5. Load, only if Smoke passed
+jmeter -n -t swiftcare-load-azure.jmx -q user-azure.properties -q data/sprint4-run.properties `
+  "-Jhost=$gw" '-Jthreads=0' `
+  '-JusersClinicDoctor=5' '-JusersClinicCounter=4' '-JusersActivity=4' '-JusersHistory=4' `
+  '-JusersReports=2' '-JusersAdmin=1' '-Jrampup=30' '-Jduration=900' `
+  -l results/load-swc137.jtl -e -o results/load-swc137-report
+```
+
+**Server side.** Record CPU, memory and restarts for every app, and CPU, memory and connections for MySQL, as 1-minute maxima over the Load window, as in the SWC-127 report. Use Azure Monitor in the portal or the CLI, for example:
+
+```powershell
+$rg = 'swiftcare-rg'   # development resource group
+$from = '<load start, UTC ISO 8601>'; $to = '<load end, UTC ISO 8601>'
+az containerapp list -g $rg --query "[].{name:name,id:id}" -o table
+az monitor metrics list --resource <app id> --metric UsageNanoCores WorkingSetBytes RestartCount `
+  --interval PT1M --aggregation Maximum --start-time $from --end-time $to -o table
+az monitor metrics list --resource <mysql server id> --metric cpu_percent memory_percent active_connections `
+  --interval PT1M --aggregation Maximum --start-time $from --end-time $to -o table
+```
+
+**Rerun rule, recorded before the run.** The first complete Load run after a passing Smoke is the result. One identical repeat is allowed only if a concrete environment fault is observed and recorded during that run: the load generator's connection, a deployment outage, or a Cloudflare block. A threshold breach alone is not a reason to repeat. If repeated, both runs are reported side by side and the repeat is final, whatever it shows. Attempts abandoned before Load (for example a failed Smoke) are recorded in one line each.
+
+Write up `results/RESULT-smoke-azure-<date>.md` and `results/RESULT-load-azure-<date>.md` against 13.5. Open each with the load profile and time window (users and role split, ramp, duration, warm-up excluded, samples, throughput). Compare them with the Sprint 3 Azure result (`results/RESULT-load-azure-20260928.md`: 20 users, 4,915 samples, 0 errors) and the local 20-user run from 13.6.
+
+### 13.8 Data footprint
+
+A seeded run adds these to the deployed databases:
+
+- up to 4 Admin and 4 target accounts, alongside the reused SWC-127 Doctor and Receptionist pools;
+- about 150 patient and queue rows;
+- about 70 consultations with vital signs, completed queue entries and prescriptions (5 doctors at about one consultation a minute);
+- the notifications those events publish, and audit-log entries for about 60 target-account updates.
+
+All of it is synthetic. There is no reset equivalent on Azure, so agree with DevOps beforehand whether the data stays. After the run, shut the environment down as described in `deployment/terraform/README.md`, "Cost controls", unless DevOps says otherwise.

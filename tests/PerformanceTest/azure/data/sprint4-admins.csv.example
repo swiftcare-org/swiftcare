@@ -1,0 +1,3 @@
+username,password,targetId,targetName
+perf.sprint4.admin.001,LoadTest#Pass1,00000000-0000-0000-0000-000000000101,Perf Sprint4 Target 1
+perf.sprint4.admin.002,LoadTest#Pass1,00000000-0000-0000-0000-000000000102,Perf Sprint4 Target 2
