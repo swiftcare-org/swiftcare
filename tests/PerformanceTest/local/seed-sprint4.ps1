@@ -49,8 +49,10 @@ function Get-OrCreateUser(
         $status = $_.Exception.Response.StatusCode.value__
         if ($status -ne 409 -and $status -ne 400) { throw }
 
-        $existing = @(Invoke-RestMethod -Method Get -Uri "$GatewayUrl/api/users" -Headers $headers) |
-            Where-Object { $_.username -eq $account.username } |
+        # Assign first, then pipe: @(Invoke-RestMethod ...) keeps the JSON array as one item,
+        # so the filter would match the whole list and every userId would be returned.
+        $users = Invoke-RestMethod -Method Get -Uri "$GatewayUrl/api/users" -Headers $headers
+        $existing = $users | Where-Object { $_.username -eq $account.username } |
             Select-Object -First 1
         if ($null -eq $existing) { throw }
         return $existing

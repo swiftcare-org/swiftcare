@@ -104,8 +104,10 @@ function Get-OrCreateUser([string]$adminToken, [hashtable]$account) {
         $status = $_.Exception.Response.StatusCode.value__
         if ($status -ne 409 -and $status -ne 400) { throw }
 
-        $existing = @(Invoke-RestMethod -Method Get -Uri "$GatewayUrl/api/users" -Headers $headers) |
-            Where-Object { $_.username -eq $account.username } |
+        # Assign first, then pipe: @(Invoke-RestMethod ...) keeps the JSON array as one item,
+        # so the filter would match the whole list and every userId would be returned.
+        $users = Invoke-RestMethod -Method Get -Uri "$GatewayUrl/api/users" -Headers $headers
+        $existing = $users | Where-Object { $_.username -eq $account.username } |
             Select-Object -First 1
         if ($null -eq $existing) { throw }
         Write-Host "  $($account.username) already exists - reusing (assumes same password)." -ForegroundColor DarkYellow
@@ -149,8 +151,8 @@ for ($i = 1; $i -le $AdminCount; $i++) {
         fullName = $targetName
         role     = "Receptionist"
     }
-    if ([string]::IsNullOrWhiteSpace([string]$target.userId)) {
-        throw "No userId returned for $targetUsername."
+    if ([string]$target.userId -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
+        throw "Expected one userId for $targetUsername, got '$($target.userId)'."
     }
 
     $adminRows.Add("$adminUsername,$UserPassword,$($target.userId),$targetName")
