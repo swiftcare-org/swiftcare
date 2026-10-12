@@ -105,3 +105,15 @@ resource "azurerm_mysql_flexible_database" "prescription" {
     prevent_destroy = true
   }
 }
+
+resource "azurerm_mysql_flexible_database" "notification" {
+  name                = local.notification_database_name
+  resource_group_name = azurerm_resource_group.swiftcare.name
+  server_name         = azurerm_mysql_flexible_server.swiftcare.name
+  charset             = "utf8mb4"
+  collation           = "utf8mb4_0900_ai_ci"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}

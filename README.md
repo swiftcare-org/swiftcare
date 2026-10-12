@@ -511,13 +511,20 @@ The checks only read data, never print response bodies or tokens, and revoke eac
 | Queue | Public display returns the expected shape; today's queue returns 401 without a token and an array for the Receptionist |
 | MedicalRecord | The Doctor's templates return a JSON array |
 | Prescription | Pending prescriptions return a JSON array for the Receptionist |
+| Notification | Today's notification feed returns a JSON array for the Receptionist |
 | Gateway | Health returns 200, then every check above |
+
+A service deployed for the first time has no address in the running gateway, so a check through that gateway could only return 502. A service job therefore skips its own smoke check when the running gateway has no address for it, and the gateway job, which receives every address, runs the check for all services. After a first deployment of a service, release the gateway (`release=gateway`, or `all`).
 
 A release starts the apps it deploys, plus AuthService and the gateway it needs for the smoke checks, when they are stopped. Starting an app does not change its image. Stop the demo apps again after the approved window.
 
 #### Adding a service
 
-Add one entry to `deployment/cd/services.json`, create its Environment values, and add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
+Add one entry to `deployment/cd/services.json`, create its Environment values, add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`, and add its key to the `release` and `rollback_drill` choices. Add a smoke target in `deployment/cd/smoke.sh` for it. Tests fail when any of these is missing. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
+
+#### NotificationService
+
+NotificationService is released like the other services, from `services/NotificationService/Dockerfile`, with its own database `swiftcare_notification`, migration job and Container App. Before its first release, apply the Terraform plan that creates the database, create its scoped SQL user from inside the VNet (procedure in the [Terraform README](deployment/terraform/README.md)), and set these `azure-development` values: variables `AZURE_NOTIFICATION_APP`, `AZURE_NOTIFICATION_MIGRATE_JOB` and `NOTIFICATION_DB_USER`, and secret `NOTIFICATION_DB_PASSWORD`. The plan job needs `AZURE_NOTIFICATION_APP` for every release, so create it before the next run. After the first image push, give the registry pull token read access to the `swiftcare-notification` package before the first migration job. The first release creates the app and the gateway together, because the gateway needs the new internal address.
 
 #### Local checks
 

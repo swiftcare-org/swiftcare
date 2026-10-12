@@ -29,6 +29,7 @@ on:
           - patient
           - queue
           - medical-record
+          - notification
           - prescription
           - gateway
           - frontend
@@ -53,6 +54,7 @@ on:
           - patient
           - queue
           - medical-record
+          - notification
           - prescription
           - gateway
 
@@ -111,6 +113,7 @@ jobs:
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
       AZURE_QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
       AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
+      AZURE_NOTIFICATION_APP: ${{ vars.AZURE_NOTIFICATION_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
@@ -220,6 +223,7 @@ jobs:
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
       AZURE_QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
       AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
+      AZURE_NOTIFICATION_APP: ${{ vars.AZURE_NOTIFICATION_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
       SERVICE_MIGRATE_JOB: ${{ vars[fromJSON(needs.plan.outputs.service_meta)['AuthService'].migrate_job_var] }}
@@ -384,6 +388,7 @@ jobs:
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
       AZURE_QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
       AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
+      AZURE_NOTIFICATION_APP: ${{ vars.AZURE_NOTIFICATION_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       AUTH_BOOTSTRAP_JOB: ${{ vars.AZURE_AUTH_BOOTSTRAP_JOB }}
       SERVICE_MIGRATE_JOB: ${{ vars[fromJSON(needs.plan.outputs.service_meta)[matrix.service].migrate_job_var] }}
@@ -579,6 +584,7 @@ jobs:
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
       AZURE_QUEUE_APP: ${{ vars.AZURE_QUEUE_APP }}
       AZURE_MEDICAL_RECORD_APP: ${{ vars.AZURE_MEDICAL_RECORD_APP }}
+      AZURE_NOTIFICATION_APP: ${{ vars.AZURE_NOTIFICATION_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}

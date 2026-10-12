@@ -39,6 +39,11 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(list(selected), ["prescription"])
         self.assertEqual(set(skipped), set(ALL_KEYS) - {"prescription"})
 
+    def test_notification_change_selects_only_notification(self):
+        selected, skipped = run(["services/NotificationService/Services/NotificationFeedService.cs"])
+        self.assertEqual(list(selected), ["notification"])
+        self.assertEqual(set(skipped), set(ALL_KEYS) - {"notification"})
+
     def test_gateway_change_selects_only_the_gateway(self):
         selected, _ = run(["ApiGateway/appsettings.json"])
         self.assertEqual(list(selected), ["gateway"])
@@ -69,7 +74,7 @@ class SelectionTests(unittest.TestCase):
         for path in (
             "deployment/terraform/main.tf", "docs/guide.md", "tests/E2ETests/Foo.cs", "README.md",
             ".github/workflows/ci.yml", "docker-compose.yml", "deployment/docker/mysql-init/01-create-databases.sh",
-            "SwiftCare.slnx", "services/NotificationService/Program.cs",
+            "SwiftCare.slnx",
         ):
             with self.subTest(path=path):
                 selected, skipped = run([path])
@@ -176,7 +181,7 @@ class ManualModeTests(unittest.TestCase):
 
     def test_unknown_mode_is_rejected(self):
         with self.assertRaises(ValueError):
-            run([], mode="notification")
+            run([], mode="billing")
 
     def test_bootstrap_adds_auth_to_a_release_that_skips_it(self):
         selected, skipped = run(["services/QueueService/Program.cs"], bootstrap=True)
