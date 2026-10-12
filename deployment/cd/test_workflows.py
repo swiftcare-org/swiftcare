@@ -1,10 +1,12 @@
 """Structural checks on the CD workflow that a YAML linter does not catch."""
 
+import json
 import re
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+MANIFEST = json.loads((ROOT / "deployment" / "cd" / "services.json").read_text(encoding="utf-8"))
 CD = (ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
@@ -16,11 +18,12 @@ def jobs(text):
 
 
 JOBS = jobs(CD)
+ENVIRONMENT_LINE = "    environment: ${{ needs.target.outputs.environment }}\n"
 
 
 class CdWorkflowTests(unittest.TestCase):
     def test_expected_jobs_exist(self):
-        for job in ("plan", "deploy-auth", "deploy-services", "gateway-image", "deploy-gateway",
+        for job in ("target", "plan", "deploy-auth", "deploy-services", "gateway-image", "deploy-gateway",
                     "deploy-frontend", "summary"):
             self.assertIn(job, JOBS)
 
@@ -36,7 +39,37 @@ class CdWorkflowTests(unittest.TestCase):
         for job, block in JOBS.items():
             names = set(re.findall(r"secrets(?:\.([A-Z0-9_]+)|\[)", block)) - {"GITHUB_TOKEN"}
             if names:
-                self.assertIn("    environment: azure-development\n", block, job)
+                self.assertIn(ENVIRONMENT_LINE, block, job)
+
+    def test_environment_jobs_wait_for_the_target_job(self):
+        # needs.target is empty in a job that does not list it, which would leave the job
+        # without an Environment and without its secrets.
+        for job, block in JOBS.items():
+            if ENVIRONMENT_LINE in block:
+                needs = re.search(r"(?m)^    needs: (.*)$", block)
+                self.assertIsNotNone(needs, job)
+                self.assertIn("target", needs.group(1), job)
+
+    def test_target_job_runs_before_any_environment(self):
+        # A closed demo window must end the run before any approval request or Azure step.
+        block = JOBS["target"]
+        self.assertIsNone(re.search(r"(?m)^    environment:", block))
+        self.assertNotIn("secrets.", block)
+        self.assertIn("bash deployment/cd/resolve-target.sh", block)
+        self.assertIn("vars.DEMO_WINDOW_DEVELOPMENT", block)
+        self.assertIn("vars.DEMO_WINDOW_PRODUCTION", block)
+        self.assertIn("needs.target.outputs.proceed == 'true'", JOBS["plan"])
+        self.assertIn("needs.target.outputs.proceed == 'true'", JOBS["manual-quality-gate"])
+
+    def test_both_branches_trigger_and_each_environment_has_its_own_queue(self):
+        trigger = CD[CD.index("  workflow_run:\n"):CD.index("  workflow_dispatch:\n")]
+        self.assertIn("      - main\n", trigger)
+        self.assertIn("      - develop\n", trigger)
+        # Pull request CI from develop into main reports head branch develop; only pushes deploy.
+        self.assertIn("github.event.workflow_run.event == 'push'", JOBS["target"])
+        group = re.search(r"(?m)^  group: (.*)$", CD).group(1)
+        self.assertIn("'azure-production'", group)
+        self.assertIn("'azure-development'", group)
 
     def test_only_the_ci_quality_gate_is_called_as_a_workflow(self):
         # A called workflow does not receive environment secrets, so deploy steps stay in cd.yml.
@@ -53,6 +86,23 @@ class CdWorkflowTests(unittest.TestCase):
         block = JOBS["deploy-services"]
         self.assertIn("service: ${{ fromJSON(needs.plan.outputs.services_list || '[]') }}", block)
         self.assertNotIn("include", block.split("steps:")[0])
+
+    def test_every_app_name_variable_is_set_in_each_job_that_resolves_apps(self):
+        # The scripts read each Container App name from an environment variable named in the
+        # manifest, so a service missing from one job's env block fails only at run time.
+        variables = [service["app_var"] for service in MANIFEST["services"]] + [MANIFEST["gateway"]["app_var"]]
+        for job in ("plan", "deploy-auth", "deploy-services", "deploy-gateway"):
+            for variable in variables:
+                self.assertIn(f"${{{{ vars.{variable} }}}}", JOBS[job], f"{job} lacks {variable}")
+
+    def test_manual_choices_cover_every_deployable(self):
+        keys = [service["key"] for service in MANIFEST["services"]] + ["gateway"]
+        for input_name, extra in (("release", ["changed", "all", "frontend"]), ("rollback_drill", ["none"])):
+            block = CD[CD.index(f"      {input_name}:\n"):]
+            block = block.split("        options:\n", 1)[1]
+            options = re.findall(r"^          - (\S+)$", block.split("\n\n", 1)[0], re.M)
+            for key in keys + extra:
+                self.assertIn(key, options, f"{input_name} lacks {key}")
 
 
 if __name__ == "__main__":

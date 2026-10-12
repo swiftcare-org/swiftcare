@@ -17,9 +17,19 @@ resource "azurerm_federated_identity_credential" "github_cd" {
   subject                   = each.value.subject
 }
 
+# Role assignments need the subscription Owner. A new environment starts with
+# deployment_role_assignment_enabled = false; the Owner creates the assignment and it is imported.
 resource "azurerm_role_assignment" "github_cd_contributor" {
+  count = var.deployment_role_assignment_enabled ? 1 : 0
+
   scope                = azurerm_resource_group.swiftcare.id
   role_definition_name = "Contributor"
   principal_id         = azurerm_user_assigned_identity.github_cd.principal_id
   principal_type       = "ServicePrincipal"
+}
+
+# The assignment became conditional in SWC-161; keep the existing development assignment.
+moved {
+  from = azurerm_role_assignment.github_cd_contributor
+  to   = azurerm_role_assignment.github_cd_contributor[0]
 }

@@ -76,6 +76,28 @@
       ]
     },
     {
+      "key": "notification",
+      "name": "NotificationService",
+      "path": "services/NotificationService",
+      "image": "swiftcare-notification",
+      "dockerfile": "services/NotificationService/Dockerfile",
+      "port": 5005,
+      "database": "swiftcare_notification",
+      "app_var": "AZURE_NOTIFICATION_APP",
+      "migrate_job_var": "AZURE_NOTIFICATION_MIGRATE_JOB",
+      "db_user_var": "NOTIFICATION_DB_USER",
+      "db_password_var": "NOTIFICATION_DB_PASSWORD",
+      "connection_setting": "ConnectionStrings__NotificationDb",
+      "db_secret": "notification-db",
+      "gateway_cluster": "notification-cluster",
+      "gateway_destination": "notification-destination",
+      "smoke_roles": ["RECEPTIONIST"],
+      "extra_secrets": [],
+      "extra_env": [
+        "Kafka__BootstrapServers=${KAFKA_BOOTSTRAP_SERVERS}"
+      ]
+    },
+    {
       "key": "patient",
       "name": "PatientService",
       "path": "services/PatientService",

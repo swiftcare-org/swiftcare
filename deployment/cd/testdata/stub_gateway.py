@@ -64,6 +64,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, [])
         if method == "GET" and path == "/api/prescriptions/pending" and role == "Receptionist":
             return self.reply(200, [])
+        if method == "GET" and path == "/api/notifications/today" and role == "Receptionist":
+            return self.reply(200, [])
         if method == "GET" and path == "/api/templates" and role == "Doctor":
             return self.reply(200, [])
         return self.reply(403, {"message": "Forbidden"})

@@ -1,6 +1,6 @@
 # SwiftCare Azure infrastructure
 
-This directory defines stable infrastructure for one Azure development environment. Checked against repository configuration on 2 October 2026; this runbook does not establish live resource state or drift. Import pre-existing resources only when they are absent from the selected state; do not rerun adoption as a routine sprint handover.
+This directory defines stable infrastructure for the Azure development and production environments. Checked against repository configuration on 12 October 2026; this runbook does not establish live resource state or drift. Import pre-existing resources only when they are absent from the selected state; do not rerun adoption as a routine sprint handover.
 
 ## Ownership boundary
 
@@ -9,7 +9,7 @@ Terraform owns stable infrastructure:
 - `swiftcare-rg`
 - `swiftcare-vnet` and its delegated subnets
 - private DNS zones and VNet links
-- `swiftcare-mysql` and the AuthService, PatientService, QueueService, MedicalRecordService and PrescriptionService databases
+- `swiftcare-mysql` and the AuthService, PatientService, QueueService, MedicalRecordService, PrescriptionService and NotificationService databases
 - `swiftcare-logs`
 - `swiftcare-appinsights` (Application Insights, workspace-based on `swiftcare-logs`)
 - `swiftcare-aca-env`
@@ -19,7 +19,7 @@ Terraform owns stable infrastructure:
 
 The CD workflow owns deployable application state:
 
-- Gateway, AuthService, PatientService, QueueService, MedicalRecordService and PrescriptionService Container Apps
+- Gateway, AuthService, PatientService, QueueService, MedicalRecordService, PrescriptionService and NotificationService Container Apps
 - database migration and administrator-bootstrap jobs
 - application images, revisions, ingress and secrets
 - operational ownership of the gateway; its `api.swiftcare.me` hostname/certificate binding is currently a manual prerequisite, not a CD step
@@ -27,7 +27,7 @@ The CD workflow owns deployable application state:
 Do not add CD-owned resources to this Terraform state without an explicit ownership decision.
 CD reconciles apps/jobs/images/ingress/secrets but has no custom-domain certificate command.
 Cloudflare DNS/proxy settings, SQL users/grants, and GitHub Environment/protection settings are also manual.
-Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`; cost budgets and the Notification database remain absent.
+Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`, and a monthly resource-group budget in `cost.tf`. The `swiftcare_notification` database is defined in `database.tf` and, like the other databases, is created empty: its scoped SQL user and grants, and the Notification Container App, migration job and secrets, are created outside Terraform (SQL user manually from inside the VNet, app and job by CD).
 
 ## Prerequisites
 
@@ -77,6 +77,43 @@ sprint_name                     = "sprint-4"
 
 Both real files are ignored by Git. Never add passwords to either file.
 
+## Development and production environments
+
+The same configuration manages two isolated environments in one subscription. Each has its own state key, tfvars file, resource group, network, MySQL server, Container Apps environment, Static Web App, monitoring, budget and deployment identity. Both run only in approved demo windows.
+
+| | Development | Production |
+|---|---|---|
+| tfvars example | `environments/development.tfvars.example` | `environments/production.tfvars.example` |
+| Backend example | `environments/backend-development.hcl.example` | `environments/backend-production.hcl.example` |
+| State key | `azure-development.tfstate` | `azure-production.tfstate` |
+| `name_prefix` | empty (keeps the original `swiftcare-*` names) | `swiftcare-prod` |
+| Resource group | `swiftcare-rg` | `swiftcare-prod-rg` |
+| Address space | `10.20.0.0/16` | `10.30.0.0/16` |
+| Frontend / gateway hosts | `dev.swiftcare.me` / `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me` / `api.swiftcare.me` |
+| OIDC subject | `...:environment:azure-development` | `...:environment:azure-production` |
+
+`name_prefix` changes only Azure resource names. Database names stay `swiftcare_<service>` in both environments because each has its own server and the CD release manifest uses those names. The development gateway host is `api-dev`, not `api.dev`, because Cloudflare's free edge certificate covers one subdomain level.
+
+Copy the examples to the ignored files without `.example`, set real IDs, then select an environment at init time. Always use `-reconfigure` when switching, and keep each environment's MySQL administrator password separate:
+
+```powershell
+terraform -chdir=deployment/terraform init -reconfigure -backend-config="environments/backend-production.hcl"
+terraform -chdir=deployment/terraform plan -input=false -var-file="environments/production.tfvars" -out="production.tfplan"
+```
+
+Existing operators may keep `backend.hcl` and `terraform.tfvars` for development; they are equivalent to the development files.
+
+Creating role assignments needs the subscription Owner, so a new environment starts with `deployment_role_assignment_enabled = false`. After the first apply, the Owner creates the assignment, then the operator sets the variable to `true` and imports it:
+
+```powershell
+$principal = terraform -chdir=deployment/terraform output -raw github_cd_principal_id
+az role assignment create --assignee-object-id $principal --assignee-principal-type ServicePrincipal --role Contributor --scope "/subscriptions/<subscription-id>/resourceGroups/swiftcare-prod-rg"
+$assignment = az role assignment list --assignee $principal --scope "/subscriptions/<subscription-id>/resourceGroups/swiftcare-prod-rg" --role Contributor --query "[0].id" -o tsv
+terraform -chdir=deployment/terraform import -var-file="environments/production.tfvars" "azurerm_role_assignment.github_cd_contributor[0]" $assignment
+```
+
+Domain order: add the `dev.swiftcare.me` and `api-dev.swiftcare.me` records first and move development to them (tfvars values in the development example), which releases `swiftcare.me` and `www.swiftcare.me`; then point those records at production and set `frontend_custom_domains_enabled = true` in production. A domain can be attached to only one Static Web App at a time. The gateway hostnames are bound manually on each gateway Container App, as before.
+
 ## Initialize the backend
 
 From the repository root:
@@ -90,7 +127,7 @@ Use `-backend-config="backend.hcl"` whenever backend initialization is required.
 
 ## Supply the MySQL administrator password
 
-The existing MySQL administrator password is required for import, refresh, plan and apply because Azure treats it as a write-only server argument. It is not an AuthService, PatientService or QueueService database password.
+The existing MySQL administrator password is required for import, refresh, plan and apply because Azure treats it as a write-only server argument. It is not a service database password.
 
 Set it without displaying it:
 
@@ -123,6 +160,8 @@ $env:IMPORT_CUSTOM_DOMAINS = "true"
 $env:IMPORT_MESSAGING = "true"
 ```
 
+For production also set `$env:NAME_PREFIX = "swiftcare-prod"` and the production resource group, server, Static Web App and identity names; for development after the domain move set `$env:FRONTEND_DOMAIN = "dev.swiftcare.me"` and `$env:FRONTEND_WWW_DOMAIN = ""`. The script uses whichever backend was last initialized, so initialize the intended environment first.
+
 Run the import script from the Terraform directory so its `terraform` commands use the correct configuration:
 
 ```powershell
@@ -131,9 +170,9 @@ Push-Location deployment/terraform
 Pop-Location
 ```
 
-The script skips resources already in state and imports only the historical subset it lists. It also selects the CLI subscription. Its coverage is incomplete: Application Insights and the Queue, MedicalRecord, and Prescription databases are omitted. If adoption is needed, review every Terraform resource against state/Azure and separately import the missing existing resources before planning. Do not treat the script's success as a complete adoption check.
+The script skips resources already in state and imports every other address the configuration defines: the network, Log Analytics, Application Insights, the Container Apps environment, MySQL and all six databases, messaging (when `IMPORT_MESSAGING=true`), the Static Web App and its domains (when `IMPORT_CUSTOM_DOMAINS=true`), the SWC-132 action group, tests and alerts, the budget (when it exists in Azure), and the deployment identity with its credentials and role assignment. It also selects the CLI subscription. Each import is an authorized state change; run the script only when state is missing or being rebuilt.
 
-The omitted Terraform addresses are `azurerm_application_insights.swiftcare`, `azurerm_mysql_flexible_database.queue`, `azurerm_mysql_flexible_database.medical_record`, and `azurerm_mysql_flexible_database.prescription`. Their Azure IDs are respectively under `Microsoft.Insights/components/<project>-appinsights` and `Microsoft.DBforMySQL/flexibleServers/<server>/databases/<database>`. Obtain the actual IDs read-only and authorize each import. Updating the script is outstanding infrastructure work, not included in this documentation audit.
+Importing the availability resources reads their live `enabled` flags and recipients into state. The next plan then shows any difference from the local `availability_enabled` and `availability_alert_emails` inputs; set those inputs to the intended state before applying. A successful script run is not a complete adoption check on its own: compare `state list` with the configuration and review a saved plan.
 
 Verify the result:
 
@@ -142,7 +181,7 @@ terraform -chdir=deployment/terraform state list
 (terraform -chdir=deployment/terraform state list | Measure-Object -Line).Lines
 ```
 
-With messaging and both frontend domains enabled and the default two OIDC credentials, the configuration expands to 36 managed resource instances, including all five databases and the five availability monitoring resources. Counts vary with switches/credential inputs and do not prove the resources exist in state. Check addresses individually. `medical_record` has a hardcoded `swiftcare_medical_record` name in `database.tf`, so changing `project_name` alone does not isolate every database name.
+With messaging and both frontend domains enabled and the default two OIDC credentials, the configuration expands to 38 managed resource instances, including all six databases, the five availability monitoring resources and the budget. Counts vary with switches/credential inputs and do not prove the resources exist in state. Check addresses individually. Every database name derives from `project_name`.
 
 ## Review before applying
 
@@ -180,7 +219,7 @@ terraform -chdir=deployment/terraform output -raw application_insights_connectio
 ```
 
 Keep the connection string out of the repository and chat.
-Inspect any historical trial resource/alert and dependencies before arranging an authorized cleanup; do not assume it still exists.
+The historical `swiftcare-appinsights-trial` component no longer exists, but on 12 October its `Failure Anomalies - swiftcare-appinsights-trial` smart detector rule was still present and enabled, scoped to the deleted component. It is outside Terraform; remove it only through an authorized cleanup after a fresh read-only check.
 Every application has optional Azure Monitor OpenTelemetry registration and a distinct role name.
 `/health` is liveness only, without MySQL/Kafka checks.
 
@@ -297,7 +336,149 @@ Retain sanitized Availability screenshots, location aggregates, plan/apply actio
 
 References: [Microsoft availability tests and agent firewall guidance](https://learn.microsoft.com/en-us/azure/azure-monitor/app/availability), [AzureRM 5.2.0 alert criteria](https://github.com/hashicorp/terraform-provider-azurerm/blob/v5.2.0/website/docs/r/monitor_metric_alert.html.markdown), and [Cloudflare Skip limitations](https://developers.cloudflare.com/waf/custom-rules/skip/).
 
+## Service SQL users
+
+Each service connects with its own MySQL user that has privileges on its own database only. Terraform creates the databases; it does not create users, because MySQL accepts connections only from inside the VNet and the provider cannot reach it. Create or rotate a service user with a temporary manual Container Apps job in `swiftcare-aca-env`, which runs inside the VNet, then delete the job.
+
+Authorization is required before running this: it writes to the shared MySQL server and creates an Azure resource. Read the target server and database with `az mysql flexible-server db list` first and confirm the database exists (for Notification, after the Terraform apply).
+
+Prerequisites: signed in to the Azure for Students subscription, the existing administrator password (`swiftcareadmin`) typed into the shell and never stored, and the database already created. The job image `mysql:8.4` is the public Docker Hub client image.
+
+Run the steps in Windows PowerShell from the repository folder. User names follow `swiftcare_<service>_user` (for example `swiftcare_auth_user`, `swiftcare_notification_user`), so the discovery query used in earlier versions of this procedure is no longer needed.
+
+Step 1 - set the shell variables. The new password uses letters and digits only so it is valid inside a connection string. The final line must show length 32 and many distinct characters; one distinct character means the random generator failed, so stop.
+
+```powershell
+$sub = "0f585319-2092-4ed0-993a-b30886e4e07c"
+$rg = "swiftcare-rg"
+$mysqlHost = "swiftcare-mysql.mysql.database.azure.com"
+$jobName = "swiftcare-sqluser-tmp"
+$newUser = "swiftcare_notification_user"
+$database = "swiftcare_notification"
+$adminSecure = Read-Host "swiftcareadmin password" -AsSecureString
+$adminPassword = [Net.NetworkCredential]::new("", $adminSecure).Password
+$bytes = [byte[]]::new(32)
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
+$newPassword = ([Convert]::ToBase64String($bytes) -replace '[^A-Za-z0-9]', '').Substring(0, 32)
+"password length: $($newPassword.Length), distinct characters: $(($newPassword.ToCharArray() | Sort-Object -Unique).Count)"
+```
+
+Step 2 - define two helpers. `Invoke-SqlJob` runs one shell script as a short-lived job inside the VNet. The Azure CLI cannot take a bare `-c` argument, so the job is created with the secrets and settings first, and its command is then set from a small YAML file that holds no secrets. The script is sent base64-encoded so it needs no quoting. The function refuses to start a job whose command was not set, reports a delete that failed, and returns the execution name. `Show-SqlJobResult` reads the result lines from Log Analytics, because the job log stream is often empty for a job this short; ingestion can take a few minutes.
+
+```powershell
+function Invoke-SqlJob([string]$Script) {
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Script.Replace("`r`n", "`n")))
+  az containerapp job create --subscription $sub -g $rg -n $jobName --environment swiftcare-aca-env `
+    --trigger-type Manual --replica-timeout 300 --replica-retry-limit 0 --image mysql:8.4 `
+    --cpu 0.25 --memory 0.5Gi `
+    --secrets "mysql-admin=$adminPassword" "new-db=$newPassword" `
+    --env-vars "MYSQL_PWD=secretref:mysql-admin" "NEW_PWD=secretref:new-db" "SQL_HOST=$mysqlHost" "SQL_ADMIN=swiftcareadmin" "NEW_USER=$newUser" `
+    --only-show-errors --query name -o tsv
+  $yamlPath = Join-Path $env:TEMP "sqluser-job.yaml"
+  $yaml = @"
+properties:
+  template:
+    containers:
+      - name: $jobName
+        image: mysql:8.4
+        command: ["/bin/sh"]
+        args: ["-c", "echo $encoded | base64 -d | sh"]
+        resources:
+          cpu: 0.25
+          memory: 0.5Gi
+        env:
+          - name: MYSQL_PWD
+            secretRef: mysql-admin
+          - name: NEW_PWD
+            secretRef: new-db
+          - name: SQL_HOST
+            value: $mysqlHost
+          - name: SQL_ADMIN
+            value: swiftcareadmin
+          - name: NEW_USER
+            value: $newUser
+"@
+  [IO.File]::WriteAllText($yamlPath, $yaml, (New-Object Text.UTF8Encoding $false))
+  az containerapp job update --subscription $sub -g $rg -n $jobName --yaml $yamlPath --only-show-errors --query name -o tsv
+  Remove-Item $yamlPath -ErrorAction SilentlyContinue
+  $command = az containerapp job show --subscription $sub -g $rg -n $jobName --query "properties.template.containers[0].command[0]" -o tsv
+  $execution = $null
+  if ($command -eq "/bin/sh") {
+    $execution = az containerapp job start --subscription $sub -g $rg -n $jobName --query name -o tsv
+    do { Start-Sleep 10; $status = az containerapp job execution show --subscription $sub -g $rg -n $jobName --job-execution-name $execution --query properties.status -o tsv } while ($status -in "Running", "Processing", "")
+    "Execution $execution finished: $status"
+  } else {
+    "STOP: the job command was not set (got '$command'); the job was not started."
+  }
+  az containerapp job delete --subscription $sub -g $rg -n $jobName --yes --only-show-errors
+  $left = az containerapp job list --subscription $sub -g $rg --query "[?name=='$jobName'] | length(@)" -o tsv
+  if ($left -ne "0") { "WARNING: the temporary job $jobName still exists and holds the administrator password as a secret. Delete it before doing anything else." }
+  $script:lastExecution = $execution
+}
+
+function Show-SqlJobResult([string]$Execution = $script:lastExecution) {
+  $workspace = az monitor log-analytics workspace show --subscription $sub -g $rg -n swiftcare-logs --query customerId -o tsv
+  $query = "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(1h) | where ContainerGroupName_s startswith '$Execution' | where Log_s has 'PASS' or Log_s has 'FAIL' or Log_s has 'ERROR' | project Log_s"
+  $file = Join-Path $env:TEMP "sqluser-query.json"
+  [IO.File]::WriteAllText($file, (@{ query = $query } | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
+  for ($i = 0; $i -lt 12; $i++) {
+    $result = az rest --method post --resource https://api.loganalytics.io --uri "https://api.loganalytics.io/v1/workspaces/$workspace/query" --body "@$file" | ConvertFrom-Json
+    $rows = $result.tables[0].rows
+    if ($rows.Count -gt 0) { $rows | ForEach-Object { $_[0] }; break }
+    "waiting for the log lines to arrive ($($i + 1)/12)..."
+    Start-Sleep 30
+  }
+  Remove-Item $file -ErrorAction SilentlyContinue
+}
+```
+
+Step 3 - create the user and grant privileges on its own database only. The script is repeatable: it creates the user if missing and always sets the password. It must print `finished: Succeeded`.
+
+```powershell
+Invoke-SqlJob @'
+mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$SQL_ADMIN" -e "CREATE USER IF NOT EXISTS '$NEW_USER'@'%' IDENTIFIED BY '$NEW_PWD'; ALTER USER '$NEW_USER'@'%' IDENTIFIED BY '$NEW_PWD'; GRANT ALL PRIVILEGES ON swiftcare_notification.* TO '$NEW_USER'@'%'; FLUSH PRIVILEGES;"
+'@
+```
+
+Change `swiftcare_notification` in the script for another service. A job that finishes `Succeeded` only means the script ran, so the next step is what proves the result.
+
+Step 4 - verify as the new user. Both lines must appear: `own database: PASS` and `other database: PASS (refused)`. A refused `USE` on another database proves the grant is scoped; stop if the second line says `FAIL`.
+
+```powershell
+Invoke-SqlJob @'
+MYSQL_PWD="$NEW_PWD" mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$NEW_USER" -e "USE swiftcare_notification; SELECT 1" >/dev/null 2>&1 && echo "own database: PASS" || echo "own database: FAIL"
+MYSQL_PWD="$NEW_PWD" mysql --ssl-mode=REQUIRED -h "$SQL_HOST" -u "$NEW_USER" -e "USE swiftcare_auth" >/dev/null 2>&1 && echo "other database: FAIL (reachable)" || echo "other database: PASS (refused)"
+'@
+Show-SqlJobResult
+```
+
+Step 5 - store the password where it is needed, then clear the shell. Copy it to the clipboard, paste it as the GitHub Environment secret `<SERVICE>_DB_PASSWORD` in `azure-development`, and set the user name as the matching variable `<SERVICE>_DB_USER`. Do not print or paste the value anywhere else. Do this before clearing the variables, because the password cannot be recovered afterwards; if it is lost, repeat Step 3, which sets a new one.
+
+```powershell
+Set-Clipboard $newPassword
+```
+
+Step 6 - clear the shell and confirm that no temporary job remains.
+
+```powershell
+Set-Clipboard $null
+Remove-Variable adminPassword, adminSecure, newPassword, bytes, rng
+az containerapp job list --subscription $sub -g $rg --query "[].name" -o tsv
+```
+
+The list must not contain `swiftcare-sqluser-tmp`. If it does, delete it with `az containerapp job delete --subscription $sub -g $rg -n swiftcare-sqluser-tmp --yes`, because the job holds the administrator password as a secret. Rotating a password means repeating Steps 1 to 5 and updating the Environment secret before the next release.
+
 ## Cost controls
+
+Measured spend for `swiftcare-rg` from 1 to 12 October 2026 was about USD 54.50: Container Instances (Kafka and ZooKeeper) 36.78, NAT Gateway 11.61, Azure Monitor 4.46, network and DNS the rest; MySQL and Log Analytics showed no charge. The messaging layer charges around the clock even when every app is stopped, so it is the largest cost while the demo is OFF.
+
+### Monthly budget
+
+`cost.tf` defines `swiftcare-monthly-budget` on the resource group: `budget_monthly_amount` (default 30, in the billing currency; 0 removes it) with e-mail notifications at 50, 80 and 100 percent of actual spend and above 100 percent of forecast spend. Recipients are `availability_alert_emails` from ignored tfvars plus the subscription Owner role. A budget only alerts; it never stops resources. `budget_start_date` must be the first day of a month and changing it replaces the budget. Verify after apply with `az consumption budget list --subscription <id> --resource-group swiftcare-rg -o table`.
+
+### Removing and recreating messaging
 
 The paid messaging layer is ephemeral. To remove its Container Instance, NAT Gateway, public IP and Kafka DNS record while retaining the VNet, delegated subnet and private DNS zone:
 
@@ -315,25 +496,25 @@ terraform -chdir=deployment/terraform show "messaging-on.tfplan"
 terraform -chdir=deployment/terraform apply "messaging-on.tfplan"
 ```
 
-Terraform destroys and recreates these resources; it does not pause them. The new private IP is written automatically to the Kafka private DNS record.
+Terraform destroys and recreates these resources; it does not pause them. The new private IP is written automatically to the Kafka private DNS record, so `KAFKA_BOOTSTRAP_SERVERS` does not change. After applying a `-var` plan, set the same `messaging_enabled` value in local `terraform.tfvars`; otherwise the next baseline plan proposes reversing it. While messaging is removed, CD refuses backend releases at its data-layer check; frontend-only releases still work. Azure has no topic-initialization step, so a recreated broker relies on Kafka's default topic auto-creation; verify check-in to queue delivery in the first window after recreating it.
 
-MySQL runtime start/stop are operational actions rather than infrastructure changes. CD sets `min-replicas=1` and `max-replicas=1` for all five services and the gateway. Stopping apps does not stop MySQL, Kafka, or NAT charges. Removing messaging destroys ephemeral broker data/offsets; there is no volume or explicit Azure topic-provisioning step, so coordinate data loss and topic/consumer recovery before approving the plan.
+MySQL runtime start/stop are operational actions rather than infrastructure changes. CD sets `min-replicas=1` and `max-replicas=1` for all six services and the gateway. Stopping apps does not stop MySQL, Kafka, or NAT charges. Removing messaging destroys ephemeral broker data/offsets; there is no volume or explicit Azure topic-provisioning step, so coordinate data loss and topic/consumer recovery before approving the plan.
 
-For an approved shutdown, ensure no CD deployment is running/queued, pause the availability tests and alerts through a reviewed Terraform maintenance plan, stop all six application Container Apps (including Prescription), and verify `Stopped`.
+For an approved shutdown, ensure no CD deployment is running/queued, pause the availability tests and alerts through a reviewed Terraform maintenance plan, stop all seven application Container Apps (including Prescription and Notification), and verify `Stopped`.
 Any messaging removal and MySQL shutdown require separate approval; removing messaging destroys broker data and offsets.
 Retained storage/other resources can still incur charges.
 Document who approved the window and the restart owner.
 
-For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD releases only the changed deployables. Each release starts the apps it deploys, plus AuthService and the gateway it needs for its smoke checks, and waits for a ready revision for every app, Prescription included. A release with `release=all` starts all six apps. Apps that are not part of the release keep their current state, so check all six app states, revisions and images after a window. Smoke checks sign in with the synthetic `SMOKE_*` accounts and cover Auth, Patient, Queue, MedicalRecord and Prescription routing through the gateway. Also check custom-domain health, the full clinical journey, Kafka flow and frontend behavior, which the smoke checks do not cover. Image rollback applies to the failed deployable only and does not undo migrations or configuration.
+For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD releases only the changed deployables. Each release starts the apps it deploys, plus AuthService and the gateway it needs for its smoke checks, and waits for a ready revision for every app, Prescription included. A release with `release=all` starts all seven apps. Apps that are not part of the release keep their current state, so check all seven app states, revisions and images after a window. Smoke checks sign in with the synthetic `SMOKE_*` accounts and cover Auth, Patient, Queue, MedicalRecord, Prescription and Notification routing through the gateway. Also check custom-domain health, the full clinical journey, Kafka flow and frontend behavior, which the smoke checks do not cover. Image rollback applies to the failed deployable only and does not undo migrations or configuration.
 
 ### Approved demo and test windows
 
 The shared development apps run only for an approved demo or test, then return to `Stopped`.
 Starting an existing app resumes its deployed image; it does not deploy a new release.
 Record each window's start/end time in Asia/Colombo, responsible operator and cost owner before startup.
-Check no CD run is active or queued, dependencies are ready, all six apps have ready replicas and frontend/gateway health return HTTP 200 before enabling monitoring.
+Check no CD run is active or queued, dependencies are ready, all seven apps have ready replicas and frontend/gateway health return HTTP 200 before enabling monitoring.
 Use a reviewed saved Terraform plan with `availability_enabled=true` to resume the two tests and two alerts during the approved window.
-Before the window ends, apply a reviewed saved plan with `availability_enabled=false`, verify both tests and both alerts report disabled, then stop and verify all six apps.
+Before the window ends, apply a reviewed saved plan with `availability_enabled=false`, verify both tests and both alerts report disabled, then stop and verify all seven apps.
 The disabled resources remain provisioned for the next window; the action group and telemetry are retained.
 This schedule is an operator procedure, not an implemented automatic scheduler.
 Changing backend locks requires a separately authorized checked lock ID; never bypass locking with `-lock=false`.

@@ -20,21 +20,25 @@ fi
 
 RESOURCE_GROUP="${RESOURCE_GROUP:-swiftcare-rg}"
 PROJECT_NAME="${PROJECT_NAME:-swiftcare}"
-MYSQL_SERVER_NAME="${MYSQL_SERVER_NAME:-${PROJECT_NAME}-mysql}"
-STATIC_WEB_APP_NAME="${STATIC_WEB_APP_NAME:-${PROJECT_NAME}-web}"
-DEPLOYMENT_IDENTITY_NAME="${DEPLOYMENT_IDENTITY_NAME:-${PROJECT_NAME}-github-cd}"
+# Azure resource names follow NAME_PREFIX (swiftcare-prod for production); database names keep
+# PROJECT_NAME, as in locals.tf.
+NAME_PREFIX="${NAME_PREFIX:-$PROJECT_NAME}"
+MYSQL_SERVER_NAME="${MYSQL_SERVER_NAME:-${NAME_PREFIX}-mysql}"
+STATIC_WEB_APP_NAME="${STATIC_WEB_APP_NAME:-${NAME_PREFIX}-web}"
+DEPLOYMENT_IDENTITY_NAME="${DEPLOYMENT_IDENTITY_NAME:-${NAME_PREFIX}-github-cd}"
 FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-swiftcare.me}"
-FRONTEND_WWW_DOMAIN="${FRONTEND_WWW_DOMAIN:-www.swiftcare.me}"
+# Set FRONTEND_WWW_DOMAIN="" for an environment without a second domain (development).
+FRONTEND_WWW_DOMAIN="${FRONTEND_WWW_DOMAIN-www.swiftcare.me}"
 IMPORT_CUSTOM_DOMAINS="${IMPORT_CUSTOM_DOMAINS:-false}"
 IMPORT_MESSAGING="${IMPORT_MESSAGING:-true}"
 
 BASE="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers"
-VNET_ID="${BASE}/Microsoft.Network/virtualNetworks/${PROJECT_NAME}-vnet"
+VNET_ID="${BASE}/Microsoft.Network/virtualNetworks/${NAME_PREFIX}-vnet"
 MYSQL_SERVER_ID="${BASE}/Microsoft.DBforMySQL/flexibleServers/${MYSQL_SERVER_NAME}"
-MYSQL_DNS_ID="${BASE}/Microsoft.Network/privateDnsZones/${PROJECT_NAME}.private.mysql.database.azure.com"
-MESSAGING_DNS_ID="${BASE}/Microsoft.Network/privateDnsZones/${PROJECT_NAME}.internal"
-NAT_ID="${BASE}/Microsoft.Network/natGateways/${PROJECT_NAME}-messaging-nat"
-PUBLIC_IP_ID="${BASE}/Microsoft.Network/publicIPAddresses/${PROJECT_NAME}-messaging-nat-ip"
+MYSQL_DNS_ID="${BASE}/Microsoft.Network/privateDnsZones/${NAME_PREFIX}.private.mysql.database.azure.com"
+MESSAGING_DNS_ID="${BASE}/Microsoft.Network/privateDnsZones/${NAME_PREFIX}.internal"
+NAT_ID="${BASE}/Microsoft.Network/natGateways/${NAME_PREFIX}-messaging-nat"
+PUBLIC_IP_ID="${BASE}/Microsoft.Network/publicIPAddresses/${NAME_PREFIX}-messaging-nat-ip"
 IDENTITY_ID="${BASE}/Microsoft.ManagedIdentity/userAssignedIdentities/${DEPLOYMENT_IDENTITY_NAME}"
 STATIC_WEB_APP_ID="${BASE}/Microsoft.Web/staticSites/${STATIC_WEB_APP_NAME}"
 
@@ -61,9 +65,11 @@ import_if_missing azurerm_subnet.mysql "${VNET_ID}/subnets/mysql-subnet"
 import_if_missing azurerm_subnet.messaging "${VNET_ID}/subnets/messaging-subnet"
 
 import_if_missing azurerm_log_analytics_workspace.swiftcare \
-  "${BASE}/Microsoft.OperationalInsights/workspaces/${PROJECT_NAME}-logs"
+  "${BASE}/Microsoft.OperationalInsights/workspaces/${NAME_PREFIX}-logs"
+import_if_missing azurerm_application_insights.swiftcare \
+  "${BASE}/Microsoft.Insights/components/${NAME_PREFIX}-appinsights"
 import_if_missing azurerm_container_app_environment.swiftcare \
-  "${BASE}/Microsoft.App/managedEnvironments/${PROJECT_NAME}-aca-env"
+  "${BASE}/Microsoft.App/managedEnvironments/${NAME_PREFIX}-aca-env"
 
 import_if_missing azurerm_private_dns_zone.mysql "$MYSQL_DNS_ID"
 import_if_missing azurerm_private_dns_zone_virtual_network_link.mysql \
@@ -73,6 +79,14 @@ import_if_missing azurerm_mysql_flexible_database.auth \
   "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_auth"
 import_if_missing azurerm_mysql_flexible_database.patient \
   "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_patient"
+import_if_missing azurerm_mysql_flexible_database.queue \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_queue"
+import_if_missing azurerm_mysql_flexible_database.medical_record \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_medical_record"
+import_if_missing azurerm_mysql_flexible_database.prescription \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_prescription"
+import_if_missing azurerm_mysql_flexible_database.notification \
+  "${MYSQL_SERVER_ID}/databases/${PROJECT_NAME}_notification"
 
 import_if_missing azurerm_private_dns_zone.messaging "$MESSAGING_DNS_ID"
 import_if_missing azurerm_private_dns_zone_virtual_network_link.messaging \
@@ -86,9 +100,26 @@ if [[ "$IMPORT_MESSAGING" == "true" ]]; then
   import_if_missing 'azurerm_subnet_nat_gateway_association.messaging[0]' \
     "${VNET_ID}/subnets/messaging-subnet"
   import_if_missing 'azurerm_container_group.messaging[0]' \
-    "${BASE}/Microsoft.ContainerInstance/containerGroups/${PROJECT_NAME}-messaging"
+    "${BASE}/Microsoft.ContainerInstance/containerGroups/${NAME_PREFIX}-messaging"
   import_if_missing 'azurerm_private_dns_a_record.kafka[0]' \
     "${MESSAGING_DNS_ID}/A/kafka"
+fi
+
+# SWC-132 availability monitoring. Importing reads the live enabled flags and recipients;
+# the next plan shows any difference from the local availability inputs.
+import_if_missing azurerm_monitor_action_group.availability \
+  "${BASE}/Microsoft.Insights/actionGroups/${NAME_PREFIX}-availability-team"
+for target in frontend gateway; do
+  import_if_missing "azurerm_application_insights_standard_web_test.availability[\"${target}\"]" \
+    "${BASE}/Microsoft.Insights/webTests/${NAME_PREFIX}-${target}-availability"
+  import_if_missing "azurerm_monitor_metric_alert.availability[\"${target}\"]" \
+    "${BASE}/Microsoft.Insights/metricAlerts/${NAME_PREFIX}-${target}-availability-failure"
+done
+
+BUDGET_NAME="${NAME_PREFIX}-monthly-budget"
+if az consumption budget show --resource-group "$RESOURCE_GROUP" --budget-name "$BUDGET_NAME" >/dev/null 2>&1; then
+  import_if_missing 'azurerm_consumption_budget_resource_group.monthly[0]' \
+    "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}"
 fi
 
 import_if_missing azurerm_static_web_app.swiftcare "$STATIC_WEB_APP_ID"
@@ -96,8 +127,10 @@ import_if_missing azurerm_static_web_app.swiftcare "$STATIC_WEB_APP_ID"
 if [[ "$IMPORT_CUSTOM_DOMAINS" == "true" ]]; then
   import_if_missing 'azurerm_static_web_app_custom_domain.apex[0]' \
     "${STATIC_WEB_APP_ID}/customDomains/${FRONTEND_DOMAIN}"
-  import_if_missing 'azurerm_static_web_app_custom_domain.www[0]' \
-    "${STATIC_WEB_APP_ID}/customDomains/${FRONTEND_WWW_DOMAIN}"
+  if [[ -n "$FRONTEND_WWW_DOMAIN" ]]; then
+    import_if_missing 'azurerm_static_web_app_custom_domain.www[0]' \
+      "${STATIC_WEB_APP_ID}/customDomains/${FRONTEND_WWW_DOMAIN}"
+  fi
 fi
 
 import_if_missing azurerm_user_assigned_identity.github_cd "$IDENTITY_ID"
@@ -120,11 +153,12 @@ ROLE_ASSIGNMENT_ID=$(az role assignment list \
   --output tsv)
 
 if [[ -z "$ROLE_ASSIGNMENT_ID" ]]; then
-  echo "The GitHub identity has no Contributor assignment on ${RESOURCE_GROUP}." >&2
-  exit 1
+  # A new environment has no assignment until the subscription Owner creates it; keep
+  # deployment_role_assignment_enabled = false until then.
+  echo "The GitHub identity has no Contributor assignment on ${RESOURCE_GROUP}; skipped." >&2
+else
+  import_if_missing 'azurerm_role_assignment.github_cd_contributor[0]' "$ROLE_ASSIGNMENT_ID"
 fi
-
-import_if_missing azurerm_role_assignment.github_cd_contributor "$ROLE_ASSIGNMENT_ID"
 
 echo
 echo "Import completed. Run terraform plan and inspect every proposed change."

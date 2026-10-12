@@ -45,7 +45,7 @@ jobs:
             services/QueueService/Dockerfile
             services/MedicalRecordService/Dockerfile
             services/PrescriptionService/Dockerfile
-            tests/E2ETests/Infrastructure/NotificationService.Dockerfile
+            services/NotificationService/Dockerfile
             tests/E2ETests/E2ETests.csproj
             deployment/terraform/versions.tf
             deployment/terraform/.terraform.lock.hcl
@@ -591,6 +591,16 @@ jobs:
           cache-from: type=gha,scope=swiftcare-prescription
           cache-to: type=gha,mode=max,scope=swiftcare-prescription
 
+      - name: Build the NotificationService image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/NotificationService/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=swiftcare-notification
+          cache-to: type=gha,mode=max,scope=swiftcare-notification
+
   container-scan:
     name: Scan container image for CVEs (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -619,6 +629,9 @@ jobs:
           - service: prescription
             dockerfile: services/PrescriptionService/Dockerfile
             scope: swiftcare-prescription
+          - service: notification
+            dockerfile: services/NotificationService/Dockerfile
+            scope: swiftcare-notification
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -697,9 +710,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Pinned by version and digest so the scanner only changes through a reviewed commit.
       - name: Run gitleaks
         run: |
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+          docker run --rm -v "$PWD:/repo" \
+            zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source="/repo" -v --redact --exit-code 1
 
   validate-migrations:
@@ -713,6 +728,7 @@ jobs:
       QUEUE_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_queue;User Id=root;Password=ci-only-root-password;"
       MEDICAL_RECORD_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_medical_record;User Id=root;Password=ci-only-root-password;"
       PRESCRIPTION_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_prescription;User Id=root;Password=ci-only-root-password;"
+      NOTIFICATION_DB_CONNECTION: "Server=127.0.0.1;Port=3306;Database=swiftcare_notification;User Id=root;Password=ci-only-root-password;"
     services:
       mysql:
         image: mysql:8.4
@@ -797,6 +813,14 @@ jobs:
       - name: Check PrescriptionService for model changes without a migration
         if: hashFiles('services/PrescriptionService/PrescriptionService.csproj') != ''
         run: dotnet ef migrations has-pending-model-changes --project services/PrescriptionService
+
+      - name: Apply NotificationService migrations to a clean database
+        if: hashFiles('services/NotificationService/NotificationService.csproj') != ''
+        run: dotnet ef database update --project services/NotificationService --connection "$NOTIFICATION_DB_CONNECTION"
+
+      - name: Check NotificationService for model changes without a migration
+        if: hashFiles('services/NotificationService/NotificationService.csproj') != ''
+        run: dotnet ef migrations has-pending-model-changes --project services/NotificationService
 
   code-analysis:
     name: Analyze code (${{ matrix.language }})

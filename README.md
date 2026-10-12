@@ -354,11 +354,11 @@ A service must never query or modify another service's database. Local and CI mi
 
 `.env.example` contains safe local placeholders. Real passwords, tokens, JWT keys, Azure credentials, and connection strings must remain in local `.env` files or approved secret stores.
 
-The CD workflow reads deployment configuration from the `azure-development` GitHub Environment. Non-sensitive Azure resource identifiers, region, application/job/container names, endpoints, JWT issuer/audience, database username, frontend origins, and initial administrator display name belong in environment variables. Passwords, registry credentials, JWT signing material, gateway trust material, the Static Web Apps deployment token, and optional bootstrap credentials belong in environment secrets.
+The CD workflow reads deployment configuration from the GitHub Environment of its target, `azure-development` or `azure-production`; both use the same variable and secret names with their own values, and no secret value is shared between them except, optionally, the registry pull token. Non-sensitive Azure resource identifiers, region, application/job/container names, endpoints, JWT issuer/audience, database username, frontend origins, and initial administrator display name belong in environment variables. Passwords, registry credentials, JWT signing material, gateway trust material, the Static Web Apps deployment token, and optional bootstrap credentials belong in environment secrets.
 
 Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. Custom-domain deployment requires `GATEWAY_ORIGIN`, `FRONTEND_ORIGIN`, and `FRONTEND_WWW_ORIGIN` to contain HTTPS origins without trailing slashes. AuthService, PatientService, and QueueService use separate non-administrator MySQL accounts restricted to `swiftcare_auth`, `swiftcare_patient`, and `swiftcare_queue` respectively, never the flexible-server administrator account.
 
-PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. MedicalRecordService deployment requires `AZURE_MEDICAL_RECORD_APP` (for example, `swiftcare-medical-record`), `AZURE_MEDICAL_RECORD_MIGRATE_JOB` (for example, `swiftcare-medical-record-migrate`), and `MEDICAL_RECORD_DB_USER` environment variables plus the `MEDICAL_RECORD_DB_PASSWORD` environment secret. The medical-record account needs privileges only on `swiftcare_medical_record`; create that account inside the Azure VNet before running CD and keep its password in the `azure-development` GitHub Environment secret. Review and apply the Terraform plan that creates `swiftcare_medical_record` first. If the database already exists outside Terraform state, import it instead of attempting to create it again. Production must use a separate protected GitHub Environment and authorized reviewers when it is introduced.
+PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. MedicalRecordService deployment requires `AZURE_MEDICAL_RECORD_APP` (for example, `swiftcare-medical-record`), `AZURE_MEDICAL_RECORD_MIGRATE_JOB` (for example, `swiftcare-medical-record-migrate`), and `MEDICAL_RECORD_DB_USER` environment variables plus the `MEDICAL_RECORD_DB_PASSWORD` environment secret. The medical-record account needs privileges only on `swiftcare_medical_record`; create that account inside the Azure VNet before running CD and keep its password in the `azure-development` GitHub Environment secret. Review and apply the Terraform plan that creates `swiftcare_medical_record` first. If the database already exists outside Terraform state, import it instead of attempting to create it again. Production uses the separate `azure-production` Environment, which requires a reviewer and accepts only `main`.
 
 ## CI/CD
 
@@ -452,7 +452,21 @@ The **Mutation testing** job runs one leg per service on pull requests into `dev
 
 ### Continuous deployment
 
-A successful CI run for `main` starts CD automatically. `workflow_dispatch` first runs the CI quality gate for the selected branch (without mutation testing, which stays in direct CI runs) and can then deploy that branch for testing.
+CD releases to two environments in the same Azure subscription, and only during approved demo windows:
+
+| | Development | Production |
+|---|---|---|
+| GitHub Environment | `azure-development` | `azure-production` |
+| Automatic trigger | Successful CI on `develop` | Successful CI on `main` |
+| Manual trigger | Any reviewed branch, `target=development` | `main` only, `target=production` |
+| Window variable (repository) | `DEMO_WINDOW_DEVELOPMENT` | `DEMO_WINDOW_PRODUCTION` |
+| Public hosts | `dev.swiftcare.me`, `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me`, `api.swiftcare.me` |
+
+GitHub starts a `workflow_run` workflow from the copy of `cd.yml` on the default branch (`main`), so the automatic triggers follow whatever `cd.yml` is on `main`: a change to them takes effect only after it reaches `main`. Manual runs use `cd.yml` from the selected branch.
+
+The first job, `target`, picks the environment and reads its window variable. Unless the value is exactly `true`, the run ends there with a notice: no Environment approval is requested and Azure is not touched. A manual production run from any ref other than `main` fails in the same job. Each environment has its own concurrency queue. Open a window by setting the variable to `true` (repository Settings > Secrets and variables > Actions > Variables) and close it by setting `false` when the window ends.
+
+`workflow_dispatch` first runs the CI quality gate for the selected branch (without mutation testing, which stays in direct CI runs) and can then deploy that branch.
 CD releases only what changed. Each backend service, the gateway and the frontend is a separate deployable with its own image, migration job, Container App, smoke check and rollback. The list of deployables and their Environment value names is `deployment/cd/services.json`.
 
 #### How a release is chosen
@@ -475,6 +489,7 @@ Run the CD workflow from the Actions tab (Run workflow), choose the branch, and 
 
 | Input | Values | Effect |
 |---|---|---|
+| `target` | `development` (default), `production` | Environment to release to. `production` is accepted only when the selected branch is `main`. |
 | `release` | `changed` (default), `all`, `auth`, `patient`, `queue`, `medical-record`, `prescription`, `gateway`, `frontend` | `changed` uses the same selection as an automatic run. `all` releases every deployable. A name releases only that deployable, so its migration and deployment run and nothing else does. |
 | `plan_only` | true or false | Reports the selection and changes nothing in Azure. |
 | `bootstrap_admin` | true or false | Includes AuthService and creates the initial administrator after its migration. |
@@ -487,6 +502,7 @@ The same run from the GitHub CLI:
 ```bash
 gh workflow run cd.yml --ref develop -f release=prescription
 gh workflow run cd.yml --ref develop -f release=changed -f plan_only=true
+gh workflow run cd.yml --ref main -f target=production -f release=all -f plan_only=true
 ```
 
 #### Order, smoke checks and rollback
@@ -501,7 +517,7 @@ If a service fails after its deployment started, only that service returns to th
 Rollback restores images only. Schemas, data, secrets, settings and domain changes stay as they are, so migrations must stay compatible with the previous image.
 The first deployment of a service has no previous image and is left as deployed when it fails. When the app already ran the release image before the run (for example `release=all` on an unchanged app), there is nothing to roll back to and the summary says so.
 
-Smoke checks go through the gateway using two synthetic accounts (a Receptionist and a Doctor) stored as `SMOKE_RECEPTIONIST_USERNAME`, `SMOKE_RECEPTIONIST_PASSWORD`, `SMOKE_DOCTOR_USERNAME` and `SMOKE_DOCTOR_PASSWORD` in the `azure-development` Environment. Create both through the Admin user screen; the Doctor needs an unused room label of at most 16 characters and never calls patients.
+Smoke checks go through the gateway using two synthetic accounts (a Receptionist and a Doctor) stored as `SMOKE_RECEPTIONIST_USERNAME`, `SMOKE_RECEPTIONIST_PASSWORD`, `SMOKE_DOCTOR_USERNAME` and `SMOKE_DOCTOR_PASSWORD` in each Environment, with separate accounts per environment. Create both through the Admin user screen; the Doctor needs an unused room label of at most 16 characters and never calls patients.
 The checks only read data, never print response bodies or tokens, and revoke each token afterwards.
 
 | Deployable | Checks |
@@ -511,13 +527,20 @@ The checks only read data, never print response bodies or tokens, and revoke eac
 | Queue | Public display returns the expected shape; today's queue returns 401 without a token and an array for the Receptionist |
 | MedicalRecord | The Doctor's templates return a JSON array |
 | Prescription | Pending prescriptions return a JSON array for the Receptionist |
+| Notification | Today's notification feed returns a JSON array for the Receptionist |
 | Gateway | Health returns 200, then every check above |
+
+A service deployed for the first time has no address in the running gateway, so a check through that gateway could only return 502. A service job therefore skips its own smoke check when the running gateway has no address for it, and the gateway job, which receives every address, runs the check for all services. After a first deployment of a service, release the gateway (`release=gateway`, or `all`).
 
 A release starts the apps it deploys, plus AuthService and the gateway it needs for the smoke checks, when they are stopped. Starting an app does not change its image. Stop the demo apps again after the approved window.
 
 #### Adding a service
 
-Add one entry to `deployment/cd/services.json`, create its Environment values, and add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
+Add one entry to `deployment/cd/services.json`, create its Environment values, add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`, and add its key to the `release` and `rollback_drill` choices. Add a smoke target in `deployment/cd/smoke.sh` for it. Tests fail when any of these is missing. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
+
+#### NotificationService
+
+NotificationService is released like the other services, from `services/NotificationService/Dockerfile`, with its own database `swiftcare_notification`, migration job and Container App. Before its first release, apply the Terraform plan that creates the database, create its scoped SQL user from inside the VNet (procedure in the [Terraform README](deployment/terraform/README.md)), and set these `azure-development` values: variables `AZURE_NOTIFICATION_APP`, `AZURE_NOTIFICATION_MIGRATE_JOB` and `NOTIFICATION_DB_USER`, and secret `NOTIFICATION_DB_PASSWORD`. The plan job needs `AZURE_NOTIFICATION_APP` for every release, so create it before the next run. After the first image push, give the registry pull token read access to the `swiftcare-notification` package before the first migration job. The first release creates the app and the gateway together, because the gateway needs the new internal address.
 
 #### Local checks
 
