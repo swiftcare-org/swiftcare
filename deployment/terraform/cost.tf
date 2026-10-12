@@ -13,7 +13,7 @@ locals {
 resource "azurerm_consumption_budget_resource_group" "monthly" {
   count = var.budget_monthly_amount > 0 ? 1 : 0
 
-  name              = "${var.project_name}-monthly-budget"
+  name              = "${local.name_prefix}-monthly-budget"
   resource_group_id = azurerm_resource_group.swiftcare.id
   amount            = var.budget_monthly_amount
   time_grain        = "Monthly"

@@ -1,0 +1,28 @@
+# Development environment (swiftcare-rg). Copy to development.tfvars (ignored).
+# Resource names keep the original swiftcare-* names (name_prefix left empty).
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location        = "eastasia"
+environment     = "azure-development"
+sprint_name     = "sprint-4"
+
+resource_group_name = "swiftcare-rg"
+mysql_server_name   = "swiftcare-mysql"
+static_web_app_name = "swiftcare-web"
+
+# Demo windows only: recreate messaging for a window, remove it afterwards.
+messaging_enabled = false
+
+# Development moves to dev.swiftcare.me. Until the DNS cut-over, keep the current values
+# (frontend_domain = "swiftcare.me", dns-txt-token, www.swiftcare.me) or the plan replaces the
+# bindings that still serve the public site.
+frontend_custom_domains_enabled = true
+frontend_domain                 = "dev.swiftcare.me"
+frontend_domain_validation_type = "cname-delegation"
+frontend_www_domain             = ""
+
+availability_enabled      = false
+availability_alert_emails = []
+availability_frontend_url = "https://dev.swiftcare.me"
+availability_gateway_url  = "https://api-dev.swiftcare.me/health"
+
+budget_monthly_amount = 30

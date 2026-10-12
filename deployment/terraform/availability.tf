@@ -7,7 +7,7 @@ locals {
 
 resource "azurerm_application_insights_standard_web_test" "availability" {
   for_each                = local.availability_targets
-  name                    = "${var.project_name}-${each.key}-availability"
+  name                    = "${local.name_prefix}-${each.key}-availability"
   resource_group_name     = azurerm_resource_group.swiftcare.name
   location                = azurerm_application_insights.swiftcare.location
   application_insights_id = azurerm_application_insights.swiftcare.id
@@ -35,7 +35,7 @@ resource "azurerm_application_insights_standard_web_test" "availability" {
 }
 
 resource "azurerm_monitor_action_group" "availability" {
-  name                = "${var.project_name}-availability-team"
+  name                = "${local.name_prefix}-availability-team"
   resource_group_name = azurerm_resource_group.swiftcare.name
   short_name          = "swc-uptime"
   tags                = local.common_tags
@@ -59,7 +59,7 @@ resource "azurerm_monitor_action_group" "availability" {
 
 resource "azurerm_monitor_metric_alert" "availability" {
   for_each                 = local.availability_targets
-  name                     = "${var.project_name}-${each.key}-availability-failure"
+  name                     = "${local.name_prefix}-${each.key}-availability-failure"
   resource_group_name      = azurerm_resource_group.swiftcare.name
   scopes                   = [azurerm_application_insights_standard_web_test.availability[each.key].id, azurerm_application_insights.swiftcare.id]
   target_resource_type     = "Microsoft.Insights/components"

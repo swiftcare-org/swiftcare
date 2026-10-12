@@ -383,6 +383,28 @@ if grep -q 'SMOKE_DOCTOR_PASSWORD' <<<"$out"; then ok "requires the smoke accoun
 (unset AZURE_PRESCRIPTION_APP; expect_failure "plan requires every app name" bash "$HERE/validate-config.sh" plan)
 expect_failure "rejects an unknown mode" bash "$HERE/validate-config.sh" everything
 
+echo "== resolve-target"
+target_of() { # EVENT RUN_BRANCH REF_NAME TARGET_INPUT WINDOW_DEVELOPMENT WINDOW_PRODUCTION
+  : > "$GITHUB_OUTPUT"
+  if ! EVENT_NAME="$1" RUN_BRANCH="$2" REF_NAME="$3" TARGET_INPUT="$4" WINDOW_DEVELOPMENT="$5" \
+    WINDOW_PRODUCTION="$6" GITHUB_STEP_SUMMARY="" bash "$HERE/resolve-target.sh" > /dev/null 2>&1; then
+    echo failed
+    return
+  fi
+  printf '%s %s' "$(grep '^environment=' "$GITHUB_OUTPUT" | cut -d= -f2)" "$(grep '^proceed=' "$GITHUB_OUTPUT" | cut -d= -f2)"
+}
+expect_equal "CI on develop releases to development in an open window" "$(target_of workflow_run develop develop '' true false)" "azure-development true"
+expect_equal "CI on main releases to production in an open window" "$(target_of workflow_run main main '' false true)" "azure-production true"
+expect_equal "a closed development window stops the run" "$(target_of workflow_run develop develop '' false true)" "azure-development false"
+expect_equal "a closed production window stops the run" "$(target_of workflow_run main main '' true false)" "azure-production false"
+expect_equal "an unset window counts as closed" "$(target_of workflow_run main main '' '' '')" "azure-production false"
+expect_equal "only the exact value true opens a window" "$(target_of workflow_run develop develop '' TRUE false)" "azure-development false"
+expect_equal "a manual run defaults to development" "$(target_of workflow_dispatch '' feature/x '' true false)" "azure-development true"
+expect_equal "a manual production run from main is allowed" "$(target_of workflow_dispatch '' main production false true)" "azure-production true"
+expect_equal "a manual production run from another branch fails" "$(target_of workflow_dispatch '' develop production true true)" "failed"
+expect_equal "an unknown manual target fails" "$(target_of workflow_dispatch '' main staging true true)" "failed"
+expect_equal "CI on another branch fails" "$(target_of workflow_run feature/x feature/x '' true true)" "failed"
+
 echo "== record-result"
 record() { # record KEY JOB_STATUS DEPLOY ROLLBACK ROLLBACK_RESULT POST_SMOKE PREVIOUS
   KEY="$1" JOB_STATUS="$2" DEPLOY_OUTCOME="$3" ROLLBACK_OUTCOME="$4" ROLLBACK_RESULT="$5" POST_ROLLBACK_SMOKE="$6"     PREVIOUS_IMAGE="$7" DEPLOY_SHA=$NEW bash "$HERE/record-result.sh" "$WORK/results" > /dev/null
