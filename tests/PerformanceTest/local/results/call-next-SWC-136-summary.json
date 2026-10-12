@@ -1,0 +1,38 @@
+﻿[
+    {
+        "SimultaneousDoctors":  2,
+        "SuccessfulCalls":  2,
+        "Http500":  0,
+        "Http503":  0,
+        "UniqueQueueIds":  2,
+        "UniqueRooms":  2,
+        "MaxCallLatencyMs":  122,
+        "IntegrityChecks":  15,
+        "IntegrityViolations":  0,
+        "Result":  "PASS"
+    },
+    {
+        "SimultaneousDoctors":  10,
+        "SuccessfulCalls":  10,
+        "Http500":  0,
+        "Http503":  0,
+        "UniqueQueueIds":  10,
+        "UniqueRooms":  10,
+        "MaxCallLatencyMs":  351,
+        "IntegrityChecks":  15,
+        "IntegrityViolations":  0,
+        "Result":  "PASS"
+    },
+    {
+        "SimultaneousDoctors":  25,
+        "SuccessfulCalls":  25,
+        "Http500":  0,
+        "Http503":  0,
+        "UniqueQueueIds":  25,
+        "UniqueRooms":  25,
+        "MaxCallLatencyMs":  637,
+        "IntegrityChecks":  15,
+        "IntegrityViolations":  0,
+        "Result":  "PASS"
+    }
+]

@@ -1,0 +1,1619 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="SWC-136 Sprint 4 - Combined Load/Stress" enabled="true">
+      <stringProp name="TestPlan.comments">Sprint 4 local-only workload through the API Gateway. It preserves the SWC-126 Doctor and Receptionist workflows and adds Activity Feed, patient history, reports and isolated Admin operations. Properties and thresholds are documented in README.md.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments" />
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath" />
+    </TestPlan>
+    <hashTree>
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+          <collectionProp name="Arguments.arguments" />
+        </elementProp>
+        <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+        <stringProp name="HTTPSampler.port">${__P(port,8000)}</stringProp>
+        <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+        <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">30000</stringProp>
+        <boolProp name="HTTPSampler.image_parser">false</boolProp>
+        <boolProp name="HTTPSampler.concurrentDwn">false</boolProp>
+      </ConfigTestElement>
+      <hashTree />
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="SWC-126 Doctor Clinical Workflow" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">-1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersDoctor,10)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,30)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,900)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" testname="Login (once per thread)" enabled="true" />
+        <hashTree>
+          <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="clinic-doctors.csv" enabled="true">
+            <stringProp name="filename">data/clinic-doctors.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">false</boolProp>
+            <boolProp name="stopThread">true</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[SETUP] POST /api/auth/login (Doctor)" enabled="true">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract JWT" enabled="true">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Request headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="Start cycle" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Reset cycle state" enabled="true">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters" />
+            <stringProp name="filename" />
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script">vars.put('doctorFree', 'false')
+vars.put('freePolls', '0')</stringProp>
+          </JSR223PreProcessor>
+          <hashTree />
+        </hashTree>
+        <WhileController guiclass="WhileControllerGui" testclass="WhileController" testname="Wait until the doctor is free" enabled="true">
+          <stringProp name="WhileController.condition">${__groovy(vars.get('doctorFree') != 'true' &amp;&amp; vars.get('freePolls').toInteger() &lt; (props.get('freeMaxPolls') ?: '20').toInteger())}</stringProp>
+        </WhileController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/queue/today/current" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments" />
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/queue/today/current</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Retry interval (none on the first poll)" enabled="true">
+              <stringProp name="ConstantTimer.delay">${__groovy(vars.get('freePolls') == '0' ? '0' : (props.get('freePollMs') ?: '500'))}</stringProp>
+            </ConstantTimer>
+            <hashTree />
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200 or 204" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">200|204</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message" />
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">1</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Record whether the doctor is free" enabled="true">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="parameters" />
+              <stringProp name="filename" />
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="script">vars.put('freePolls', String.valueOf(vars.get('freePolls').toInteger() + 1))
+vars.put('doctorFree', String.valueOf(prev.getResponseCode() == '204'))</stringProp>
+            </JSR223PostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] PUT /api/queue/call-next" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/queue/call-next</stringProp>
+          <stringProp name="HTTPSampler.method">PUT</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message" />
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract queueId and patientId" enabled="true">
+            <stringProp name="JSONPostProcessor.referenceNames">queueId;patientId</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.queueId;$.patientId</stringProp>
+            <stringProp name="JSONPostProcessor.match_numbers">1;1</stringProp>
+            <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND;NOT_FOUND</stringProp>
+          </JSONPostProcessor>
+          <hashTree />
+        </hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="A patient was called" enabled="true">
+          <stringProp name="IfController.condition">${__jexl3("${queueId}" != "NOT_FOUND",)}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+          <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="Consultation cycle" enabled="true" />
+          <hashTree>
+            <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="Doctor think time between steps" enabled="true">
+              <stringProp name="ConstantTimer.delay">${__P(stepDelay,1000)}</stringProp>
+              <stringProp name="RandomTimer.range">${__P(stepRange,2000)}</stringProp>
+            </UniformRandomTimer>
+            <hashTree />
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/consultations/patient/{id}/latest-follow-up" enabled="true">
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+                <collectionProp name="Arguments.arguments" />
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/consultations/patient/${patientId}/latest-follow-up</stringProp>
+              <stringProp name="HTTPSampler.method">GET</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200 or 204" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="0">200|204</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">1</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within read p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] POST /api/consultations" enabled="true">
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{"queueId":"${queueId}","patientId":"${patientId}","symptoms":"Perf clinical flow - fever and sore throat for two days","examinationFindings":"Inflamed tonsils, no exudate","diagnosis":"Perf clinical flow - acute pharyngitis"}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/consultations</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 201" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49587">201</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract consultationId" enabled="true">
+                <stringProp name="JSONPostProcessor.referenceNames">consultationId</stringProp>
+                <stringProp name="JSONPostProcessor.jsonPathExprs">$.id</stringProp>
+                <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+                <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+              </JSONPostProcessor>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] POST /api/consultations/{id}/vitals" enabled="true">
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{"systolicBloodPressure":120,"diastolicBloodPressure":80,"temperatureCelsius":37.8,"pulseRate":84,"respiratoryRate":16,"oxygenSaturation":98,"heightCentimeters":165,"weightKilograms":62}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/consultations/${consultationId}/vitals</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 201" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49587">201</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body carries consultationId and bmi" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="0">"consultationId"</stringProp>
+                  <stringProp name="1">"bmi"</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Vital signs response is missing an expected field - possible contract regression.</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">16</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within write p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] POST /api/consultations/{id}/complete" enabled="true">
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+                <collectionProp name="Arguments.arguments" />
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/consultations/${consultationId}/complete</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body carries eventId" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="0">"eventId"</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Completion response is missing eventId - possible contract regression.</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">16</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within write p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/consultations/latest-completed" enabled="true">
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+                <collectionProp name="Arguments.arguments" />
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/consultations/latest-completed</stringProp>
+              <stringProp name="HTTPSampler.method">GET</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200 or 204" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="0">200|204</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">1</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within read p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/prescriptions/patient/{id}" enabled="true">
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+                <collectionProp name="Arguments.arguments" />
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/prescriptions/patient/${patientId}</stringProp>
+              <stringProp name="HTTPSampler.method">GET</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body is a JSON array" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="0">(?s)^\[.*\]$</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Prescription history is not a JSON array - possible contract regression.</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">1</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within read p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] POST /api/prescriptions" enabled="true">
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{"consultationId":"${consultationId}","queueId":"${queueId}","patientId":"${patientId}","medicines":[{"medicineName":"Perf Azithromycin","dosage":"500 mg","frequency":"Once daily","duration":"3 days","instructions":"Take one hour before food"},{"medicineName":"Perf Paracetamol","dosage":"500 mg","frequency":"Every six hours when needed","duration":"3 days"}]}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/prescriptions</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 201" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49587">201</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body carries PENDING status and medicines" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="0">"PENDING"</stringProp>
+                  <stringProp name="1">"medicines"</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message">Created prescription is missing an expected field - possible contract regression.</stringProp>
+                <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">16</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within write p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+              <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract prescriptionId" enabled="true">
+                <stringProp name="JSONPostProcessor.referenceNames">prescriptionId</stringProp>
+                <stringProp name="JSONPostProcessor.jsonPathExprs">$.id</stringProp>
+                <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+                <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+              </JSONPostProcessor>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] POST /api/prescriptions/{id}/items" enabled="true">
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.value">{"medicineName":"Perf Cetirizine","dosage":"10 mg","frequency":"Once at night","duration":"5 days"}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/prescriptions/${prescriptionId}/items</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 201" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49587">201</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within write p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+              <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract the added medicine's id" enabled="true">
+                <stringProp name="JSONPostProcessor.referenceNames">medicineId</stringProp>
+                <stringProp name="JSONPostProcessor.jsonPathExprs">$.medicines[?(@.medicineName == 'Perf Cetirizine')].id</stringProp>
+                <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+                <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+              </JSONPostProcessor>
+              <hashTree />
+            </hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] DELETE /api/prescriptions/{id}/items/{medicineId}" enabled="true">
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+                <collectionProp name="Arguments.arguments" />
+              </elementProp>
+              <stringProp name="HTTPSampler.path">/api/prescriptions/${prescriptionId}/items/${medicineId}</stringProp>
+              <stringProp name="HTTPSampler.method">DELETE</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+                <collectionProp name="Asserion.test_strings">
+                  <stringProp name="49586">200</stringProp>
+                </collectionProp>
+                <stringProp name="Assertion.custom_message" />
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+                <boolProp name="Assertion.assume_success">false</boolProp>
+                <intProp name="Assertion.test_type">8</intProp>
+              </ResponseAssertion>
+              <hashTree />
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within write p99 budget" enabled="true">
+                <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+              </DurationAssertion>
+              <hashTree />
+            </hashTree>
+          </hashTree>
+        </hashTree>
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="Cycle pacing" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
+        <hashTree>
+          <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="Pause before the next patient" enabled="true">
+            <stringProp name="ConstantTimer.delay">${__P(cycleDelay,40000)}</stringProp>
+            <stringProp name="RandomTimer.range">${__P(cycleRange,10000)}</stringProp>
+          </UniformRandomTimer>
+          <hashTree />
+        </hashTree>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="SWC-126 Receptionist Counter" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">-1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersCounter,10)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,30)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,900)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" testname="Login (once per thread)" enabled="true" />
+        <hashTree>
+          <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="clinic-receptionists.csv" enabled="true">
+            <stringProp name="filename">data/clinic-receptionists.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[SETUP] POST /api/auth/login (Receptionist)" enabled="true">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract JWT" enabled="true">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Request headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="Screen refresh" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
+        <hashTree>
+          <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="~5s poll interval" enabled="true">
+            <stringProp name="ConstantTimer.delay">${__P(pollDelay,4500)}</stringProp>
+            <stringProp name="RandomTimer.range">${__P(pollRange,1000)}</stringProp>
+          </UniformRandomTimer>
+          <hashTree />
+        </hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Counter polls the queue" enabled="true">
+          <stringProp name="IfController.condition">${__P(counterQueuePoll,true)}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/queue/today" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments" />
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/queue/today</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message" />
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/prescriptions/pending" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/prescriptions/pending</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message" />
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body is a JSON array" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">(?s)^\[.*\]$</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Pending prescriptions is not a JSON array - possible contract regression.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within read p99 budget" enabled="true">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Pick a prescription this thread owns" enabled="true">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters" />
+            <stringProp name="filename" />
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script">import groovy.json.JsonSlurper
+import java.time.Instant
+
+vars.put('dispenseId', 'NONE')
+vars.put('dispenseQueueId', 'NONE')
+if (prev.getResponseCode() != '200') {
+    return
+}
+
+def counters = Math.max(1, (props.get('usersCounter') ?: '10').toInteger())
+def mine = ctx.getThreadNum()
+def cutoff = Instant.now().minusMillis((props.get('dispenseAfterMs') ?: '30000').toLong())
+
+def pick = new JsonSlurper().parseText(prev.getResponseDataAsString()).find { p -&gt;
+    p.status == 'PENDING' &amp;&amp;
+        p.doctorName?.startsWith('Perf Clinic Doctor') &amp;&amp;
+        Math.floorMod(p.id.hashCode(), counters) == mine &amp;&amp;
+        Instant.parse(p.createdAt.endsWith('Z') ? p.createdAt : p.createdAt + 'Z').isBefore(cutoff)
+}
+
+if (pick) {
+    vars.put('dispenseId', pick.id)
+    vars.put('dispenseQueueId', pick.queueId)
+}</stringProp>
+          </JSR223PostProcessor>
+          <hashTree />
+        </hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="This thread owns a pending prescription" enabled="true">
+          <stringProp name="IfController.condition">${__jexl3("${dispenseId}" != "NONE",)}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+          <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="Receptionist think time between steps" enabled="true">
+            <stringProp name="ConstantTimer.delay">${__P(stepDelay,1000)}</stringProp>
+            <stringProp name="RandomTimer.range">${__P(stepRange,2000)}</stringProp>
+          </UniformRandomTimer>
+          <hashTree />
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[READ] GET /api/prescriptions/queue/{queueId}" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments" />
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/prescriptions/queue/${dispenseQueueId}</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message" />
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body is the picked PENDING prescription" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">${dispenseId}</stringProp>
+                <stringProp name="1">"PENDING"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Counter view did not return the picked pending prescription.</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within read p99 budget" enabled="true">
+              <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+            </DurationAssertion>
+            <hashTree />
+          </hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="[WRITE] PUT /api/prescriptions/{id}/dispense" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments" />
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/prescriptions/${dispenseId}/dispense</stringProp>
+            <stringProp name="HTTPSampler.method">PUT</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="status is 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message" />
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="body carries DISPENSED and dispensedBy" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">"DISPENSED"</stringProp>
+                <stringProp name="1">"dispensedBy"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Dispensed prescription is missing an expected field - possible contract regression.</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="within write p99 budget" enabled="true">
+              <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+            </DurationAssertion>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+      </hashTree>
+      <ThreadGroup testname="SWC-136 Reception Activity Feed" enabled="true" guiclass="ThreadGroupGui" testclass="ThreadGroup">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true" name="ThreadGroup.main_controller">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">-1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersActivity,8)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,30)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,900)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController testname="Login once per thread" enabled="true" guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" />
+        <hashTree>
+          <CSVDataSet testname="clinic-receptionists.csv" enabled="true" guiclass="TestBeanGUI" testclass="CSVDataSet">
+            <stringProp name="filename">data/clinic-receptionists.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy testname="[SETUP] POST /api/auth/login" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp elementType="HTTPArgument" name="">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Unexpected response status for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">"token"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Response contract failed for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <JSONPostProcessor testname="Extract JWT" enabled="true" guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager testname="Authenticated JSON headers" enabled="true" guiclass="HeaderPanel" testclass="HeaderManager">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <HTTPSamplerProxy testname="[READ] GET /api/notifications/today" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/notifications/today?limit=${__P(feedLimit,50)}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/notifications/today status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/notifications/today</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/notifications/today contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/notifications/today</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/notifications/today within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/notifications" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/notifications?limit=${__P(feedLimit,50)}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/notifications status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/notifications</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/notifications contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/notifications</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/notifications within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <TestAction testname="End-of-cycle pacing" enabled="true" guiclass="TestActionGui" testclass="TestAction">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">${__P(activityDelayMs,10000)}</stringProp>
+        </TestAction>
+        <hashTree />
+      </hashTree>
+      <ThreadGroup testname="SWC-136 Doctor Patient History" enabled="true" guiclass="ThreadGroupGui" testclass="ThreadGroup">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true" name="ThreadGroup.main_controller">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">-1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersHistory,8)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,30)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,900)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController testname="Login once per thread" enabled="true" guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" />
+        <hashTree>
+          <CSVDataSet testname="sprint4-history.csv" enabled="true" guiclass="TestBeanGUI" testclass="CSVDataSet">
+            <stringProp name="filename">data/sprint4-history.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password,patientId</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy testname="[SETUP] POST /api/auth/login" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp elementType="HTTPArgument" name="">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Unexpected response status for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">"token"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Response contract failed for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <JSONPostProcessor testname="Extract JWT" enabled="true" guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager testname="Authenticated JSON headers" enabled="true" guiclass="HeaderPanel" testclass="HeaderManager">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <HTTPSamplerProxy testname="[READ] GET /api/patients/{id}" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/patients/${patientId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/patients/{id} status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/patients/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/patients/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">"patientId"</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/patients/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/patients/{id} within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/consultations/patient/{id}" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/consultations/patient/${patientId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/consultations/patient/{id} status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/consultations/patient/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/consultations/patient/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/consultations/patient/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/consultations/patient/{id} within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/vitals/patient/{id}" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/vitals/patient/${patientId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/vitals/patient/{id} status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/vitals/patient/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/vitals/patient/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/vitals/patient/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/vitals/patient/{id} within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/prescriptions/patient/{id}" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/prescriptions/patient/${patientId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/prescriptions/patient/{id} status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/prescriptions/patient/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/prescriptions/patient/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/prescriptions/patient/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/prescriptions/patient/{id} within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <TestAction testname="End-of-cycle pacing" enabled="true" guiclass="TestActionGui" testclass="TestAction">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">${__P(historyDelayMs,8000)}</stringProp>
+        </TestAction>
+        <hashTree />
+      </hashTree>
+      <ThreadGroup testname="SWC-136 Admin Reports" enabled="true" guiclass="ThreadGroupGui" testclass="ThreadGroup">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true" name="ThreadGroup.main_controller">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">-1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersReports,4)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,30)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,900)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController testname="Login once per thread" enabled="true" guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" />
+        <hashTree>
+          <CSVDataSet testname="sprint4-admins.csv" enabled="true" guiclass="TestBeanGUI" testclass="CSVDataSet">
+            <stringProp name="filename">data/sprint4-admins.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password,targetId,targetName</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy testname="[SETUP] POST /api/auth/login" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp elementType="HTTPArgument" name="">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Unexpected response status for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">"token"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Response contract failed for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <JSONPostProcessor testname="Extract JWT" enabled="true" guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager testname="Authenticated JSON headers" enabled="true" guiclass="HeaderPanel" testclass="HeaderManager">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <HTTPSamplerProxy testname="[READ] GET /api/reports/daily" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/reports/daily?date=${__P(reportDate,2026-10-11)}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/reports/daily status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/reports/daily</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/reports/daily contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">"totalPatients"</stringProp>
+              <stringProp name="1">"topDiagnoses"</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/reports/daily</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/reports/daily within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/prescriptions/report/daily" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/prescriptions/report/daily?date=${__P(reportDate,2026-10-11)}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/prescriptions/report/daily status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/prescriptions/report/daily</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/prescriptions/report/daily contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">"totalWritten"</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/prescriptions/report/daily</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/prescriptions/report/daily within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/reports/monthly" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/reports/monthly?month=${__P(reportMonth,2026-10)}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/reports/monthly status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/reports/monthly</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/reports/monthly contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">"totalPatients"</stringProp>
+              <stringProp name="1">"weeklyBreakdown"</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/reports/monthly</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/reports/monthly within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/prescriptions/report/monthly" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/prescriptions/report/monthly?month=${__P(reportMonth,2026-10)}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/prescriptions/report/monthly status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/prescriptions/report/monthly</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/prescriptions/report/monthly contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">"totalWritten"</stringProp>
+              <stringProp name="1">"totalDispensed"</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/prescriptions/report/monthly</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/prescriptions/report/monthly within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <TestAction testname="End-of-cycle pacing" enabled="true" guiclass="TestActionGui" testclass="TestAction">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">${__P(reportDelayMs,30000)}</stringProp>
+        </TestAction>
+        <hashTree />
+      </hashTree>
+      <ThreadGroup testname="SWC-136 Admin Operations" enabled="true" guiclass="ThreadGroupGui" testclass="ThreadGroup">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true" name="ThreadGroup.main_controller">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">-1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(usersAdmin,2)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,30)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,900)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <OnceOnlyController testname="Login once per thread" enabled="true" guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" />
+        <hashTree>
+          <CSVDataSet testname="sprint4-admins.csv" enabled="true" guiclass="TestBeanGUI" testclass="CSVDataSet">
+            <stringProp name="filename">data/sprint4-admins.csv</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="variableNames">username,password,targetId,targetName</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <stringProp name="delimiter">,</stringProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+          </CSVDataSet>
+          <hashTree />
+          <HTTPSamplerProxy testname="[SETUP] POST /api/auth/login" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp elementType="HTTPArgument" name="">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"username":"${username}","password":"${password}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">/api/auth/login</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Unexpected response status for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <ResponseAssertion testname="[SETUP] POST /api/auth/login contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="0">"token"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">Response contract failed for [SETUP] POST /api/auth/login</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">16</intProp>
+            </ResponseAssertion>
+            <hashTree />
+            <JSONPostProcessor testname="Extract JWT" enabled="true" guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor">
+              <stringProp name="JSONPostProcessor.referenceNames">token</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.token</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">LOGIN_FAILED</stringProp>
+            </JSONPostProcessor>
+            <hashTree />
+          </hashTree>
+        </hashTree>
+        <HeaderManager testname="Authenticated JSON headers" enabled="true" guiclass="HeaderPanel" testclass="HeaderManager">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+            <elementProp elementType="Header" name="">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree />
+        <HTTPSamplerProxy testname="[READ] GET /api/users" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/users</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/users status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/users</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/users contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/users</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/users within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[READ] GET /api/audit-logs" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments" />
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/audit-logs?limit=50</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[READ] GET /api/audit-logs status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [READ] GET /api/audit-logs</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[READ] GET /api/audit-logs contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">[</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [READ] GET /api/audit-logs</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[READ] GET /api/audit-logs within read p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(readSlaMs,1500)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <HTTPSamplerProxy testname="[WRITE] PUT /api/users/{id}" enabled="true" guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy">
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true" name="HTTPsampler.Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp elementType="HTTPArgument" name="">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{"fullName":"${targetName}","roomNumber":null,"specialization":null}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="HTTPSampler.path">/api/users/${targetId}</stringProp>
+          <stringProp name="HTTPSampler.method">PUT</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion testname="[WRITE] PUT /api/users/{id} status 200" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Unexpected response status for [WRITE] PUT /api/users/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <ResponseAssertion testname="[WRITE] PUT /api/users/{id} contract" enabled="true" guiclass="AssertionGui" testclass="ResponseAssertion">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="0">"userId"</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Response contract failed for [WRITE] PUT /api/users/{id}</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">16</intProp>
+          </ResponseAssertion>
+          <hashTree />
+          <DurationAssertion testname="[WRITE] PUT /api/users/{id} within write p99 budget" enabled="true" guiclass="DurationAssertionGui" testclass="DurationAssertion">
+            <stringProp name="DurationAssertion.duration">${__P(writeSlaMs,3000)}</stringProp>
+          </DurationAssertion>
+          <hashTree />
+        </hashTree>
+        <TestAction testname="End-of-cycle pacing" enabled="true" guiclass="TestActionGui" testclass="TestAction">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">${__P(adminDelayMs,15000)}</stringProp>
+        </TestAction>
+        <hashTree />
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

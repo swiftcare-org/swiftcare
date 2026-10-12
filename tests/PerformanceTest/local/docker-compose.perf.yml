@@ -61,3 +61,11 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  # Added for SWC-136. Sprint 4 Activity Feed and report traffic is served here.
+  notificationservice:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
