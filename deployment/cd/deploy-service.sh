@@ -59,7 +59,7 @@ if app_exists "$app"; then
 else
   az containerapp create \
     --resource-group "$RESOURCE_GROUP" --name "$app" \
-    --environment "$CONTAINERAPPS_ENVIRONMENT" \
+    --environment "$(environment_ref)" \
     --image "$image" \
     --registry-server ghcr.io \
     --registry-username "$GHCR_USERNAME" --registry-password "$GHCR_TOKEN" \

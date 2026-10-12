@@ -35,7 +35,7 @@ cleanup_bootstrap_job
 
 az containerapp job create \
   --resource-group "$RESOURCE_GROUP" --name "$job" \
-  --environment "$CONTAINERAPPS_ENVIRONMENT" \
+  --environment "$(environment_ref)" \
   --trigger-type Manual \
   --replica-timeout 600 --replica-retry-limit 0 \
   --replica-completion-count 1 --parallelism 1 \

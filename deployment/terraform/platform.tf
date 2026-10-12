@@ -23,10 +23,12 @@ resource "azurerm_application_insights" "swiftcare" {
 }
 
 resource "azurerm_container_app_environment" "swiftcare" {
+  count = local.create_container_apps_environment ? 1 : 0
+
   name                       = local.container_apps_environment_name
   location                   = azurerm_resource_group.swiftcare.location
   resource_group_name        = azurerm_resource_group.swiftcare.name
-  infrastructure_subnet_id   = azurerm_subnet.container_apps.id
+  infrastructure_subnet_id   = azurerm_subnet.container_apps[0].id
   logs_destination           = "log-analytics"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.swiftcare.id
   tags                       = local.common_tags
@@ -35,4 +37,10 @@ resource "azurerm_container_app_environment" "swiftcare" {
     # Azure materializes the built-in Consumption profile automatically.
     ignore_changes = [workload_profile]
   }
+}
+
+# The environment became conditional in SWC-161; keep the existing development environment.
+moved {
+  from = azurerm_container_app_environment.swiftcare
+  to   = azurerm_container_app_environment.swiftcare[0]
 }

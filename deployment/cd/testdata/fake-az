@@ -83,6 +83,17 @@ case "$group $sub" in
       execution) echo "${FAKE_MIGRATION_STATUS:-Succeeded}" ;;
       delete) rm -f "$state/job.$app" ;;
     esac ;;
+  # Target checks (verify-target.sh azure). Regions come from FAKE_ENV_LOCATION and FAKE_SWA_LOCATION.
+  "account show") echo "${FAKE_SUBSCRIPTION:-sub-test}" ;;
+  "group show") echo Succeeded ;;
+  "containerapp env")
+    case "$query" in
+      properties.provisioningState) echo Succeeded ;;
+      location) echo "${FAKE_ENV_LOCATION:-East Asia}" ;;
+      id) echo "/subscriptions/test/resourceGroups/$(NAME=resource-group arg "${all[@]}")/providers/Microsoft.App/managedEnvironments/$app" ;;
+      *) echo "fake-az: unsupported containerapp env query: $query" >&2; exit 9 ;;
+    esac ;;
+  "staticwebapp show") echo "${FAKE_SWA_LOCATION:-East Asia}" ;;
   "rest "*)
     uri=$(NAME=uri arg "${all[@]}")
     started="${uri#*/apps/}"; started="${started%%/*}"

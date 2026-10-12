@@ -37,7 +37,7 @@ if az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$job" >/d
 else
   az containerapp job create \
     --resource-group "$RESOURCE_GROUP" --name "$job" \
-    --environment "$CONTAINERAPPS_ENVIRONMENT" \
+    --environment "$(environment_ref)" \
     --trigger-type Manual \
     --replica-timeout 600 --replica-retry-limit 1 \
     --replica-completion-count 1 --parallelism 1 \
