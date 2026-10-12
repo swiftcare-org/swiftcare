@@ -60,6 +60,16 @@ variable "virtual_network_address_space" {
   default     = ["10.20.0.0/16"]
 }
 
+variable "shared_container_apps_environment" {
+  description = "Run this environment's apps in an existing Container Apps environment instead of creating one. The subscription allows only one environment, so production sets development's; null creates the environment, as development does."
+  type = object({
+    name                 = string
+    resource_group_name  = string
+    virtual_network_name = string
+  })
+  default = null
+}
+
 variable "container_apps_subnet_prefixes" {
   description = "Delegated subnet used by the Container Apps environment."
   type        = list(string)
@@ -135,6 +145,12 @@ variable "static_web_app_name" {
   description = "Globally unique Azure Static Web App name."
   type        = string
   default     = "swiftcare-web"
+}
+
+variable "static_web_app_location" {
+  description = "Region of the Static Web App. Empty uses location; set it when location does not offer Static Web Apps (production: eastasia while the rest is in koreacentral)."
+  type        = string
+  default     = ""
 }
 
 variable "frontend_custom_domains_enabled" {
