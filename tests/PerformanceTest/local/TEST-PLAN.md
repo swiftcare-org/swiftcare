@@ -320,14 +320,23 @@ excluded from the read/write classifications.
 | Smoke | 1 | 1 | 1 | 1 | 1 | 1 | 6 |
 | Sprint 3 baseline | 10 | 10 | 0 | 0 | 0 | 0 | 20 |
 | Sprint 4 Load | 10 | 8 | 8 | 8 | 4 | 2 | 40 |
-| Stress 1 | 25 | 20 | 20 | 20 | 10 | 5 | 100 |
-| Stress 2 | 50 | 40 | 40 | 40 | 20 | 10 | 200 |
-| Stress 3 | 75 | 60 | 60 | 60 | 30 | 15 | 300 |
-| Stress 4 | 100 | 80 | 80 | 80 | 40 | 20 | 400 |
+| Comparable Stress | 75 | 60 | 60 | 60 | 30 | 15 | 300 |
+| Optional ceiling extension | 100 | 80 | 80 | 80 | 40 | 20 | 400 |
 
-Smoke runs 90 seconds. Baseline and Load run 900 seconds after a 30-second ramp. Each Stress
-stage uses a 600-second ramp within a 900-second run. Comparable phases start from fresh
-isolated databases and are reseeded; no shared or Azure endpoint is allowed.
+Smoke runs 90 seconds. Baseline and Load run for 900 seconds with a 30-second ramp. The
+comparable Stress profile follows the actual Sprint 3 method: one continuous linear ramp from
+0 to 300 total users over the entire 600-second run. There are no assumed 50-user or 100-user
+increments. The knee is read from 30-second active-thread, throughput, aggregate-p95 and error
+windows. The 400-user profile is an optional new run only when the 300-user run shows no knee
+and the host-capacity gate passes. Comparable phases start from fresh isolated databases and
+are reseeded; no shared or Azure endpoint is allowed.
+
+Stress keeps the Sprint 3 clinical pacing (`stepDelay=100`, `stepRange=200`,
+`cycleDelay=5000`, `cycleRange=5000`, `pollDelay=300`, `pollRange=300`,
+`dispenseAfterMs=10000`) and adds Sprint 4 pacing of 300 ms for Activity Feed, 500 ms for
+history, and 1000 ms for report and Admin groups. The six groups share the same `rampUp` and
+`duration` properties, so their combined active-thread count rises proportionally and
+continuously throughout the run.
 
 ### 10.2 Pre-registered pass/fail thresholds
 
@@ -345,10 +354,14 @@ duration-assertion tripwire samples.
 | Latency drift | last-third p95 <= first-third p95 + 20%, for reads and writes |
 
 Smoke must have zero functional errors, all expected sampler labels and clean integrity.
-Load must pass all six thresholds and integrity before Stress is permitted. Stress locates a
-breaking point rather than receiving a PASS from lower latency alone: stop at the first stage
-with a sustained threshold breach, flat/falling throughput while threads rise, unsafe host
-pressure, or integrity failure.
+Load must pass all six thresholds and integrity before Stress is permitted. The six thresholds
+above decide Load; they do not turn Stress into a staged pass/fail test. As in Sprint 3, the
+Stress breaking point is the first 60-second interval with aggregate p95 above 2000 ms,
+aggregate functional error rate above 1%, or throughput flat/falling while active threads
+continue to rise. Complete the 600-second ramp so the knee can be calculated unless a safety
+abort occurs. Abort immediately for unsafe host/Docker pressure or contact with a non-isolated
+endpoint. Run integrity checks after the profile; any violation is a failed integrity result,
+not an invented saturation point.
 
 ### 10.3 SWC-128 concurrency regression
 
