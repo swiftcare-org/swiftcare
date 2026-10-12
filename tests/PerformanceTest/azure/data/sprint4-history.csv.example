@@ -1,0 +1,3 @@
+username,password,patientId
+perf.clinic.doctor.001,LoadTest#Pass1,00000000-0000-0000-0000-000000000001
+perf.clinic.doctor.002,LoadTest#Pass1,00000000-0000-0000-0000-000000000002
