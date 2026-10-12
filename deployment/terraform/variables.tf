@@ -186,6 +186,26 @@ variable "additional_tags" {
   default     = {}
 }
 
+variable "budget_monthly_amount" {
+  description = "Monthly cost budget for the application resource group in the billing currency (USD for Azure for Students). Set 0 to omit the budget."
+  type        = number
+  default     = 30
+  validation {
+    condition     = var.budget_monthly_amount >= 0
+    error_message = "budget_monthly_amount must be zero (no budget) or a positive amount."
+  }
+}
+
+variable "budget_start_date" {
+  description = "First day of the first budget month, in UTC. Changing it replaces the budget."
+  type        = string
+  default     = "2026-10-01T00:00:00Z"
+  validation {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.budget_start_date))
+    error_message = "budget_start_date must be the first day of a month, for example 2026-10-01T00:00:00Z."
+  }
+}
+
 variable "availability_enabled" {
   description = "Enable both tests and alerts during the agreed uptime window; disabling retains resources."
   type        = bool

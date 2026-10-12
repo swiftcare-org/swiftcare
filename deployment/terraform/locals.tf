@@ -20,6 +20,7 @@ locals {
   auth_database_name              = "${var.project_name}_auth"
   patient_database_name           = "${var.project_name}_patient"
   queue_database_name             = "${var.project_name}_queue"
+  medical_record_database_name    = "${var.project_name}_medical_record"
   prescription_database_name      = "${var.project_name}_prescription"
   notification_database_name      = "${var.project_name}_notification"
   kafka_bootstrap_servers         = "kafka.${local.messaging_private_dns_zone_name}:9092"

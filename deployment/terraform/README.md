@@ -1,6 +1,6 @@
 # SwiftCare Azure infrastructure
 
-This directory defines stable infrastructure for one Azure development environment. Checked against repository configuration on 2 October 2026; this runbook does not establish live resource state or drift. Import pre-existing resources only when they are absent from the selected state; do not rerun adoption as a routine sprint handover.
+This directory defines stable infrastructure for one Azure development environment. Checked against repository configuration on 12 October 2026; this runbook does not establish live resource state or drift. Import pre-existing resources only when they are absent from the selected state; do not rerun adoption as a routine sprint handover.
 
 ## Ownership boundary
 
@@ -9,7 +9,7 @@ Terraform owns stable infrastructure:
 - `swiftcare-rg`
 - `swiftcare-vnet` and its delegated subnets
 - private DNS zones and VNet links
-- `swiftcare-mysql` and the AuthService, PatientService, QueueService, MedicalRecordService and PrescriptionService databases
+- `swiftcare-mysql` and the AuthService, PatientService, QueueService, MedicalRecordService, PrescriptionService and NotificationService databases
 - `swiftcare-logs`
 - `swiftcare-appinsights` (Application Insights, workspace-based on `swiftcare-logs`)
 - `swiftcare-aca-env`
@@ -19,7 +19,7 @@ Terraform owns stable infrastructure:
 
 The CD workflow owns deployable application state:
 
-- Gateway, AuthService, PatientService, QueueService, MedicalRecordService and PrescriptionService Container Apps
+- Gateway, AuthService, PatientService, QueueService, MedicalRecordService, PrescriptionService and NotificationService Container Apps
 - database migration and administrator-bootstrap jobs
 - application images, revisions, ingress and secrets
 - operational ownership of the gateway; its `api.swiftcare.me` hostname/certificate binding is currently a manual prerequisite, not a CD step
@@ -27,7 +27,7 @@ The CD workflow owns deployable application state:
 Do not add CD-owned resources to this Terraform state without an explicit ownership decision.
 CD reconciles apps/jobs/images/ingress/secrets but has no custom-domain certificate command.
 Cloudflare DNS/proxy settings, SQL users/grants, and GitHub Environment/protection settings are also manual.
-Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`; cost budgets remain absent. The `swiftcare_notification` database is defined in `database.tf` and, like the other databases, is created empty: its scoped SQL user and grants, and the Notification Container App, migration job and secrets, are created outside Terraform (SQL user manually from inside the VNet, app and job by CD).
+Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`, and a monthly resource-group budget in `cost.tf`. The `swiftcare_notification` database is defined in `database.tf` and, like the other databases, is created empty: its scoped SQL user and grants, and the Notification Container App, migration job and secrets, are created outside Terraform (SQL user manually from inside the VNet, app and job by CD).
 
 ## Prerequisites
 
@@ -90,7 +90,7 @@ Use `-backend-config="backend.hcl"` whenever backend initialization is required.
 
 ## Supply the MySQL administrator password
 
-The existing MySQL administrator password is required for import, refresh, plan and apply because Azure treats it as a write-only server argument. It is not an AuthService, PatientService or QueueService database password.
+The existing MySQL administrator password is required for import, refresh, plan and apply because Azure treats it as a write-only server argument. It is not a service database password.
 
 Set it without displaying it:
 
@@ -131,9 +131,9 @@ Push-Location deployment/terraform
 Pop-Location
 ```
 
-The script skips resources already in state and imports only the historical subset it lists. It also selects the CLI subscription. Its coverage is incomplete: Application Insights and the Queue, MedicalRecord, and Prescription databases are omitted. If adoption is needed, review every Terraform resource against state/Azure and separately import the missing existing resources before planning. Do not treat the script's success as a complete adoption check.
+The script skips resources already in state and imports every other address the configuration defines: the network, Log Analytics, Application Insights, the Container Apps environment, MySQL and all six databases, messaging (when `IMPORT_MESSAGING=true`), the Static Web App and its domains (when `IMPORT_CUSTOM_DOMAINS=true`), the SWC-132 action group, tests and alerts, the budget (when it exists in Azure), and the deployment identity with its credentials and role assignment. It also selects the CLI subscription. Each import is an authorized state change; run the script only when state is missing or being rebuilt.
 
-The omitted Terraform addresses are `azurerm_application_insights.swiftcare`, `azurerm_mysql_flexible_database.queue`, `azurerm_mysql_flexible_database.medical_record`, and `azurerm_mysql_flexible_database.prescription`. Their Azure IDs are respectively under `Microsoft.Insights/components/<project>-appinsights` and `Microsoft.DBforMySQL/flexibleServers/<server>/databases/<database>`. Obtain the actual IDs read-only and authorize each import. Updating the script is outstanding infrastructure work, not included in this documentation audit.
+Importing the availability resources reads their live `enabled` flags and recipients into state. The next plan then shows any difference from the local `availability_enabled` and `availability_alert_emails` inputs; set those inputs to the intended state before applying. A successful script run is not a complete adoption check on its own: compare `state list` with the configuration and review a saved plan.
 
 Verify the result:
 
@@ -142,7 +142,7 @@ terraform -chdir=deployment/terraform state list
 (terraform -chdir=deployment/terraform state list | Measure-Object -Line).Lines
 ```
 
-With messaging and both frontend domains enabled and the default two OIDC credentials, the configuration expands to 36 managed resource instances, including all five databases and the five availability monitoring resources. Counts vary with switches/credential inputs and do not prove the resources exist in state. Check addresses individually. `medical_record` has a hardcoded `swiftcare_medical_record` name in `database.tf`, so changing `project_name` alone does not isolate every database name.
+With messaging and both frontend domains enabled and the default two OIDC credentials, the configuration expands to 38 managed resource instances, including all six databases, the five availability monitoring resources and the budget. Counts vary with switches/credential inputs and do not prove the resources exist in state. Check addresses individually. Every database name derives from `project_name`.
 
 ## Review before applying
 
@@ -180,7 +180,7 @@ terraform -chdir=deployment/terraform output -raw application_insights_connectio
 ```
 
 Keep the connection string out of the repository and chat.
-Inspect any historical trial resource/alert and dependencies before arranging an authorized cleanup; do not assume it still exists.
+The historical `swiftcare-appinsights-trial` component no longer exists, but on 12 October its `Failure Anomalies - swiftcare-appinsights-trial` smart detector rule was still present and enabled, scoped to the deleted component. It is outside Terraform; remove it only through an authorized cleanup after a fresh read-only check.
 Every application has optional Azure Monitor OpenTelemetry registration and a distinct role name.
 `/health` is liveness only, without MySQL/Kafka checks.
 
@@ -433,6 +433,14 @@ The list must not contain `swiftcare-sqluser-tmp`. If it does, delete it with `a
 
 ## Cost controls
 
+Measured spend for `swiftcare-rg` from 1 to 12 October 2026 was about USD 54.50: Container Instances (Kafka and ZooKeeper) 36.78, NAT Gateway 11.61, Azure Monitor 4.46, network and DNS the rest; MySQL and Log Analytics showed no charge. The messaging layer charges around the clock even when every app is stopped, so it is the largest cost while the demo is OFF.
+
+### Monthly budget
+
+`cost.tf` defines `swiftcare-monthly-budget` on the resource group: `budget_monthly_amount` (default 30, in the billing currency; 0 removes it) with e-mail notifications at 50, 80 and 100 percent of actual spend and above 100 percent of forecast spend. Recipients are `availability_alert_emails` from ignored tfvars plus the subscription Owner role. A budget only alerts; it never stops resources. `budget_start_date` must be the first day of a month and changing it replaces the budget. Verify after apply with `az consumption budget list --subscription <id> --resource-group swiftcare-rg -o table`.
+
+### Removing and recreating messaging
+
 The paid messaging layer is ephemeral. To remove its Container Instance, NAT Gateway, public IP and Kafka DNS record while retaining the VNet, delegated subnet and private DNS zone:
 
 ```powershell
@@ -449,25 +457,25 @@ terraform -chdir=deployment/terraform show "messaging-on.tfplan"
 terraform -chdir=deployment/terraform apply "messaging-on.tfplan"
 ```
 
-Terraform destroys and recreates these resources; it does not pause them. The new private IP is written automatically to the Kafka private DNS record.
+Terraform destroys and recreates these resources; it does not pause them. The new private IP is written automatically to the Kafka private DNS record, so `KAFKA_BOOTSTRAP_SERVERS` does not change. After applying a `-var` plan, set the same `messaging_enabled` value in local `terraform.tfvars`; otherwise the next baseline plan proposes reversing it. While messaging is removed, CD refuses backend releases at its data-layer check; frontend-only releases still work. Azure has no topic-initialization step, so a recreated broker relies on Kafka's default topic auto-creation; verify check-in to queue delivery in the first window after recreating it.
 
-MySQL runtime start/stop are operational actions rather than infrastructure changes. CD sets `min-replicas=1` and `max-replicas=1` for all five services and the gateway. Stopping apps does not stop MySQL, Kafka, or NAT charges. Removing messaging destroys ephemeral broker data/offsets; there is no volume or explicit Azure topic-provisioning step, so coordinate data loss and topic/consumer recovery before approving the plan.
+MySQL runtime start/stop are operational actions rather than infrastructure changes. CD sets `min-replicas=1` and `max-replicas=1` for all six services and the gateway. Stopping apps does not stop MySQL, Kafka, or NAT charges. Removing messaging destroys ephemeral broker data/offsets; there is no volume or explicit Azure topic-provisioning step, so coordinate data loss and topic/consumer recovery before approving the plan.
 
-For an approved shutdown, ensure no CD deployment is running/queued, pause the availability tests and alerts through a reviewed Terraform maintenance plan, stop all six application Container Apps (including Prescription), and verify `Stopped`.
+For an approved shutdown, ensure no CD deployment is running/queued, pause the availability tests and alerts through a reviewed Terraform maintenance plan, stop all seven application Container Apps (including Prescription and Notification), and verify `Stopped`.
 Any messaging removal and MySQL shutdown require separate approval; removing messaging destroys broker data and offsets.
 Retained storage/other resources can still incur charges.
 Document who approved the window and the restart owner.
 
-For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD releases only the changed deployables. Each release starts the apps it deploys, plus AuthService and the gateway it needs for its smoke checks, and waits for a ready revision for every app, Prescription included. A release with `release=all` starts all six apps. Apps that are not part of the release keep their current state, so check all six app states, revisions and images after a window. Smoke checks sign in with the synthetic `SMOKE_*` accounts and cover Auth, Patient, Queue, MedicalRecord and Prescription routing through the gateway. Also check custom-domain health, the full clinical journey, Kafka flow and frontend behavior, which the smoke checks do not cover. Image rollback applies to the failed deployable only and does not undo migrations or configuration.
+For startup, verify MySQL is ready and messaging/DNS/broker state is correct before deploying the reviewed commit. CD releases only the changed deployables. Each release starts the apps it deploys, plus AuthService and the gateway it needs for its smoke checks, and waits for a ready revision for every app, Prescription included. A release with `release=all` starts all seven apps. Apps that are not part of the release keep their current state, so check all seven app states, revisions and images after a window. Smoke checks sign in with the synthetic `SMOKE_*` accounts and cover Auth, Patient, Queue, MedicalRecord, Prescription and Notification routing through the gateway. Also check custom-domain health, the full clinical journey, Kafka flow and frontend behavior, which the smoke checks do not cover. Image rollback applies to the failed deployable only and does not undo migrations or configuration.
 
 ### Approved demo and test windows
 
 The shared development apps run only for an approved demo or test, then return to `Stopped`.
 Starting an existing app resumes its deployed image; it does not deploy a new release.
 Record each window's start/end time in Asia/Colombo, responsible operator and cost owner before startup.
-Check no CD run is active or queued, dependencies are ready, all six apps have ready replicas and frontend/gateway health return HTTP 200 before enabling monitoring.
+Check no CD run is active or queued, dependencies are ready, all seven apps have ready replicas and frontend/gateway health return HTTP 200 before enabling monitoring.
 Use a reviewed saved Terraform plan with `availability_enabled=true` to resume the two tests and two alerts during the approved window.
-Before the window ends, apply a reviewed saved plan with `availability_enabled=false`, verify both tests and both alerts report disabled, then stop and verify all six apps.
+Before the window ends, apply a reviewed saved plan with `availability_enabled=false`, verify both tests and both alerts report disabled, then stop and verify all seven apps.
 The disabled resources remain provisioned for the next window; the action group and telemetry are retained.
 This schedule is an operator procedure, not an implemented automatic scheduler.
 Changing backend locks requires a separately authorized checked lock ID; never bypass locking with `-lock=false`.
