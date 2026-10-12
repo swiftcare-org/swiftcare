@@ -127,7 +127,10 @@ if ($waiting.Count -lt $QueueVolume) {
 
 $clinicDate = Get-Date -Format "yyyy-MM-dd"
 $clinicMonth = Get-Date -Format "yyyy-MM"
-Set-Content -Path (Join-Path $dataDir "sprint4-run.properties") -Encoding utf8 -Value @(
+# ASCII, not utf8: Windows PowerShell's utf8 adds a BOM, and JMeter reads .properties as
+# ISO-8859-1, so the BOM would rename the first key and reportDate would silently fall back
+# to the plan's default date.
+Set-Content -Path (Join-Path $dataDir "sprint4-run.properties") -Encoding ascii -Value @(
     "reportDate=$clinicDate"
     "reportMonth=$clinicMonth"
 )
