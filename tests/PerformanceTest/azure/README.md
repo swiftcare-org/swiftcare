@@ -33,6 +33,9 @@ history, daily and monthly reports and Admin user operations, run at the same 20
 | `results/RESULT-smoke-azure-20260927.md` | Sprint 3 Smoke gate report (SWC-127). |
 | `results/RESULT-load-azure-20260928.md` | Sprint 3 Load result (SWC-127), the official result: PASS 6 of 6. |
 | `results/RESULT-load-azure-20260927.md` | Earlier Sprint 3 Load run (SWC-127), superseded by the identical repeat above. |
+| `results/RESULT-local-validation-swc137-20261012.md` | Sprint 4 plan and seed validated against the local SWC-136 stack at the same 20-user profile (SWC-137). |
+| `results/RESULT-smoke-azure-20261012.md` | Sprint 4 Smoke gate report (SWC-137). |
+| `results/RESULT-load-azure-20261012.md` | Sprint 4 Load result (SWC-137): PASS 6 of 6, with Azure Monitor data. |
 
 ## Prerequisites
 
