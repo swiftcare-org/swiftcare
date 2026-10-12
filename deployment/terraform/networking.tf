@@ -6,7 +6,10 @@ resource "azurerm_virtual_network" "swiftcare" {
   tags                = local.common_tags
 }
 
+# Only the configuration that creates the Container Apps environment needs this subnet.
 resource "azurerm_subnet" "container_apps" {
+  count = local.create_container_apps_environment ? 1 : 0
+
   name                 = "containerapps-subnet"
   resource_group_name  = azurerm_resource_group.swiftcare.name
   virtual_network_name = azurerm_virtual_network.swiftcare.name
@@ -61,4 +64,10 @@ resource "azurerm_subnet" "messaging" {
       ]
     }
   }
+}
+
+# The subnet became conditional in SWC-161; keep the existing development subnet.
+moved {
+  from = azurerm_subnet.container_apps
+  to   = azurerm_subnet.container_apps[0]
 }

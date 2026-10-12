@@ -1,0 +1,11 @@
+﻿{
+    "Jtl":  "smoke-SWC-136.jtl",
+    "Samples":  174,
+    "DistinctLabels":  30,
+    "Failures":  0,
+    "MinMs":  6,
+    "MaxMs":  1463,
+    "IntegrityChecks":  15,
+    "IntegrityViolations":  0,
+    "Result":  "PASS"
+}

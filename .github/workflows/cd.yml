@@ -155,6 +155,8 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      # Optional: the environment's resource group when it differs (production joins development's).
+      CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP }}
       AZURE_GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AZURE_AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
@@ -163,6 +165,8 @@ jobs:
       AZURE_NOTIFICATION_APP: ${{ vars.AZURE_NOTIFICATION_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
+      # Optional: set when the Static Web App is in another region than AZURE_LOCATION.
+      STATIC_WEB_APP_LOCATION: ${{ vars.AZURE_STATIC_WEB_APP_LOCATION }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
@@ -265,6 +269,8 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      # Optional: the environment's resource group when it differs (production joins development's).
+      CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP }}
       AZURE_GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AZURE_AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
@@ -430,6 +436,8 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      # Optional: the environment's resource group when it differs (production joins development's).
+      CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP }}
       AZURE_GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AZURE_AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}
@@ -626,6 +634,8 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      # Optional: the environment's resource group when it differs (production joins development's).
+      CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP }}
       AZURE_GATEWAY_APP: ${{ vars.AZURE_GATEWAY_APP }}
       AZURE_AUTH_APP: ${{ vars.AZURE_AUTH_APP }}
       AZURE_PATIENT_APP: ${{ vars.AZURE_PATIENT_APP }}

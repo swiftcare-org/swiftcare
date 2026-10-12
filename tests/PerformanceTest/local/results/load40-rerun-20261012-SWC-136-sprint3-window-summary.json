@@ -1,0 +1,37 @@
+﻿{
+    "Jtl":  "C:\\Users\\M S I\\Downloads\\swiftcare-swc136\\tests\\PerformanceTest\\local\\results\\load40-rerun-20261012-SWC-136.jtl",
+    "WarmupSeconds":  60,
+    "Samples":  9631,
+    "Classes":  {
+                    "READ":  {
+                                 "Samples":  8461,
+                                 "P95Ms":  50,
+                                 "P99Ms":  63,
+                                 "FunctionalErrors":  0,
+                                 "ErrorRatePercent":  0,
+                                 "DurationAssertionBreaches":  0,
+                                 "FirstThirdP95Ms":  49,
+                                 "LastThirdP95Ms":  52,
+                                 "DriftPercent":  6.12,
+                                 "P95Pass":  true,
+                                 "P99Pass":  true,
+                                 "ErrorRatePass":  true,
+                                 "DriftPass":  true
+                             },
+                    "WRITE":  {
+                                  "Samples":  1170,
+                                  "P95Ms":  69,
+                                  "P99Ms":  78,
+                                  "FunctionalErrors":  0,
+                                  "ErrorRatePercent":  0,
+                                  "DurationAssertionBreaches":  0,
+                                  "FirstThirdP95Ms":  66,
+                                  "LastThirdP95Ms":  73,
+                                  "DriftPercent":  10.61,
+                                  "P95Pass":  true,
+                                  "P99Pass":  true,
+                                  "ErrorRatePass":  true,
+                                  "DriftPass":  true
+                              }
+                }
+}

@@ -31,6 +31,11 @@ FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-swiftcare.me}"
 FRONTEND_WWW_DOMAIN="${FRONTEND_WWW_DOMAIN-www.swiftcare.me}"
 IMPORT_CUSTOM_DOMAINS="${IMPORT_CUSTOM_DOMAINS:-false}"
 IMPORT_MESSAGING="${IMPORT_MESSAGING:-true}"
+# Production joins development's Container Apps environment: set SHARED_RESOURCE_GROUP and
+# SHARED_VNET_NAME (swiftcare-rg and swiftcare-vnet) to import the peerings and DNS links instead
+# of an environment and its subnet.
+SHARED_RESOURCE_GROUP="${SHARED_RESOURCE_GROUP:-}"
+SHARED_VNET_NAME="${SHARED_VNET_NAME:-}"
 
 BASE="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers"
 VNET_ID="${BASE}/Microsoft.Network/virtualNetworks/${NAME_PREFIX}-vnet"
@@ -60,7 +65,6 @@ az account set --subscription "$SUBSCRIPTION_ID"
 import_if_missing azurerm_resource_group.swiftcare \
   "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}"
 import_if_missing azurerm_virtual_network.swiftcare "$VNET_ID"
-import_if_missing azurerm_subnet.container_apps "${VNET_ID}/subnets/containerapps-subnet"
 import_if_missing azurerm_subnet.mysql "${VNET_ID}/subnets/mysql-subnet"
 import_if_missing azurerm_subnet.messaging "${VNET_ID}/subnets/messaging-subnet"
 
@@ -68,8 +72,18 @@ import_if_missing azurerm_log_analytics_workspace.swiftcare \
   "${BASE}/Microsoft.OperationalInsights/workspaces/${NAME_PREFIX}-logs"
 import_if_missing azurerm_application_insights.swiftcare \
   "${BASE}/Microsoft.Insights/components/${NAME_PREFIX}-appinsights"
-import_if_missing azurerm_container_app_environment.swiftcare \
-  "${BASE}/Microsoft.App/managedEnvironments/${NAME_PREFIX}-aca-env"
+if [[ -z "$SHARED_RESOURCE_GROUP" ]]; then
+  import_if_missing 'azurerm_subnet.container_apps[0]' "${VNET_ID}/subnets/containerapps-subnet"
+  import_if_missing 'azurerm_container_app_environment.swiftcare[0]' \
+    "${BASE}/Microsoft.App/managedEnvironments/${NAME_PREFIX}-aca-env"
+else
+  : "${SHARED_VNET_NAME:?Set SHARED_VNET_NAME with SHARED_RESOURCE_GROUP.}"
+  SHARED_VNET_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${SHARED_RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/${SHARED_VNET_NAME}"
+  import_if_missing 'azurerm_virtual_network_peering.to_shared[0]' \
+    "${VNET_ID}/virtualNetworkPeerings/${NAME_PREFIX}-to-shared"
+  import_if_missing 'azurerm_virtual_network_peering.from_shared[0]' \
+    "${SHARED_VNET_ID}/virtualNetworkPeerings/shared-to-${NAME_PREFIX}"
+fi
 
 import_if_missing azurerm_private_dns_zone.mysql "$MYSQL_DNS_ID"
 import_if_missing azurerm_private_dns_zone_virtual_network_link.mysql \
@@ -91,6 +105,12 @@ import_if_missing azurerm_mysql_flexible_database.notification \
 import_if_missing azurerm_private_dns_zone.messaging "$MESSAGING_DNS_ID"
 import_if_missing azurerm_private_dns_zone_virtual_network_link.messaging \
   "${MESSAGING_DNS_ID}/virtualNetworkLinks/messaging-vnet-link"
+if [[ -n "$SHARED_RESOURCE_GROUP" ]]; then
+  import_if_missing 'azurerm_private_dns_zone_virtual_network_link.mysql_shared[0]' \
+    "${MYSQL_DNS_ID}/virtualNetworkLinks/mysql-shared-vnet-link"
+  import_if_missing 'azurerm_private_dns_zone_virtual_network_link.messaging_shared[0]' \
+    "${MESSAGING_DNS_ID}/virtualNetworkLinks/messaging-shared-vnet-link"
+fi
 
 if [[ "$IMPORT_MESSAGING" == "true" ]]; then
   import_if_missing 'azurerm_public_ip.messaging[0]' "$PUBLIC_IP_ID"

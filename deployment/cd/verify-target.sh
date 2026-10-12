@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Read-only checks that the release targets the intended Azure resources.
 # Usage: verify-target.sh azure|data
-#   azure : subscription, resource group, Container Apps environment and Static Web App.
+#   azure : subscription, resource group, Container Apps environment and Static Web App. The site
+#           is expected in STATIC_WEB_APP_LOCATION when set, otherwise in AZURE_LOCATION.
 #   data  : MySQL and Kafka/ZooKeeper; needed only when a backend app is released.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -12,10 +13,11 @@ normalize_location() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' '
 }
 
+# require_location NAME ACTUAL [EXPECTED] : EXPECTED defaults to AZURE_LOCATION.
 require_location() {
   local resource_name="$1" actual expected
   actual=$(normalize_location "$2")
-  expected=$(normalize_location "$AZURE_LOCATION")
+  expected=$(normalize_location "${3:-$AZURE_LOCATION}")
   [ "$actual" = "$expected" ] || fail "$resource_name is in $actual; expected $expected"
 }
 
@@ -30,17 +32,19 @@ verify_azure() {
   group_state=$(az group show --name "$RESOURCE_GROUP" --query properties.provisioningState --output tsv)
   [ "$group_state" = "Succeeded" ] || fail "Resource group state is $group_state"
 
-  environment_state=$(az containerapp env show --resource-group "$RESOURCE_GROUP" \
+  environment_state=$(az containerapp env show --resource-group "$(environment_group)" \
     --name "$CONTAINERAPPS_ENVIRONMENT" --query properties.provisioningState --output tsv)
   [ "$environment_state" = "Succeeded" ] || fail "Container Apps environment state is $environment_state"
 
-  environment_location=$(az containerapp env show --resource-group "$RESOURCE_GROUP" \
+  environment_location=$(az containerapp env show --resource-group "$(environment_group)" \
     --name "$CONTAINERAPPS_ENVIRONMENT" --query location --output tsv)
   require_location "Container Apps environment" "$environment_location"
 
   static_app_location=$(az staticwebapp show --resource-group "$RESOURCE_GROUP" \
     --name "$STATIC_WEB_APP_NAME" --query location --output tsv)
-  require_location "Static Web App" "$static_app_location"
+  # Static Web Apps is offered in fewer regions, so an environment may keep its site elsewhere
+  # (production: East Asia while everything else is in Korea Central).
+  require_location "Static Web App" "$static_app_location" "${STATIC_WEB_APP_LOCATION:-$AZURE_LOCATION}"
   log "Azure target verified."
 }
 

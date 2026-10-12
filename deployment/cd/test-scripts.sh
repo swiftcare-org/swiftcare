@@ -383,6 +383,35 @@ if grep -q 'SMOKE_DOCTOR_PASSWORD' <<<"$out"; then ok "requires the smoke accoun
 (unset AZURE_PRESCRIPTION_APP; expect_failure "plan requires every app name" bash "$HERE/validate-config.sh" plan)
 expect_failure "rejects an unknown mode" bash "$HERE/validate-config.sh" everything
 
+echo "== verify-target azure"
+verify_azure() { # AZURE_LOCATION ENV_REGION SWA_REGION [STATIC_WEB_APP_LOCATION]
+  AZURE_LOCATION="$1" FAKE_ENV_LOCATION="$2" FAKE_SWA_LOCATION="$3" STATIC_WEB_APP_LOCATION="${4:-}" \
+    AZURE_SUBSCRIPTION_ID=sub-test STATIC_WEB_APP_NAME=site bash "$HERE/verify-target.sh" azure
+}
+reset
+expect_success "accepts one region for everything" verify_azure eastasia "East Asia" "East Asia"
+expect_failure "rejects a site in another region by default" verify_azure koreacentral "Korea Central" "East Asia"
+expect_success "accepts the site region named by STATIC_WEB_APP_LOCATION" verify_azure koreacentral "Korea Central" "East Asia" eastasia
+expect_failure "still rejects an environment outside AZURE_LOCATION" verify_azure koreacentral "East Asia" "East Asia" eastasia
+expect_failure "rejects a site outside the named region" verify_azure koreacentral "Korea Central" "West Europe" eastasia
+
+echo "== shared Container Apps environment"
+reset
+expect_success "creates a first service app in its own group" bash "$HERE/deploy-service.sh" queue
+expect_logged "names the environment directly when it is in the same group" "--environment env "
+export CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP=shared-rg
+reset
+expect_success "creates a service app that joins an environment in another group" bash "$HERE/deploy-service.sh" queue
+expect_logged "looks the environment up in its own group" "containerapp env show --resource-group shared-rg --name env"
+expect_logged "passes the environment resource ID" "--environment /subscriptions/test/resourceGroups/shared-rg/providers/Microsoft.App/managedEnvironments/env"
+expect_logged "keeps the app in its own resource group" "containerapp create --resource-group rg --name swiftcare-queue"
+export SERVICE_MIGRATE_JOB=swiftcare-queue-migrate
+expect_success "creates a migration job in the shared environment" bash "$HERE/migrate-service.sh" queue
+expect_logged "passes the environment resource ID to the job" "job create --resource-group rg --name swiftcare-queue-migrate --environment /subscriptions/test/resourceGroups/shared-rg/"
+expect_success "checks the shared environment's region in its own group" \
+  env AZURE_LOCATION=eastasia AZURE_SUBSCRIPTION_ID=sub-test STATIC_WEB_APP_NAME=site bash "$HERE/verify-target.sh" azure
+unset CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP
+
 echo "== resolve-target"
 target_of() { # EVENT RUN_BRANCH REF_NAME TARGET_INPUT WINDOW_DEVELOPMENT WINDOW_PRODUCTION
   : > "$GITHUB_OUTPUT"

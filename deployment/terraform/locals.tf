@@ -11,6 +11,10 @@ locals {
   # Database names keep project_name: the CD release manifest expects the same names everywhere.
   name_prefix = coalesce(var.name_prefix, var.project_name)
 
+  # The subscription allows one Container Apps environment in total, so only one configuration
+  # creates it; the other joins it (see shared.tf).
+  create_container_apps_environment = var.shared_container_apps_environment == null
+
   virtual_network_name            = "${local.name_prefix}-vnet"
   log_analytics_workspace_name    = "${local.name_prefix}-logs"
   application_insights_name       = "${local.name_prefix}-appinsights"

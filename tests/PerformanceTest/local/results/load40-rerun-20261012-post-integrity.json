@@ -1,0 +1,62 @@
+﻿[
+    {
+        "Check":  "complete_consultation_without_completed_queue",
+        "Violations":  0
+    },
+    {
+        "Check":  "completed_queue_without_complete_consultation",
+        "Violations":  0
+    },
+    {
+        "Check":  "completed_consultation_without_vitals",
+        "Violations":  0
+    },
+    {
+        "Check":  "completed_consultation_without_event_id",
+        "Violations":  0
+    },
+    {
+        "Check":  "duplicate_consultation_event_id",
+        "Violations":  0
+    },
+    {
+        "Check":  "multiple_active_entries_per_doctor",
+        "Violations":  0
+    },
+    {
+        "Check":  "multiple_active_entries_per_room",
+        "Violations":  0
+    },
+    {
+        "Check":  "called_fields_inconsistent",
+        "Violations":  0
+    },
+    {
+        "Check":  "consultations_with_multiple_prescriptions",
+        "Violations":  0
+    },
+    {
+        "Check":  "consultation_has_prescription_and_no_prescription",
+        "Violations":  0
+    },
+    {
+        "Check":  "prescription_without_complete_consultation",
+        "Violations":  0
+    },
+    {
+        "Check":  "dispense_fields_inconsistent",
+        "Violations":  0
+    },
+    {
+        "Check":  "outcome_without_matching_record",
+        "Violations":  0
+    },
+    {
+        "Check":  "duplicate_notification_event_id",
+        "Violations":  0
+    },
+    {
+        "Check":  "notification_for_unknown_patient",
+        "Violations":  0
+    }
+]

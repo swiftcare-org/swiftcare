@@ -79,7 +79,7 @@ Both real files are ignored by Git. Never add passwords to either file.
 
 ## Development and production environments
 
-The same configuration manages two isolated environments in one subscription. Each has its own state key, tfvars file, resource group, network, MySQL server, Container Apps environment, Static Web App, monitoring, budget and deployment identity. Both run only in approved demo windows.
+The same configuration manages two isolated environments in one subscription. Each has its own state key, tfvars file, resource group, network, MySQL server, Static Web App, monitoring, budget and deployment identity. The two share one Container Apps environment (see below). Both run only in approved demo windows.
 
 | | Development | Production |
 |---|---|---|
@@ -88,9 +88,15 @@ The same configuration manages two isolated environments in one subscription. Ea
 | State key | `azure-development.tfstate` | `azure-production.tfstate` |
 | `name_prefix` | empty (keeps the original `swiftcare-*` names) | `swiftcare-prod` |
 | Resource group | `swiftcare-rg` | `swiftcare-prod-rg` |
+| Region | `eastasia` | `eastasia` |
+| Container Apps environment | `swiftcare-aca-env`, created here | development's, joined through `shared_container_apps_environment` |
 | Address space | `10.20.0.0/16` | `10.30.0.0/16` |
 | Frontend / gateway hosts | `dev.swiftcare.me` / `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me` / `api.swiftcare.me` |
 | OIDC subject | `...:environment:azure-development` | `...:environment:azure-production` |
+
+The subscription allows only one Container Apps environment in total (`MaxNumberOfRegionalEnvironmentsInSubExceeded` for a second one in East Asia, then `MaxNumberOfGlobalEnvironmentsInSubExceeded` in Korea Central, on 12 October), and its region policy allows only `austriaeast`, `uaenorth`, `centralindia`, `eastasia` and `koreacentral`. Development creates the environment; production's apps join it. Production keeps its own network, MySQL server and databases, messaging, DNS zones, identity, secrets, monitoring and Static Web App, so only the hosting of the apps is shared. A shared environment means development and production apps can reach each other's internal addresses; the isolation is in data, credentials and deployment identity, not in the app network.
+
+`shared.tf` implements the join. The two virtual networks are peered in both directions, and production's private DNS zones (MySQL and messaging) are also linked to development's network, because the shared environment runs there and must resolve production's database name. The peering on development's network is a child resource owned by production's state; development's own plan is unaffected. Apps and jobs of production are created in `swiftcare-prod-rg` but placed into the environment by its resource ID, which CD reads from `AZURE_CONTAINERAPPS_ENVIRONMENT` and `AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP`.
 
 `name_prefix` changes only Azure resource names. Database names stay `swiftcare_<service>` in both environments because each has its own server and the CD release manifest uses those names. The development gateway host is `api-dev`, not `api.dev`, because Cloudflare's free edge certificate covers one subdomain level.
 
@@ -103,13 +109,12 @@ terraform -chdir=deployment/terraform plan -input=false -var-file="environments/
 
 Existing operators may keep `backend.hcl` and `terraform.tfvars` for development; they are equivalent to the development files.
 
-Creating role assignments needs the subscription Owner, so a new environment starts with `deployment_role_assignment_enabled = false`. After the first apply, the Owner creates the assignment, then the operator sets the variable to `true` and imports it:
+Creating role assignments needs the subscription Owner, so a new environment starts with `deployment_role_assignment_enabled = false`. When it is `true`, Terraform creates three things for production's deployment identity: Contributor on `swiftcare-prod-rg`, a custom role `swiftcare-prod Container Apps environment join` (read and join the shared environment, nothing else) and its assignment on the shared environment. To let the operator apply them without Owner access, the Owner grants the operator the built-in role User Access Administrator on the subscription for the duration of the apply and removes it afterwards:
 
 ```powershell
-$principal = terraform -chdir=deployment/terraform output -raw github_cd_principal_id
-az role assignment create --assignee-object-id $principal --assignee-principal-type ServicePrincipal --role Contributor --scope "/subscriptions/<subscription-id>/resourceGroups/swiftcare-prod-rg"
-$assignment = az role assignment list --assignee $principal --scope "/subscriptions/<subscription-id>/resourceGroups/swiftcare-prod-rg" --role Contributor --query "[0].id" -o tsv
-terraform -chdir=deployment/terraform import -var-file="environments/production.tfvars" "azurerm_role_assignment.github_cd_contributor[0]" $assignment
+az role assignment create --assignee <operator-object-id> --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
+# operator: set deployment_role_assignment_enabled = true in production.tfvars, plan (expect 3 creates), apply
+az role assignment delete --assignee <operator-object-id> --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
 ```
 
 Domain order: add the `dev.swiftcare.me` and `api-dev.swiftcare.me` records first and move development to them (tfvars values in the development example), which releases `swiftcare.me` and `www.swiftcare.me`; then point those records at production and set `frontend_custom_domains_enabled = true` in production. A domain can be attached to only one Static Web App at a time. The gateway hostnames are bound manually on each gateway Container App, as before.

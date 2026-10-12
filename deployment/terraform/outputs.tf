@@ -20,7 +20,12 @@ output "azure_location" {
 
 output "container_apps_environment_name" {
   description = "GitHub Environment value for AZURE_CONTAINERAPPS_ENVIRONMENT."
-  value       = azurerm_container_app_environment.swiftcare.name
+  value       = local.create_container_apps_environment ? azurerm_container_app_environment.swiftcare[0].name : data.azurerm_container_app_environment.shared[0].name
+}
+
+output "container_apps_environment_resource_group" {
+  description = "GitHub Environment value for AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP (the shared environment's group; differs from AZURE_RESOURCE_GROUP in production)."
+  value       = local.create_container_apps_environment ? azurerm_resource_group.swiftcare.name : var.shared_container_apps_environment.resource_group_name
 }
 
 output "application_insights_name" {

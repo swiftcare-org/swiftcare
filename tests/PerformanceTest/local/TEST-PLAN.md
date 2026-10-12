@@ -305,3 +305,77 @@ report).
   opening with the load profile and time window (users, role split, ramp, duration, samples,
   throughput) before the percentiles, followed by the verdict, the post-run checks, the log
   scan and a short analysis.
+
+## 10. Sprint 4 workload (SWC-136)
+
+### 10.1 Scope and workload
+
+`SWC-136-sprint4.jmx` preserves the Sprint 3 Doctor and counter flows and adds four separately
+sized groups: Receptionist Activity Feed/Today, Doctor patient and prescription history,
+Admin daily/monthly reports, and Admin user management. Authentication is once per thread and
+excluded from the read/write classifications.
+
+| Profile | Doctor | Counter | Activity | History | Reports | Admin | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Smoke | 1 | 1 | 1 | 1 | 1 | 1 | 6 |
+| Sprint 3 baseline | 10 | 10 | 0 | 0 | 0 | 0 | 20 |
+| Sprint 4 Load | 10 | 8 | 8 | 8 | 4 | 2 | 40 |
+| Comparable Stress | 75 | 60 | 60 | 60 | 30 | 15 | 300 |
+| Optional ceiling extension | 100 | 80 | 80 | 80 | 40 | 20 | 400 |
+
+Smoke runs 90 seconds. Baseline and Load run for 900 seconds with a 30-second ramp. The
+comparable Stress profile follows the actual Sprint 3 method: one continuous linear ramp from
+0 to 300 total users over the entire 600-second run. There are no assumed 50-user or 100-user
+increments. The knee is read from 30-second active-thread, throughput, aggregate-p95 and error
+windows. The 400-user profile is an optional new run only when the 300-user run shows no knee
+and the host-capacity gate passes. Comparable phases start from fresh isolated databases and
+are reseeded; no shared or Azure endpoint is allowed.
+
+Stress keeps the Sprint 3 clinical pacing (`stepDelay=100`, `stepRange=200`,
+`cycleDelay=5000`, `cycleRange=5000`, `pollDelay=300`, `pollRange=300`,
+`dispenseAfterMs=10000`) and adds Sprint 4 pacing of 300 ms for Activity Feed, 500 ms for
+history, and 1000 ms for report and Admin groups. The six groups share the same `rampUp` and
+`duration` properties, so their combined active-thread count rises proportionally and
+continuously throughout the run.
+
+### 10.2 Pre-registered pass/fail thresholds
+
+The following thresholds are fixed before execution and apply after discarding the first
+90 seconds of Load. Functional errors use HTTP/application failures and exclude the separate
+duration-assertion tripwire samples.
+
+| Metric | Required threshold |
+|---|---:|
+| Read p95 | <= 800 ms |
+| Read p99 | <= 1500 ms |
+| Write p95 | <= 1500 ms |
+| Write p99 | <= 3000 ms |
+| Functional error rate | <= 0.5% |
+| Latency drift | last-third p95 <= first-third p95 + 20%, for reads and writes |
+
+Smoke must have zero functional errors, all expected sampler labels and clean integrity.
+Load must pass all six thresholds and integrity before Stress is permitted. The six thresholds
+above decide Load; they do not turn Stress into a staged pass/fail test. As in Sprint 3, the
+Stress breaking point is the first 60-second interval with aggregate p95 above 2000 ms,
+aggregate functional error rate above 1%, or throughput flat/falling while active threads
+continue to rise. Complete the 600-second ramp so the knee can be calculated unless a safety
+abort occurs. Abort immediately for unsafe host/Docker pressure or contact with a non-isolated
+endpoint. Run integrity checks after the profile; any violation is a failed integrity result,
+not an invented saturation point.
+
+### 10.3 SWC-128 concurrency regression
+
+`SWC-136-call-next-burst.jmx` synchronizes 2, 10 and 25 authenticated Doctor calls. A burst
+passes when no request produces the former 500/deadlock, each successful call assigns a unique
+queue entry, and database integrity confirms at most one active queue entry per doctor and
+room. A legitimate non-500 capacity response is reported separately rather than hidden.
+
+### 10.4 Saturation and integrity evidence
+
+`monitor-sprint4-resources.ps1` captures each isolated container's CPU and memory plus MySQL
+current/max connections. The first saturated service is named only when resource pressure
+aligns in time with p95/error/throughput degradation; otherwise the result is inconclusive.
+`verify-sprint4-integrity.ps1` checks queue/consultation completion pairs, duplicate
+prescriptions and decisions, dispense fields, notification EventId uniqueness, orphaned
+records and multiple active assignments. Every report retains JTL, HTML dashboard, resource
+CSV, integrity CSV, relevant service logs, exact command, time window and environment limits.

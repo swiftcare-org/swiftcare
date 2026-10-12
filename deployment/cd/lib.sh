@@ -74,6 +74,23 @@ connection_string() {
   printf '%s' "$value"
 }
 
+# environment_group : the resource group of the Container Apps environment. Production's apps live
+# in their own group but join development's environment (one environment per subscription).
+environment_group() { printf '%s' "${CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP:-$RESOURCE_GROUP}"; }
+
+# environment_ref : what to pass to --environment when creating an app or job. The name is enough
+# within the same group; an environment in another group needs its resource ID.
+environment_ref() {
+  local group
+  group=$(environment_group)
+  if [ "$group" = "$RESOURCE_GROUP" ]; then
+    printf '%s' "$CONTAINERAPPS_ENVIRONMENT"
+  else
+    az containerapp env show --resource-group "$group" --name "$CONTAINERAPPS_ENVIRONMENT" \
+      --query id --output tsv
+  fi
+}
+
 # app_exists APP
 app_exists() {
   az containerapp show --resource-group "$RESOURCE_GROUP" --name "$1" >/dev/null 2>&1

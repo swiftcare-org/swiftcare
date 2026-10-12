@@ -461,6 +461,7 @@ CD releases to two environments in the same Azure subscription, and only during 
 | Manual trigger | Any reviewed branch, `target=development` | `main` only, `target=production` |
 | Window variable (repository) | `DEMO_WINDOW_DEVELOPMENT` | `DEMO_WINDOW_PRODUCTION` |
 | Public hosts | `dev.swiftcare.me`, `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me`, `api.swiftcare.me` |
+| Container Apps environment | created by Terraform | development's, shared (the subscription allows one); named by `AZURE_CONTAINERAPPS_ENVIRONMENT` and `AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP` |
 
 GitHub starts a `workflow_run` workflow from the copy of `cd.yml` on the default branch (`main`), so the automatic triggers follow whatever `cd.yml` is on `main`: a change to them takes effect only after it reaches `main`. Manual runs use `cd.yml` from the selected branch.
 

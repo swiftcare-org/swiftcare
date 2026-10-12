@@ -2,20 +2,29 @@
 # (ignored). Every Azure name differs from development; database names stay the same because
 # each environment has its own MySQL server.
 subscription_id = "00000000-0000-0000-0000-000000000000"
-location        = "eastasia"
 environment     = "azure-production"
-sprint_name     = "sprint-4"
+
+location    = "eastasia"
+sprint_name = "sprint-4"
 
 name_prefix         = "swiftcare-prod"
 resource_group_name = "swiftcare-prod-rg"
 mysql_server_name   = "swiftcare-prod-mysql"
 static_web_app_name = "swiftcare-prod-web"
 
-# Does not overlap development (10.20.0.0/16), so the networks could be peered later.
-virtual_network_address_space  = ["10.30.0.0/16"]
-container_apps_subnet_prefixes = ["10.30.0.0/23"]
-mysql_subnet_prefixes          = ["10.30.2.0/28"]
-messaging_subnet_prefixes      = ["10.30.3.0/27"]
+# The subscription allows one Container Apps environment in total, so production's apps join
+# development's environment. Production keeps its own network, data, messaging, identity, secrets
+# and site; the networks are peered so the shared environment reaches production's MySQL and Kafka.
+shared_container_apps_environment = {
+  name                 = "swiftcare-aca-env"
+  resource_group_name  = "swiftcare-rg"
+  virtual_network_name = "swiftcare-vnet"
+}
+
+# Must not overlap development (10.20.0.0/16) because the networks are peered.
+virtual_network_address_space = ["10.30.0.0/16"]
+mysql_subnet_prefixes         = ["10.30.2.0/28"]
+messaging_subnet_prefixes     = ["10.30.3.0/27"]
 
 # Demo windows only.
 messaging_enabled = false
@@ -38,7 +47,8 @@ github_oidc_credentials = {
   }
 }
 
-# The subscription Owner creates the Contributor assignment; then set true and import it.
+# Role definitions and assignments need the subscription Owner: Contributor on swiftcare-prod-rg
+# and a read-and-join role on the shared environment. Keep false until the Owner has created both.
 deployment_role_assignment_enabled = false
 
 availability_enabled      = false
