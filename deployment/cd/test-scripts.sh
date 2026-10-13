@@ -377,6 +377,13 @@ out=$(unset SMOKE_DOCTOR_PASSWORD; bash "$HERE/validate-config.sh" service medic
 if grep -q 'SMOKE_DOCTOR_PASSWORD' <<<"$out"; then ok "requires the smoke account the service uses"; else bad "requires the smoke account the service uses" "$out"; fi
 (unset SMOKE_DOCTOR_PASSWORD; expect_success "does not require a smoke account the service does not use" bash "$HERE/validate-config.sh" service queue)
 (JWT_SIGNING_KEY=short expect_failure "rejects a short signing key" bash "$HERE/validate-config.sh" gateway)
+long_name=swiftcare-prod-prescription-migrate
+(SERVICE_MIGRATE_JOB=$long_name expect_failure "rejects a migration job name longer than 32 characters" bash "$HERE/validate-config.sh" service queue)
+(SERVICE_MIGRATE_JOB=swc-prod-medical-record-migrate expect_success "accepts a 31 character job name" bash "$HERE/validate-config.sh" service queue)
+(SERVICE_MIGRATE_JOB=Swiftcare-Queue-Migrate expect_failure "rejects upper case in a job name" bash "$HERE/validate-config.sh" service queue)
+(SERVICE_MIGRATE_JOB=swiftcare--queue expect_failure "rejects two hyphens in a row in a job name" bash "$HERE/validate-config.sh" service queue)
+(AZURE_QUEUE_APP=swiftcare-queue- expect_failure "rejects an app name ending in a hyphen" bash "$HERE/validate-config.sh" service queue)
+(AZURE_GATEWAY_APP=swiftcare-production-gateway-app-name expect_failure "rejects an app name longer than 32 characters in the plan" bash "$HERE/validate-config.sh" plan)
 (FRONTEND_WWW_ORIGIN="$FRONTEND_ORIGIN" expect_failure "rejects identical frontend origins" bash "$HERE/validate-config.sh" gateway)
 (FRONTEND_ORIGIN=https://app.example.test/ expect_failure "rejects an origin with a trailing slash" bash "$HERE/validate-config.sh" gateway)
 (GATEWAY_ORIGIN=http://api.example.test expect_failure "rejects a non-HTTPS gateway origin" bash "$HERE/validate-config.sh" frontend)
