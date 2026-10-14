@@ -1,6 +1,6 @@
 name: CD
 
-run-name: Deploy SwiftCare
+run-name: Deploy SwiftCare to ${{ inputs.target || (github.event.workflow_run.head_branch == 'main' && 'production' || 'development') }}
 
 # Releases to development (after CI on develop) or production (after CI on main, or a manual run
 # from main), and only while that environment's demo window is open. Releases only what changed.

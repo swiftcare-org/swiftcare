@@ -28,7 +28,9 @@
     Re-running it therefore resets the doctor pool.
 
     Writes data/clinic-doctors.csv and data/clinic-receptionists.csv (username,password),
-    git-ignored.
+    git-ignored. When it checks patients in (-QueueVolume above 0) it also writes
+    data/clinic-patients.csv (patientId), which seed-sprint4-azure.ps1 (SWC-137) uses for
+    the patient-history group. A -QueueVolume 0 reset leaves that file unchanged.
 
 .PARAMETER GatewayUrl
     API Gateway base URL. Default: https://api.swiftcare.me
@@ -201,6 +203,8 @@ if ($QueueVolume -gt 0) {
     Write-Host "Checking in $QueueVolume patients to seed today's waiting queue..." -ForegroundColor Cyan
     $stamp = Get-Date -Format "MMddHHmm"
     $checkedIn = 0
+    $patientRows = [System.Collections.Generic.List[string]]::new()
+    $patientRows.Add("patientId")
 
     for ($i = 1; $i -le $QueueVolume; $i++) {
         $nic = "$stamp{0:D4}" -f $i
@@ -216,9 +220,10 @@ if ($QueueVolume -gt 0) {
         } | ConvertTo-Json -Compress
 
         try {
-            Invoke-RestMethod -Method Post -Uri "$GatewayUrl/api/patients" `
+            $registered = Invoke-RestMethod -Method Post -Uri "$GatewayUrl/api/patients" `
                 -Headers @{ Authorization = "Bearer $receptionToken" } `
-                -ContentType "application/json" -Body $body | Out-Null
+                -ContentType "application/json" -Body $body
+            $patientRows.Add([string]$registered.patientId)
             $checkedIn++
         }
         catch {
@@ -228,6 +233,8 @@ if ($QueueVolume -gt 0) {
         if ($i % 50 -eq 0) { Write-Host "  $i / $QueueVolume" -ForegroundColor DarkGray }
     }
 
+    Set-Content -Path (Join-Path $dataDir "clinic-patients.csv") -Value $patientRows -Encoding utf8
+    Write-Host "  wrote data/clinic-patients.csv ($($patientRows.Count - 1) rows)" -ForegroundColor Green
     Write-Host "  checked in $checkedIn / $QueueVolume patients" -ForegroundColor Green
 }
 
