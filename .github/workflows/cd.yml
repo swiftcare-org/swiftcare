@@ -778,6 +778,13 @@ jobs:
           # The next release reads this file to learn which commit the site runs.
           printf '{"sha":"%s"}\n' "$DEPLOY_SHA" > dist/version.json
 
+      # Development is limited to the dev_team role; production keeps the public configuration.
+      # The step fails the job if the build output does not match the target.
+      - name: Apply the access policy for the target
+        env:
+          TARGET: ${{ needs.target.outputs.target }}
+        run: python3 -I deployment/cd/frontend_access.py apply "$TARGET" frontend/dist
+
       - name: Deploy to Azure Static Web Apps
         id: deploy
         uses: Azure/static-web-apps-deploy@v1
