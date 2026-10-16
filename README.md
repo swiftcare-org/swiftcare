@@ -9,7 +9,7 @@ SwiftCare is an outpatient clinic management system. It takes a patient from the
 
 It is built as six independently deployable ASP.NET Core microservices behind a YARP API Gateway, with a React frontend, MySQL for storage and Kafka for events between services. It runs locally with Docker Compose and in production on Microsoft Azure.
 
-- **Production:** [swiftcare.me](https://swiftcare.me) (available during scheduled demo windows)
+- **Production:** [swiftcare.me](https://swiftcare.me)
 - **Project video:** [SwiftCare summary on YouTube](https://youtu.be/85lzhulTAbY)
 
 ## Contents
@@ -55,31 +55,12 @@ It is built as six independently deployable ASP.NET Core microservices behind a 
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    Browser["React frontend<br/>(Vite)"] -->|HTTPS + JWT| Gateway["API Gateway<br/>(YARP)"]
-    Display["Waiting-room display"] --> Gateway
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/swiftcare-architecture-dark.png">
+  <img src="docs/swiftcare-architecture-light.png" alt="SwiftCare local architecture showing the React frontend, YARP gateway, six services and their databases, and the Kafka topics each service publishes or consumes.">
+</picture>
 
-    Gateway --> Auth["AuthService"]
-    Gateway --> Patient["PatientService"]
-    Gateway --> Queue["QueueService"]
-    Gateway --> Medical["MedicalRecordService"]
-    Gateway --> Prescription["PrescriptionService"]
-    Gateway --> Notification["NotificationService"]
-
-    Patient -- patient-checked-in --> Kafka[("Kafka")]
-    Queue -- patient-called --> Kafka
-    Medical -- consultation-completed --> Kafka
-    Kafka --> Queue
-    Kafka --> Notification
-
-    Auth --- AuthDb[("swiftcare_auth")]
-    Patient --- PatientDb[("swiftcare_patient")]
-    Queue --- QueueDb[("swiftcare_queue")]
-    Medical --- MedicalDb[("swiftcare_medical_record")]
-    Prescription --- PrescriptionDb[("swiftcare_prescription")]
-    Notification --- NotificationDb[("swiftcare_notification")]
-```
+The diagram shows the local Docker Compose stack. See [Events](#events) for the Kafka topics each service publishes or consumes.
 
 The **API Gateway** is the only entry point. It validates the JWT, checks the session with AuthService, applies role-based policies per route, strips any identity headers sent by the client and attaches trusted ones, and checks that consultation and prescription writes belong to the doctor's own visit before forwarding them. Services reject any request that did not come through the gateway.
 
