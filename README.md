@@ -290,7 +290,7 @@ Both environments are started only during approved demo windows to control cost.
 
 ## Contributing
 
-Branching, commit messages, pull requests and the definition of done are described in [CONTRIBUTING.md](CONTRIBUTING.md). In short: branch from `develop`, use Conventional Commits, and open a pull request into `develop` that passes CI and has an approving review.
+Branching, commit messages, pull requests and the definition of done are described in [CONTRIBUTING.md](CONTRIBUTING.md). In short: branch from `develop` with the Jira key in the branch name, use Conventional Commits, and open a pull request into `develop` that passes CI and is approved by the sprint's QA.
 
 ## Team
 
