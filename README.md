@@ -1,5 +1,7 @@
 # SwiftCare
 
+**Smart Care, Better Life.**
+
 [![CI](https://github.com/swiftcare-org/swiftcare/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/swiftcare-org/swiftcare/actions/workflows/ci.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=swiftcare-org_swiftcare&metric=alert_status&branch=develop)](https://sonarcloud.io/summary/new_code?id=swiftcare-org_swiftcare&branch=develop)
 
@@ -8,7 +10,8 @@ SwiftCare is an outpatient clinic management system. It takes a patient from the
 It is built as six independently deployable ASP.NET Core microservices behind a YARP API Gateway, with a React frontend, MySQL for storage and Kafka for events between services. It runs locally with Docker Compose and in production on Microsoft Azure.
 
 - **Production:** [swiftcare.me](https://swiftcare.me) (available during scheduled demo windows)
-- **Project board:** Jira project `SWC`
+- **Project board:** [Jira project SWC](https://swiftcare-app.atlassian.net/jira/software/projects/SWC/summary)
+- **Project video:** [SwiftCare summary on YouTube](https://youtu.be/85lzhulTAbY)
 
 ## Contents
 
@@ -292,17 +295,17 @@ Branching, commit messages, pull requests and the definition of done are describ
 
 ## Team
 
-SwiftCare was built over four sprints by a team of four, with the Business Analyst, Developer, DevOps and QA roles rotating each sprint.
+SwiftCare was built by Group 22 over four sprints, with the Business Analyst, Developer, DevOps and QA roles rotating each sprint.
 
 | Name | Student ID |
 | --- | --- |
-| Kularatne R.A.D | IT24103431 |
 | Kularatne P.O.N | IT24103437 |
 | Rajasinghe R.M.G | IT24103439 |
-| Onel De Silva | IT24103444 |
+| Kularatne R.A.D | IT24103431 |
+| De Silva J.W.D.J.O. | IT24103444 |
 
 The product backlog closed with 34 of 34 user stories done.
 
 ## License
 
-This is an academic project developed for SE3112 at SLIIT. No open-source license has been granted; all rights are reserved by the authors.
+This is an academic project developed by Group 22 for the SE3022 Case Study Project. No open-source license has been granted; all rights are reserved by the authors.
