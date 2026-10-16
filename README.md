@@ -1,253 +1,194 @@
 # SwiftCare
 
-## Clinical visit validation (SWC-154)
+**Smart Care, Better Life.**
 
-The gateway validates consultation creation, prescription creation and no-prescription decisions before forwarding writes. Consultation creation requires an active queue assignment owned by the authenticated doctor with the same patient. Prescription outcomes require a completed consultation owned by that doctor with matching patient and queue identifiers. The patient must still exist.
+[![CI](https://github.com/swiftcare-org/swiftcare/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/swiftcare-org/swiftcare/actions/workflows/ci.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=swiftcare-org_swiftcare&metric=alert_status&branch=develop)](https://sonarcloud.io/summary/new_code?id=swiftcare-org_swiftcare&branch=develop)
 
-Invalid identifiers return 400; a missing, mismatched, unfinished or unowned visit returns 422; unavailable authoritative validation returns 503 without forwarding the write. QueueService and MedicalRecordService provide gateway-secret-protected internal visit lookups. No public gateway route exposes those lookups, and no service reads another service's database.
+SwiftCare is an outpatient clinic management system. It takes a patient from the reception desk, through the waiting room and the doctor's consultation, to the prescription counter, and gives administrators a live view of the department and its daily and monthly figures.
 
-Deploy the two lookup endpoints before updating the gateway. No schema migration is needed. Validation uses the existing YARP cluster destinations, including Azure overrides. This closes the deferred cross-service validation scope recorded in issue #48.
+It is built as six independently deployable ASP.NET Core microservices behind a YARP API Gateway, with a React frontend, MySQL for storage and Kafka for events between services. It runs locally with Docker Compose and in production on Microsoft Azure.
 
-SwiftCare is a healthcare queue and medical-record management system built as six independently deployable microservices behind an API Gateway. It supports authentication, patient administration, clinical records, prescriptions, queue operations, notifications, and reporting.
+- **Production:** [swiftcare.me](https://swiftcare.me) (available during scheduled demo windows)
+- **Project video:** [SwiftCare summary on YouTube](https://youtu.be/85lzhulTAbY)
+
+## Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Repository structure](#repository-structure)
+- [Getting started](#getting-started)
+- [Testing](#testing)
+- [CI/CD and environments](#cicd-and-environments)
+- [Security and privacy](#security-and-privacy)
+- [Observability](#observability)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Team](#team)
+- [License](#license)
 
 ## Features
 
-- API Gateway with centralized JWT authentication and role-based authorization
-- Patient registration, search, and profile management
-- Queue creation, check-in, calling, and waiting-room display
-- Medical histories, consultations, allergies, conditions, and vital signs
-- Prescription creation, dispensing, and history
-- Notifications, activity feeds, and operational reports
-- Kafka-based asynchronous communication between services
+**Receptionist**
+- Register new patients and check in returning patients, with a queue number assigned automatically
+- Manage today's queue, see who is waiting, in consultation or completed
+- Record allergies and chronic conditions, and update patient details
+- Dispense prescriptions at the counter
+- Follow a live activity feed of check-ins, calls and completed consultations
+
+**Doctor**
+- Call the next patient from a shared waiting pool, with the assignment shown on the waiting-room display
+- See red allergy, amber chronic-condition and blue overdue follow-up alerts before consulting
+- Record consultations and vital signs, using personal consultation templates
+- Review the patient's consultation, vital-sign and prescription history
+- Write prescriptions, or record that a consultation needs none
+- Set a follow-up date and instructions
+
+**Administrator**
+- Create, edit, deactivate and reactivate staff accounts, and reset passwords
+- Review an audit log of sign-ins and account changes
+- Generate daily and monthly summary reports: patients seen, new and returning patients, patients per room, top diagnoses, prescriptions and a weekly breakdown
+
+**Public**
+- A waiting-room display showing which queue number is called to which room, with no personal information
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser["React frontend<br/>(Vite)"] -->|HTTPS + JWT| Gateway["API Gateway<br/>(YARP)"]
+    Display["Waiting-room display"] --> Gateway
+
+    Gateway --> Auth["AuthService"]
+    Gateway --> Patient["PatientService"]
+    Gateway --> Queue["QueueService"]
+    Gateway --> Medical["MedicalRecordService"]
+    Gateway --> Prescription["PrescriptionService"]
+    Gateway --> Notification["NotificationService"]
+
+    Patient -- patient-checked-in --> Kafka[("Kafka")]
+    Queue -- patient-called --> Kafka
+    Medical -- consultation-completed --> Kafka
+    Kafka --> Queue
+    Kafka --> Notification
+
+    Auth --- AuthDb[("swiftcare_auth")]
+    Patient --- PatientDb[("swiftcare_patient")]
+    Queue --- QueueDb[("swiftcare_queue")]
+    Medical --- MedicalDb[("swiftcare_medical_record")]
+    Prescription --- PrescriptionDb[("swiftcare_prescription")]
+    Notification --- NotificationDb[("swiftcare_notification")]
+```
+
+The **API Gateway** is the only entry point. It validates the JWT, checks the session with AuthService, applies role-based policies per route, strips any identity headers sent by the client and attaches trusted ones, and checks that consultation and prescription writes belong to the doctor's own visit before forwarding them. Services reject any request that did not come through the gateway.
+
+Each service owns its own MySQL database and never reads another service's data. Services that need to react to each other do so through Kafka events, which carry identifiers rather than personal details.
+
+### Services
+
+| Service | Port | Database | Responsibility |
+| --- | ---: | --- | --- |
+| [API Gateway](ApiGateway/README.md) | 8000 | | Routing, JWT validation, session checks, role policies, trusted identity headers |
+| [AuthService](services/AuthService/README.md) | 5000 | `swiftcare_auth` | Staff accounts, sign-in and sign-out, JWT issuance, audit log |
+| [PrescriptionService](services/PrescriptionService/README.md) | 5001 | `swiftcare_prescription` | Prescriptions, no-prescription decisions, dispensing, prescription reports |
+| [PatientService](services/PatientService/README.md) | 5002 | `swiftcare_patient` | Registration, search, profiles, allergies, chronic conditions, check-in |
+| [QueueService](services/QueueService/README.md) | 5003 | `swiftcare_queue` | Daily queue numbers, calling patients, waiting-room display |
+| [MedicalRecordService](services/MedicalRecordService/README.md) | 5004 | `swiftcare_medical_record` | Consultations, vital signs, templates, follow-ups, patient history |
+| [NotificationService](services/NotificationService/README.md) | 5005 | `swiftcare_notification` | Activity feed, daily and monthly reports |
+
+### Events
+
+| Topic | Published by | Consumed by | Meaning |
+| --- | --- | --- | --- |
+| `patient-checked-in` | PatientService | QueueService, NotificationService | A patient registered or checked in; QueueService creates the queue entry |
+| `patient-called` | QueueService | NotificationService | A doctor called a patient to a room |
+| `consultation-completed` | MedicalRecordService | QueueService, NotificationService | A consultation finished; QueueService completes the queue entry |
+
+Every consumer is idempotent: a redelivered event is recognised by its event ID and processed once.
 
 ## Technology stack
 
-- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, React Router 7, and npm
-- **Backend:** ASP.NET Core Web API on .NET 10, REST, JWT, xUnit, and YARP for the API Gateway
-- **Data:** Entity Framework Core 9 (Pomelo MySQL provider), and MySQL
-- **Messaging:** Apache Kafka and ZooKeeper
-- **DevOps:** GitHub Actions, Docker, Docker Compose, Microsoft Azure, GitHub Environments, and GitHub Actions Secrets
-- **Operations:** Health checks, structured logging, correlation IDs, and service-level telemetry
-
-### Pinned framework versions
-
-| Component | Version | Notes |
-| --- | --- | --- |
-| .NET SDK | **10.0** | Only SDK available on the original dev machine at scaffolding time; overrides an earlier .NET 8 LTS assumption |
-| EF Core | **9.0** | Pinned below the SDK's default (10) because Pomelo's MySQL provider has not released `net10` support yet |
-| React | **19** | Scaffolded via `npm create vite@latest -- --template react-ts` |
-| Node.js | **22.x** | Required to run the frontend tooling |
-
-Keep the .NET SDK and EF Core pins in sync across every service — do not let one service drift onto a different EF Core major version than the others.
-
-## Microservices
-
-The API Gateway is the single entry point for frontend requests. It validates JWTs, applies CORS, routes requests, removes untrusted forwarding headers, and supplies trusted user identity and gateway-authentication headers to the services.
-
-| Service | Responsibility |
+| Area | Technology |
 | --- | --- |
-| AuthService | Accounts, login, logout, JWT issuance, password management, users, and roles |
-| PatientService | Patient registration, search, profiles, and patient information |
-| QueueService | Queue entry creation, check-in, queue management, calling patients, and public display |
-| MedicalRecordService | Allergies, chronic conditions, consultations, vital signs, and medical history |
-| PrescriptionService | Prescriptions, medicines, dispensing, and prescription history |
-| NotificationService | Activity feed, notifications, and applicable daily or monthly reports |
+| Frontend | React 19, TypeScript, Vite 8, Tailwind CSS 4, React Router 7 |
+| Backend | ASP.NET Core on .NET 10, YARP reverse proxy, JWT bearer authentication |
+| Data | MySQL 8.4, Entity Framework Core 9 (Pomelo provider) |
+| Messaging | Apache Kafka (Confluent 7.6.1) with ZooKeeper |
+| Testing | xUnit, Moq, Selenium WebDriver, Stryker.NET, Apache JMeter |
+| Quality and security | SonarQube Cloud, CodeQL, Trivy, gitleaks, dependency audits |
+| Delivery | Docker, Docker Compose, GitHub Actions, Terraform, Azure Container Apps, Azure Static Web Apps |
+| Observability | Azure Application Insights through OpenTelemetry, structured logs, correlation IDs |
 
-Sprint 1 focuses on AuthService, PatientService, and QueueService.
+EF Core is pinned to 9 rather than 10 because the Pomelo MySQL provider does not yet support EF Core 10. Keep the .NET SDK and EF Core versions the same in every service.
 
 ## Repository structure
 
 ```text
 swiftcare/
-|-- .github/workflows/ci.yml
-|-- .github/workflows/cd.yml
-|-- ApiGateway/
-|-- frontend/
-|-- services/
-|   |-- AuthService/
-|   |-- PatientService/
-|   |-- QueueService/
-|   |-- MedicalRecordService/
-|   |-- PrescriptionService/
-|   `-- NotificationService/
-|-- deployment/
-|   |-- cd/
-|   |-- docker/
-|   |-- terraform/
-|   `-- azure/
-|-- tests/
-|-- docs/
-|-- .env.example
-|-- .gitignore
-|-- docker-compose.yml
-`-- README.md
+├── .github/workflows/      CI (ci.yml) and CD (cd.yml)
+├── ApiGateway/             YARP gateway
+├── services/               The six backend services, one folder each
+├── frontend/               React application
+├── tests/
+│   ├── <Service>.UnitTests/    Unit tests per service and for the gateway
+│   ├── E2ETests/               Selenium end-to-end tests
+│   ├── MutationTesting/        Stryker.NET configuration and runner
+│   └── PerformanceTest/        JMeter load and stress tests (local and Azure)
+├── deployment/
+│   ├── cd/                 Release manifest, deployment and smoke-test scripts
+│   ├── docker/             MySQL initialisation for Compose
+│   └── terraform/          Azure infrastructure for development and production
+├── docs/                   CI/CD reference and sprint stand-up logs
+├── docker-compose.yml      Local stack
+└── SwiftCare.slnx          Solution with every service and test project
 ```
 
-`ApiGateway/`, `frontend/`, and the AuthService, PatientService, QueueService, MedicalRecordService, and PrescriptionService projects contain implemented application slices. NotificationService remains a placeholder directory reserving the agreed layout.
+## Getting started
 
-## Prerequisites
+### Prerequisites
 
 - Git
 - Docker Desktop with Docker Compose
 - .NET SDK 10.0
-- Node.js 22.x and npm
+- Node.js 22 and npm
 
-See [Pinned framework versions](#pinned-framework-versions) above.
-
-## Planned ports
-
-| Component | Port |
-| --- | ---: |
-| React frontend | 5173 |
-| API Gateway | 8000 |
-| AuthService | 5000 |
-| PrescriptionService | 5001 |
-| PatientService | 5002 |
-| QueueService | 5003 |
-| MedicalRecordService | 5004 |
-| NotificationService | 5005 |
-| MySQL | 3306 |
-| Kafka | 9092 |
-| ZooKeeper | 2181 |
-
-The frontend communicates exclusively with the API Gateway on port `8000`. Individual service ports are reserved for internal Docker network communication and local development access only.
-
-## Local setup
-
-Clone the repository and copy the environment template:
+### 1. Configure
 
 ```bash
 git clone https://github.com/swiftcare-org/swiftcare.git
 cd swiftcare
 cp .env.example .env
+cp frontend/.env.example frontend/.env
 ```
 
-Replace the local placeholder passwords, JWT signing material, and gateway internal secret in `.env`. AuthService issues JWTs, while the API Gateway validates them before forwarding protected requests. The gateway and services use `GATEWAY_INTERNAL_SECRET` to reject requests that did not originate from the gateway. Never commit `.env`.
+Edit `.env` and replace every placeholder, in particular `MYSQL_PASSWORD`, `JWT_SIGNING_KEY`, `GATEWAY_INTERNAL_SECRET` and `AUTH_SEED_PASSWORD`. `frontend/.env` only needs `VITE_GATEWAY_URL=http://localhost:8000`. Never commit either file.
 
-Start and inspect the local infrastructure:
+### 2. Start the stack
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 docker compose ps
-docker compose logs -f
 ```
 
-Stop the containers:
+This starts MySQL, ZooKeeper, Kafka (with its topics), Kafka UI, the six services and the gateway. On a first start Kafka can take longer than the services are willing to wait; if a service reports Kafka as unhealthy, run `docker compose up -d` again.
+
+On an empty MySQL volume, `deployment/docker/mysql-init/01-create-databases.sh` creates the six databases automatically.
+
+### 3. Apply database migrations
+
+Migrations never run at startup. Apply them once on a new database, and again after pulling a change that adds one:
 
 ```bash
-docker compose down
+docker compose run --rm authservice --migrate
+docker compose run --rm patientservice --migrate
+docker compose run --rm queueservice --migrate
+docker compose run --rm medicalrecordservice --migrate
+docker compose run --rm prescriptionservice --migrate
+docker compose run --rm notificationservice --migrate
 ```
 
-To stop containers and remove local volumes:
-
-```bash
-docker compose down -v
-```
-
-**Warning:** `docker compose down -v` permanently deletes local database data stored in Compose volumes.
-
-The Compose stack starts MySQL 8.4, ZooKeeper, ZooKeeper-backed Confluent Kafka 7.6.1, Kafka UI, AuthService, PatientService, QueueService, MedicalRecordService, and the API Gateway. The frontend still runs through Vite on the host. Kafka uses `kafka:29092` inside the Compose network and `localhost:9092` for host tools.
-
-## Running the application locally
-
-For the closest match to deployment, start MySQL and Kafka first, apply migrations through each backend service's normal image, then start the full stack, including the API Gateway, and run the frontend on the host. Compose does not apply migrations automatically for any service:
-
-```bash
-docker compose up -d mysql kafka
-docker compose run --rm --no-deps authservice --migrate
-docker compose run --rm --no-deps patientservice --migrate
-docker compose run --rm --no-deps queueservice --migrate
-docker compose run --rm --no-deps medicalrecordservice --migrate
-docker compose up -d
-```
-
-`--no-deps` does not start a service's dependencies, so MySQL must already be running before any of these `--migrate` commands, which is why it is started first above. The host-based .NET commands below remain useful while actively developing a service; stop the corresponding Compose application container before using its host port.
-
-### One-time database preparation
-
-On an empty MySQL volume, `deployment/docker/mysql-init/01-create-databases.sh` creates all six service-owned databases and grants the local `MYSQL_USER` access to them. The script runs automatically through `/docker-entrypoint-initdb.d`; it does not run again against an existing volume.
-
-### Apply migrations
-
-```bash
-dotnet tool restore
-dotnet ef database update --project services/AuthService --connection "Server=localhost;Port=3306;Database=swiftcare_auth;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
-dotnet ef database update --project services/PatientService --connection "Server=localhost;Port=3306;Database=swiftcare_patient;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
-dotnet ef database update --project services/QueueService --connection "Server=localhost;Port=3306;Database=swiftcare_queue;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
-ConnectionStrings__MedicalRecordDb="Server=localhost;Port=3306;Database=swiftcare_medical_record;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;" dotnet run --project services/MedicalRecordService -- --migrate
-dotnet ef database update --project services/PrescriptionService --connection "Server=localhost;Port=3306;Database=swiftcare_prescription;User Id=<MYSQL_USER>;Password=<MYSQL_PASSWORD>;"
-```
-
-`--connection` is required for the direct `dotnet ef` commands. Each service's design-time DbContext factory supplies placeholder credentials so that `migrations add` never contacts a live database, and EF prefers that factory over the application host — without an explicit connection the command authenticates as a user that does not exist.
-
-MedicalRecordService uses its `--migrate` maintenance command through the same normal application image, following the pattern documented in the [MedicalRecordService migration guide](services/MedicalRecordService/README.md#ef-core-migrations).
-
-Re-run these commands after pulling any change that adds a migration.
-
-### Complete a consultation
-
-After a doctor saves a consultation and its vital signs, Complete Consultation writes `COMPLETE` and a stable event ID to the MedicalRecord database before publishing `consultation-completed` to Kafka. QueueService consumes that event, changes the matching queue entry from `IN_CONSULTATION` to `COMPLETED`, and stores its UTC completion time. The completed entry disappears from the doctor's current-patient card. Once the doctor saves a prescription, the receptionist queue links the completed entry to its prescription details. If publishing fails, the doctor sees a retry message; the consultation remains complete in the database and retry republishes the same event ID. QueueService ignores duplicate deliveries with its `ProcessedEvents` ledger and preserves the original completion time. On success, the doctor proceeds to the prescription form with the consultation, queue, and patient identifiers. See the [MedicalRecordService flow](services/MedicalRecordService/README.md#completing-a-consultation) for completion behavior.
-
-### Create a prescription
-
-After a successful consultation, a doctor can add multiple medicines with a name, dosage, frequency, duration, and optional instructions. The form shows PatientService allergy information as an advisory warning and loads the patient's previous prescriptions for reference. `POST /api/prescriptions` stores the consultation, queue, patient, and trusted doctor identifiers with a default `PENDING` status. After saving, the prescribing doctor can add medicines or remove a confirmed item while keeping at least one medicine. A `DISPENSED` prescription is read-only. A unique consultation index prevents a second prescription for the same consultation. See the [PrescriptionService guide](services/PrescriptionService/README.md) for endpoints, configuration, and local startup.
-
-### View prescription history
-
-A doctor sees a patient's past prescriptions in two places. The patient history page, opened with **View History** on the patient profile, has a Prescription History section listing every prescription newest first with its date, doctor, medicines, dosages and `PENDING` or `DISPENSED` status. The prescription form shows the same list beside the form on wide screens, and below it on smaller ones, so earlier medicines can be checked while prescribing; the prescription being written is labelled `This visit`. A patient without prescriptions sees `No prescriptions recorded for this patient`. Administrators can read daily totals from `GET /api/prescriptions/report/daily`, which the daily summary report uses. See the [PrescriptionService guide](services/PrescriptionService/README.md#prescription-history-and-daily-report) for the endpoints.
-
-### View prescriptions at the counter
-
-The receptionist queue shows today's pending prescriptions in prescription-time order so the oldest is handled first. Each link opens the full counter view with the patient name, queue number, date, doctor, room, status, and all medicine details. If the consultation is complete but the doctor has not saved a prescription, the page explains that the doctor may still be writing it instead of displaying an error. When no pending prescriptions remain, the queue shows `All prescriptions dispensed today`.
-
-### Dispense a prescription
-
-Receptionists open a completed queue entry's prescription details and use **Mark as Dispensed** while its status is `PENDING`. PrescriptionService changes the status to `DISPENSED` and records the trusted receptionist name and current UTC timestamp. The details page then shows who dispensed it with the clinic-local date and time, and the queue displays a `DISPENSED` badge. Doctor and Admin access is read-only, and an already dispensed prescription cannot be dispensed again.
-
-### Medical alerts and follow-ups
-
-A doctor can save an optional follow-up date and instructions with a consultation. Both values must be supplied together. When a doctor opens a patient profile, SwiftCare displays one red alert per allergy, followed by one amber alert per chronic condition. If the patient's latest completed consultation has a follow-up date earlier than the current `Asia/Colombo` clinic date, a blue overdue follow-up alert appears last. It names the doctor who recorded the follow-up and says how long it is overdue, for example `Dr. Silva noted: Review blood pressure in 6 weeks (overdue by 3 weeks)`. Under two weeks the delay is shown in days, under eight weeks in weeks, and after that in months. The doctor-only `GET /api/consultations/patient/{patientId}/latest-follow-up` endpoint returns `204 No Content` when no overdue follow-up exists.
-
-### View patient history
-
-A doctor can open a patient's history from the **View History** button on the patient profile, at `/patients/{patientId}/history`. The page lists the patient's completed consultations from every doctor, newest first, with the date, doctor, symptoms, diagnosis and a short notes summary. Each entry expands to show the full detail, including examination findings and follow-up instructions. Below the timeline, the vitals history lists every recorded reading by date with an arrow beside each measurement showing whether it rose or fell against the previous recorded value. A first-time patient sees `First visit. No previous consultations.`, and a patient without readings sees `No vital signs recorded yet`. The page is available to doctors only. See the [MedicalRecordService guide](services/MedicalRecordService/README.md#patient-history) for the endpoints.
-
-### Load configuration
-
-Both .NET processes fail fast when configuration is missing, and several values must be **identical** across them — `Jwt__SecretKey`, `Jwt__Issuer`, `Jwt__Audience`, and `Gateway__InternalSecret`. A mismatch produces a `401` that the login page reports as invalid credentials, so derive them all from `.env` rather than typing them.
-
-Run this at the top of each terminal (PowerShell):
-
-```powershell
-Get-Content .env | ForEach-Object {
-    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
-        Set-Item -Path "Env:$($matches[1])" -Value $matches[2].Trim()
-    }
-}
-
-$env:Jwt__SecretKey          = $env:JWT_SIGNING_KEY
-$env:Jwt__Issuer             = $env:JWT_ISSUER
-$env:Jwt__Audience           = $env:JWT_AUDIENCE
-$env:Gateway__InternalSecret = $env:GATEWAY_INTERNAL_SECRET
-$env:ASPNETCORE_ENVIRONMENT  = "Development"
-```
-
-### Start the processes
-
-**Terminal 1 — AuthService** (port 5000):
-
-```powershell
-$env:ConnectionStrings__AuthDb = "Server=localhost;Port=3306;Database=$env:AUTH_DB_NAME;User Id=$env:MYSQL_USER;Password=$env:MYSQL_PASSWORD;"
-dotnet run --project services/AuthService
-```
-
-**Terminal 2 — API Gateway** (port 8000):
-
-```powershell
-dotnet run --project ApiGateway
-```
-
-**Terminal 3 — frontend** (port 5173). Vite reads env files from `frontend/`, not the repository root, and [`src/api/client.ts`](frontend/src/api/client.ts) throws on load when the value is absent. Create `frontend/.env` containing `VITE_GATEWAY_URL=http://localhost:8000`, then:
+### 4. Start the frontend
 
 ```bash
 cd frontend
@@ -255,313 +196,115 @@ npm ci
 npm run dev
 ```
 
-### Verify
+Open <http://localhost:5173>.
 
-```bash
-curl http://localhost:5000/health
-curl http://localhost:8000/health
-```
+### 5. Sign in
 
-Open `http://localhost:5173` and sign in. `DevelopmentSeeder` creates four synthetic accounts on first run, all sharing the value of `AUTH_SEED_PASSWORD`:
+In Development, AuthService seeds four synthetic accounts on first start, all using the password set in `AUTH_SEED_PASSWORD`:
 
 | Username | Role | Notes |
 | --- | --- | --- |
 | `dr.chen` | Doctor | Room `R-204` |
 | `reception.silva` | Receptionist | |
 | `admin.fernando` | Admin | |
-| `dr.rao` | Doctor | Deactivated — exercises the rejection path |
+| `dr.rao` | Doctor | Deactivated, to show the rejected sign-in |
 
-Seeding is skipped with a warning when `AUTH_SEED_PASSWORD` is unset, which leaves the database empty and makes every login fail. Synthetic data only — never real patient or staff records.
+If `AUTH_SEED_PASSWORD` is not set, seeding is skipped and every sign-in fails. The seed data is synthetic; never load real patient or staff data into a local stack.
 
-### Running tests
+### Useful local addresses
+
+| What | Address |
+| --- | --- |
+| Frontend | <http://localhost:5173> |
+| API Gateway health | <http://localhost:8000/health> |
+| Waiting-room display | <http://localhost:5173/queue/display> |
+| Kafka UI | <http://localhost:8080> |
+| API docs (Scalar), one per service | `http://localhost:5000/scalar/v1` to `http://localhost:5005/scalar/v1` |
+
+The API docs are only available in the Development environment. Requests sent from them directly to a service need the `X-Gateway-Secret` header and the identity headers the gateway normally adds.
+
+### Stop
 
 ```bash
-dotnet test SwiftCare.slnx
-cd frontend && npm run lint && npm run build
+docker compose stop        # keeps your data
+docker compose down        # removes containers, keeps data
+docker compose down -v     # removes containers and deletes all local data
 ```
 
-Mutation testing of the unit tests: see [Mutation testing](#mutation-testing-strykernet).
+## Testing
 
-## Branching strategy
-
-- `main` contains stable, reviewed, releasable code.
-- `develop` integrates completed user stories.
-- Feature branches start from `develop` and merge back through pull requests.
-- Only `develop` should normally merge into `main`.
-
-Both permanent branches require pull requests, approval from the sprint’s QA role, resolved conversations, and blocked force pushes and deletion. CI checks become required only after the workflow has completed successfully at least once.
-
-Branch names use the exact Jira issue:
-
-```text
-feature/SWC-6-user-login
-fix/SWC-12-fix-patient-search
-refactor/SWC-6-improve-authentication
-docs/SWC-9-update-registration-documentation
-test/SWC-19-add-queue-tests
-```
-
-Branches not tied to a story (repository administration, e.g. CI or documentation housekeeping) may omit the issue key:
-
-```text
-docs/standup-log-template
-chore/ci-dotnet-build-test
-```
-
-## Commit convention
-
-Allowed types are `feat`, `fix`, `refactor`, `docs`, `test`, `style`, `perf`, and `chore`.
-
-```text
-feat(SWC-6): implement user login
-fix(SWC-12): correct patient search validation
-test(SWC-19): add queue event tests
-```
-
-Commits not tied to a story may omit the scope the same way:
-
-```text
-docs: add daily stand-up log template
-```
-
-## Pull-request workflow
-
-1. Create a Jira-linked branch from `develop`.
-2. Commit changes using the agreed convention.
-3. Push the branch and open a pull request into `develop`.
-4. Obtain approval from that sprint’s QA role, resolve conversations, and pass required CI checks.
-5. Merge completed work into `develop`.
-6. Promote reviewed release candidates from `develop` to `main` through a separate pull request.
-
-The GitHub for Jira connection should recognize Jira keys in branch names, commits, pull-request titles, and pull-request descriptions.
-
-## EF Core data ownership
-
-Each microservice owns its entities, DbContext, logical MySQL database, and committed `Migrations` directory:
-
-| Service | DbContext | Database |
+| Suite | Command | Notes |
 | --- | --- | --- |
-| AuthService | AuthDbContext | swiftcare_auth |
-| PatientService | PatientDbContext | swiftcare_patient |
-| QueueService | QueueDbContext | swiftcare_queue |
-| MedicalRecordService | MedicalRecordDbContext | swiftcare_medical_record |
-| PrescriptionService | PrescriptionDbContext | swiftcare_prescription |
-| NotificationService | NotificationDbContext | swiftcare_notification |
+| Unit tests | `dotnet test SwiftCare.slnx` | xUnit and Moq; one project per service and for the gateway. Needs no database or Kafka. |
+| Frontend | `cd frontend && npm run lint && npm run build` | oxlint and the TypeScript build |
+| End-to-end | See [tests/E2ETests](tests/E2ETests/README.md) | Selenium against a running stack; also runs in CI |
+| Mutation | `cd tests/MutationTesting && ./run-mutation-tests.ps1` | Stryker.NET per service; see [tests/MutationTesting](tests/MutationTesting/README.md) |
+| Performance | See [tests/PerformanceTest/azure](tests/PerformanceTest/azure/README.md) | JMeter load and stress plans, locally and against Azure |
 
-A service must never query or modify another service's database. Local and CI migrations may be automated after projects exist. Staging migrations are controlled deployment steps, and production migrations must not run automatically at container startup.
+Pull requests must pass every unit test, keep line coverage at or above the CI minimum, pass the SonarQube Cloud quality gate on new code, and keep each changed service at or above its mutation-score threshold.
 
-## Configuration and secrets
+## CI/CD and environments
 
-`.env.example` contains safe local placeholders. Real passwords, tokens, JWT keys, Azure credentials, and connection strings must remain in local `.env` files or approved secret stores.
+**CI** runs on every push and pull request to `develop` and `main`: formatting, build and unit tests with coverage, frontend lint and build, end-to-end tests, mutation testing, SonarQube Cloud, migration validation, Docker image builds, container and dependency vulnerability scans, secret scanning and CodeQL.
 
-The CD workflow reads deployment configuration from the GitHub Environment of its target, `azure-development` or `azure-production`; both use the same variable and secret names with their own values, and no secret value is shared between them except, optionally, the registry pull token. Non-sensitive Azure resource identifiers, region, application/job/container names, endpoints, JWT issuer/audience, database username, frontend origins, and initial administrator display name belong in environment variables. Passwords, registry credentials, JWT signing material, gateway trust material, the Static Web Apps deployment token, and optional bootstrap credentials belong in environment secrets.
-
-Azure authentication uses GitHub OIDC through `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; do not create a long-lived `AZURE_CREDENTIALS` secret. Custom-domain deployment requires `GATEWAY_ORIGIN`, `FRONTEND_ORIGIN`, and `FRONTEND_WWW_ORIGIN` to contain HTTPS origins without trailing slashes. AuthService, PatientService, and QueueService use separate non-administrator MySQL accounts restricted to `swiftcare_auth`, `swiftcare_patient`, and `swiftcare_queue` respectively, never the flexible-server administrator account.
-
-PatientService deployment requires `AZURE_PATIENT_APP`, `AZURE_PATIENT_MIGRATE_JOB`, and `PATIENT_DB_USER` environment variables plus the `PATIENT_DB_PASSWORD` environment secret. QueueService deployment requires `AZURE_QUEUE_APP`, `AZURE_QUEUE_MIGRATE_JOB`, `QUEUE_DB_USER`, `KAFKA_PATIENT_CHECKED_IN_TOPIC`, and `KAFKA_QUEUE_CONSUMER_GROUP` environment variables plus the `QUEUE_DB_PASSWORD` environment secret. MedicalRecordService deployment requires `AZURE_MEDICAL_RECORD_APP` (for example, `swiftcare-medical-record`), `AZURE_MEDICAL_RECORD_MIGRATE_JOB` (for example, `swiftcare-medical-record-migrate`), and `MEDICAL_RECORD_DB_USER` environment variables plus the `MEDICAL_RECORD_DB_PASSWORD` environment secret. The medical-record account needs privileges only on `swiftcare_medical_record`; create that account inside the Azure VNet before running CD and keep its password in the `azure-development` GitHub Environment secret. Review and apply the Terraform plan that creates `swiftcare_medical_record` first. If the database already exists outside Terraform state, import it instead of attempting to create it again. Production uses the separate `azure-production` Environment, which requires a reviewer and accepts only `main`.
-
-## CI/CD
-
-The CI workflow runs on pushes and pull requests involving `develop` or `main`, as seven parallel jobs. Any failing job blocks the merge.
-
-- **Validate repository infrastructure** — confirms required foundation files exist and validates `docker-compose.yml` parses.
-- **Build and test .NET projects** — verifies formatting with `dotnet format`, then builds and runs xUnit tests against `SwiftCare.slnx` (all services, the API Gateway, and their test projects) in Release, then reports and gates coverage. The formatting check runs before the build so a style failure reports in seconds rather than after the full test run.
-- **Build and lint frontend** — `npm ci`, `npm run lint` (oxlint), and `npm run build` against `frontend/`.
-- **Scan dependencies for vulnerabilities** — `dotnet list package --vulnerable --include-transitive` across the solution, and `npm audit --audit-level=high` for the frontend.
-- **Validate EF Core migrations** — applies every migration to a clean MySQL 8.4 service container, then fails when the model has changed without a corresponding migration.
-- **Analyze code** — CodeQL static analysis over C# and TypeScript, reporting into the repository's Security tab.
-- **Build deployable images** — builds the API Gateway, AuthService, PatientService, and QueueService Dockerfiles without publishing them, catching container-only failures before deployment.
-
-The infrastructure job also lints and tests the CD release scripts in `deployment/cd`.
-
-Runs are grouped by workflow and ref with `cancel-in-progress`, so pushing twice in quick succession cancels the superseded run instead of executing both. NuGet packages are cached across runs, keyed on the project files and `dotnet-tools.json`.
-
-Every job guards on its entry file (`SwiftCare.slnx`, `frontend/package.json`, `frontend/package-lock.json`) existing, so each no-ops harmlessly on branches without those projects rather than failing.
-
-### Coverage
-
-Test counts per suite are parsed from the TRX output into the run's job summary. Coverage is collected with coverlet, rendered by ReportGenerator into the same summary, and published as a build artifact alongside the TRX results.
-
-The build fails when line coverage drops below `MINIMUM_LINE_COVERAGE`, defined in the workflow and currently `55`. Generated EF migration files are excluded from the calculation — they are neither hand-written nor directly tested, and including them reports 37.6% where service code actually sits at 59.6%. Raise the threshold as services land with tests; it exists to catch regression, not to be aspirational.
-
-### Security
-
-Two layers run independently. **Dependency scanning** checks third-party packages: `dotnet list package` exits `0` even when it finds vulnerabilities, so that step matches on its output instead of its exit code, and `npm audit` is pinned to `--audit-level=high` so that low and moderate advisories in build-time tooling, which never ship to production, do not block merges. Both currently report clean, so they gate against regression rather than flagging existing debt.
-
-**CodeQL** analyses first-party source instead — injection flaws, unsafe patterns, and hardcoded credentials in code we wrote. The C# build runs after CodeQL initialises so the extractor can trace the compilation; reordering those steps silently produces an empty analysis. Findings appear under the repository's Security tab.
-
-### Code quality (SonarQube Cloud)
-
-The **SonarQube Cloud analysis** job sends the .NET services, API Gateway and frontend to the hosted SonarQube Cloud project `swiftcare-org_swiftcare` on the Free plan. It runs after the .NET build and test job and reuses its coverage through a `SonarQube.xml` report produced by ReportGenerator, so the Cobertura report and the 55% coverage gate are unchanged. Migrations, generated files, dependencies and build or test output are excluded. The frontend and the service `Data/` folders (ADO.NET repositories and EF `DbContext` classes that only run against MySQL) are excluded from the coverage calculation only, because no CI test produces coverage for them; they are still analyzed for bugs, code smells and security issues.
-
-The Free plan analyzes one branch and pull requests into it. The project's main branch is `develop`, so the job runs on pushes to `develop` and on pull requests into `develop` from this repository; it is skipped on `main`, manual runs and fork pull requests. Results appear as a pull request comment and on the SonarQube Cloud dashboard. The job waits for the built-in **Sonar way** quality gate, which checks only new code, and fails when the gate fails. Custom gates and `main` analysis need a paid plan and are not used.
-
-The job reads the repository Actions secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY`. Never commit or print the token.
-
-#### Setup and GitHub integration
-
-SonarQube Cloud is an external hosted service; nothing is deployed to Azure and the Free plan has no cost.
-
-1. Sign in to SonarQube Cloud with GitHub and import the `swiftcare-org` GitHub organization, installing the SonarQube Cloud GitHub App on the `swiftcare` repository only.
-2. Choose the Free plan and import the repository as project `swiftcare-org_swiftcare` (public, matching the repository).
-3. Under Administration > Analysis method, turn **Automatic Analysis off**. CI-based analysis is required to import coverage, and both methods cannot run together.
-4. Under Project > Branches, rename the SonarQube main branch to `develop`. The GitHub branches are not renamed.
-5. Keep the **Sonar way** quality gate and the **Previous version** new-code setting.
-6. Create a token under My Account > Security with an expiry date, store it as the repository Actions secret `SONAR_TOKEN`, and store the organization and project keys as repository variables.
-
-#### Ownership and responsibilities
-
-The Sprint 4 DevOps engineer owns the SonarQube Cloud organization, the project settings and the analysis token, and keeps at least one other team member as an organization administrator for continuity. The Free plan allows up to five organization members. Developers own fixing findings in their own new code; the quality gate does not require fixing historical findings.
-
-#### Credential management
-
-The token exists only in the repository Actions secret; it is not stored in the `azure-development` Environment because the CI job does not use one. GitHub masks it in logs, and fork pull requests never receive it. To rotate it, create a new token, update `SONAR_TOKEN`, confirm a green analysis on a pull request into `develop`, then revoke the old token. Rotate before expiry and whenever ownership changes. Do not paste tokens into issues, chat, screenshots or evidence.
-
-#### Quality gate behavior
-
-On a pull request, new code is the pull request diff; on `develop` it is everything since the new-code baseline. Sonar way fails when new code introduces issues, leaves security hotspots unreviewed, has coverage below 80% or has more than 3% duplicated lines. Coverage and duplication are not evaluated for very small changes. The coverage condition applies to backend code outside `Data/`; the frontend has no test runner, so its coverage is not measured.
-
-#### Free-plan limitations
-
-Only `develop` and pull requests into it are analyzed. `main` is not analyzed, so the gate protects `develop` before promotion and does not directly block the Azure deployment from `main`. Custom quality gates and quality profiles are not available.
-
-#### Troubleshooting
-
-- Job skipped: the event must be a push to `develop` or a pull request into `develop` from this repository, and the .NET build and test job must pass.
-- Configuration error before scanning: the step names the missing secret or variable.
-- `You are running CI analysis while Automatic Analysis is enabled`: turn Automatic Analysis off.
-- Analysis rejected for a branch: the Free plan accepts only `develop` and pull requests into it.
-- Coverage missing: confirm the `test-results` artifact contains `coverage-report/SonarQube.xml` and the log shows `Imported coverage data for N files`.
-- Authentication error: the token has expired or been revoked; rotate it.
-- Quality gate failed: open the SonarQube link in the job log or pull request comment, read the failed new-code condition, and fix the new code rather than weakening the gate.
-
-### Mutation testing (Stryker.NET)
-
-Owner: Kularatne P.O.N (IT24103437), SE3112 role Mutation Testing (SWC-151).
-
-Mutation testing checks whether the unit tests would catch a bug: Stryker.NET makes small deliberate changes to the service code and reruns the unit tests against each one. It covers all seven backend services (ApiGateway, AuthService, MedicalRecordService, NotificationService, PatientService, PrescriptionService, QueueService). Stryker.NET 5.0.0 is pinned in `dotnet-tools.json`; no database, Kafka or Docker is needed.
-
-```powershell
-cd tests/MutationTesting
-./run-mutation-tests.ps1                                     # all seven services
-./run-mutation-tests.ps1 -Service QueueService -OpenReport   # one service, opens the HTML report
-./run-mutation-tests.ps1 -Since develop                      # only code changed since develop
-```
-
-The **Mutation testing** job runs one leg per service on pull requests into `develop` or `main` (changed code only) and on manual runs (every service in full). It is not run on push or by CD. A leg fails when its service scores below its break threshold, and the legs are required checks, so a failing leg blocks the merge. Configuration, results and the reasoning behind these choices: [`tests/MutationTesting/README.md`](tests/MutationTesting/README.md).
-
-### Continuous deployment
-
-CD releases to two environments in the same Azure subscription, and only during approved demo windows:
+**CD** releases only the deployables that changed, each with its own image, migration job, smoke test and automatic rollback.
 
 | | Development | Production |
-|---|---|---|
-| GitHub Environment | `azure-development` | `azure-production` |
-| Automatic trigger | Successful CI on `develop` | Successful CI on `main` |
-| Manual trigger | Any reviewed branch, `target=development` | `main` only, `target=production` |
-| Window variable (repository) | `DEMO_WINDOW_DEVELOPMENT` | `DEMO_WINDOW_PRODUCTION` |
-| Public hosts | `dev.swiftcare.me`, `api-dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me`, `api.swiftcare.me` |
-| Container Apps environment | created by Terraform | development's, shared (the subscription allows one); named by `AZURE_CONTAINERAPPS_ENVIRONMENT` and `AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP` |
+| --- | --- | --- |
+| Branch | `develop` | `main` |
+| Frontend | `dev.swiftcare.me` | `swiftcare.me`, `www.swiftcare.me` |
+| API | `api-dev.swiftcare.me` | `api.swiftcare.me` |
+| Access | GitHub sign-in required | Public |
+| Availability | Approved demo windows | Approved demo windows |
 
-GitHub starts a `workflow_run` workflow from the copy of `cd.yml` on the default branch (`main`), so the automatic triggers follow whatever `cd.yml` is on `main`: a change to them takes effect only after it reaches `main`. Manual runs use `cd.yml` from the selected branch.
+Both environments are started only during approved demo windows to control cost. The full reference, including the CI jobs, quality gates, CD release rules, smoke checks, rollback and required GitHub Environment values, is in [docs/ci-cd.md](docs/ci-cd.md). Infrastructure is described in [deployment/terraform](deployment/terraform/README.md).
 
-The first job, `target`, picks the environment and reads its window variable. Unless the value is exactly `true`, the run ends there with a notice: no Environment approval is requested and Azure is not touched. A manual production run from any ref other than `main` fails in the same job. Each environment has its own concurrency queue. Open a window by setting the variable to `true` (repository Settings > Secrets and variables > Actions > Variables) and close it by setting `false` when the window ends.
+## Security and privacy
 
-`workflow_dispatch` first runs the CI quality gate for the selected branch (without mutation testing, which stays in direct CI runs) and can then deploy that branch.
-CD releases only what changed. Each backend service, the gateway and the frontend is a separate deployable with its own image, migration job, Container App, smoke check and rollback. The list of deployables and their Environment value names is `deployment/cd/services.json`.
+- **One entry point.** Services have internal ingress only on Azure and reject any request without the gateway's shared secret.
+- **Trusted identity.** The gateway removes client-supplied identity headers and sets them from the validated JWT. Every authenticated request is checked against AuthService, so signing out or deactivating an account takes effect immediately.
+- **Role-based access.** Each gateway route has a policy for Doctor, Receptionist, Admin or anonymous access, and services check ownership on top of it.
+- **Visit validation.** Consultation and prescription writes are accepted only for the doctor's own active or completed visit with matching patient and queue identifiers.
+- **Minimal events.** Kafka events carry identifiers, not names or clinical notes. The only clinical field shared is the diagnosis, which the reports count.
+- **Safe logging.** Logs never contain passwords, tokens, connection strings or patient details; client-supplied values are sanitised before logging.
+- **Secrets.** Real values live only in local `.env` files and GitHub Environment secrets. Azure deployment authenticates through GitHub OIDC with no long-lived credentials.
 
-#### How a release is chosen
+## Observability
 
-The `plan` job compares each Container App's running commit (the SHA in its image tag) with the release commit. The frontend publishes its commit in `version.json`. Azure is the source of truth, so a change missed by an earlier failed or skipped run is picked up by the next one.
+- Every service and the gateway expose `GET /health`.
+- Requests carry an `X-Correlation-ID` that is logged by the gateway and every service.
+- When `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, each service sends traces and logs to Azure Application Insights through OpenTelemetry. Locally it is unset and telemetry is off.
+- Terraform defines Application Insights availability tests and alerts for the production frontend and gateway; see [deployment/terraform](deployment/terraform/README.md).
 
-| Changed path | Releases |
-|---|---|
-| `services/<Name>/**` | that service |
-| `ApiGateway/**` | the gateway |
-| `frontend/**` | the frontend |
-| `.github/workflows/cd.yml`, `deployment/cd/**`, `.dockerignore` | every deployable |
-| Tests, docs, Terraform, Compose, `ci.yml`, solution files | nothing |
+## Documentation
 
-Terraform never runs in CD, so infrastructure changes are applied through a reviewed plan and release nothing. A running version that cannot be read (no app, a tag that is not a commit, or a commit missing from the repository history) releases that deployable, and so does an app whose latest revision never became ready, so a failed first deployment is retried by the next run. A service app that does not exist yet also releases the gateway, because the gateway needs its new internal address. The plan job writes the decision for every deployable to the run summary.
+| Topic | Location |
+| --- | --- |
+| Each service: endpoints, configuration, data model | `services/<Service>/README.md` |
+| Gateway routes and policies | [ApiGateway/README.md](ApiGateway/README.md) |
+| Frontend pages and behaviour | [frontend/README.md](frontend/README.md) |
+| CI, quality gates and CD | [docs/ci-cd.md](docs/ci-cd.md) |
+| Azure infrastructure and operations | [deployment/terraform/README.md](deployment/terraform/README.md) |
+| End-to-end, mutation and performance testing | `tests/E2ETests`, `tests/MutationTesting`, `tests/PerformanceTest` |
+| Sprint stand-up logs | [docs/Daily Standups Log](docs/Daily%20Standups%20Log) |
 
-#### Manual trigger
+## Contributing
 
-Run the CD workflow from the Actions tab (Run workflow), choose the branch, and set the inputs:
+Branching, commit messages, pull requests and the definition of done are described in [CONTRIBUTING.md](CONTRIBUTING.md). In short: branch from `develop` with the Jira key in the branch name, use Conventional Commits, and open a pull request into `develop` that passes CI and is approved by the sprint's QA.
 
-| Input | Values | Effect |
-|---|---|---|
-| `target` | `development` (default), `production` | Environment to release to. `production` is accepted only when the selected branch is `main`. |
-| `release` | `changed` (default), `all`, `auth`, `patient`, `queue`, `medical-record`, `prescription`, `gateway`, `frontend` | `changed` uses the same selection as an automatic run. `all` releases every deployable. A name releases only that deployable, so its migration and deployment run and nothing else does. |
-| `plan_only` | true or false | Reports the selection and changes nothing in Azure. |
-| `bootstrap_admin` | true or false | Includes AuthService and creates the initial administrator after its migration. |
-| `rollback_drill` | `none` or a deployable | Evidence only. Forces that deployable's first smoke check to fail so its rollback can be shown. It must be part of the release. |
+## Team
 
-Changes to Environment values or secrets (for example a rotated registry token or signing key) are not visible in Git, so `changed` does not detect them. Use `all` after such a change; only released apps and jobs pick up new settings.
+SwiftCare was built by Group 22 over four sprints, with the Business Analyst, Developer, DevOps and QA roles rotating each sprint.
 
-The same run from the GitHub CLI:
+| Name | Student ID |
+| --- | --- |
+| Kularatne P.O.N | IT24103437 |
+| Rajasinghe R.M.G | IT24103439 |
+| Kularatne R.A.D | IT24103431 |
+| De Silva J.W.D.J.O. | IT24103444 |
 
-```bash
-gh workflow run cd.yml --ref develop -f release=prescription
-gh workflow run cd.yml --ref develop -f release=changed -f plan_only=true
-gh workflow run cd.yml --ref main -f target=production -f release=all -f plan_only=true
-```
+The product backlog closed with 34 of 34 user stories done.
 
-#### Order, smoke checks and rollback
+## License
 
-1. Each selected backend deployable builds its own image, tagged with the release commit, inside its own job. A failed build holds back only that deployable.
-2. AuthService is released first, because the gateway validates every session with it and every smoke check signs in through it.
-3. The other selected services are released in parallel, each in its own job. A job captures the running image, runs only its own migration job, deploys, waits for a ready revision (starting the app first when it is stopped), and smoke tests through the gateway.
-4. The gateway is released last and only when no selected service failed. Its smoke test runs every service check.
-5. The frontend is released separately, after the backend jobs it follows have succeeded or been skipped.
-
-If a service fails after its deployment started, only that service returns to the image it ran before the release, and its smoke checks run again. Other services keep the versions just deployed, the gateway and frontend are skipped, and the run is marked failed. A failure before the deployment (for example a failed migration) leaves the running version unchanged.
-Rollback restores images only. Schemas, data, secrets, settings and domain changes stay as they are, so migrations must stay compatible with the previous image.
-The first deployment of a service has no previous image and is left as deployed when it fails. When the app already ran the release image before the run (for example `release=all` on an unchanged app), there is nothing to roll back to and the summary says so.
-
-Smoke checks go through the gateway using two synthetic accounts (a Receptionist and a Doctor) stored as `SMOKE_RECEPTIONIST_USERNAME`, `SMOKE_RECEPTIONIST_PASSWORD`, `SMOKE_DOCTOR_USERNAME` and `SMOKE_DOCTOR_PASSWORD` in each Environment, with separate accounts per environment. Create both through the Admin user screen; the Doctor needs an unused room label of at most 16 characters and never calls patients.
-The checks only read data, never print response bodies or tokens, and revoke each token afterwards.
-
-| Deployable | Checks |
-|---|---|
-| Auth | Invalid login returns 401; the Receptionist signs in |
-| Patient | Patient search returns a JSON array |
-| Queue | Public display returns the expected shape; today's queue returns 401 without a token and an array for the Receptionist |
-| MedicalRecord | The Doctor's templates return a JSON array |
-| Prescription | Pending prescriptions return a JSON array for the Receptionist |
-| Notification | Today's notification feed returns a JSON array for the Receptionist |
-| Gateway | Health returns 200, then every check above |
-
-A service deployed for the first time has no address in the running gateway, so a check through that gateway could only return 502. A service job therefore skips its own smoke check when the running gateway has no address for it, and the gateway job, which receives every address, runs the check for all services. After a first deployment of a service, release the gateway (`release=gateway`, or `all`).
-
-A release starts the apps it deploys, plus AuthService and the gateway it needs for the smoke checks, when they are stopped. Starting an app does not change its image. Stop the demo apps again after the approved window.
-
-#### Adding a service
-
-Add one entry to `deployment/cd/services.json`, create its Environment values, add its app-name variable to the environment blocks of the plan, auth, services and gateway jobs in `cd.yml`, and add its key to the `release` and `rollback_drill` choices. Add a smoke target in `deployment/cd/smoke.sh` for it. Tests fail when any of these is missing. The tests in `deployment/cd` fail when a Dockerfile has no manifest entry or an entry does not match its Dockerfile port or the gateway cluster names.
-
-#### NotificationService
-
-NotificationService is released like the other services, from `services/NotificationService/Dockerfile`, with its own database `swiftcare_notification`, migration job and Container App. Before its first release, apply the Terraform plan that creates the database, create its scoped SQL user from inside the VNet (procedure in the [Terraform README](deployment/terraform/README.md)), and set these `azure-development` values: variables `AZURE_NOTIFICATION_APP`, `AZURE_NOTIFICATION_MIGRATE_JOB` and `NOTIFICATION_DB_USER`, and secret `NOTIFICATION_DB_PASSWORD`. The plan job needs `AZURE_NOTIFICATION_APP` for every release, so create it before the next run. After the first image push, give the registry pull token read access to the `swiftcare-notification` package before the first migration job. The first release creates the app and the gateway together, because the gateway needs the new internal address.
-
-#### Local checks
-
-```bash
-python3 -m unittest discover -s deployment/cd -p "test_*.py"
-bash deployment/cd/test-scripts.sh
-```
-
-The first checks the selection rules and summary. The second runs the deployment scripts against a fake Azure CLI and a stub gateway, so it proves script logic and not Azure behavior. It needs bash, jq, curl and Python 3.
-
-CD sets both minimum and maximum replicas to `1` for the gateway and all five services on both creation and update. Running apps therefore keep a replica available when idle, avoiding scale-from-zero startup delays. For the shutdown procedure, see [deployment cost controls](deployment/terraform/README.md#cost-controls).
-
-The Azure messaging prerequisite follows the repository architecture: one private Azure Container Instances group contains separate ZooKeeper and Confluent Kafka 7.6.1 containers. Kafka connects to ZooKeeper at `localhost:2181` because containers in the same group share a network namespace. `KAFKA_BOOTSTRAP_SERVERS` must instead contain the private broker address reachable from the Container Apps environment; local Compose addresses such as `kafka:29092` are rejected. NotificationService joins this release path through its own story, as one manifest entry plus its Environment values.
-
-Application Insights is not configured by CD yet because the current .NET projects have no Application Insights or OpenTelemetry instrumentation package. Adding telemetry is an application change and should be completed with the observability work below rather than represented by unused environment variables.
-
-## Observability policy
-
-Every service must eventually expose `/health`, emit structured logs, measure request failures and latency, record Kafka producer and consumer failures, and propagate correlation IDs through HTTP calls and Kafka events.
-
-The API Gateway must expose `/health`, log incoming requests with correlation IDs, and record JWT validation failures, gateway-authentication failures, and routing errors. It must remove client-supplied identity and gateway-secret headers before attaching trusted forwarding headers.
-
-Logs must never include passwords, JWT tokens, database connection strings, access credentials, or sensitive patient and medical information.
+This is an academic project developed by Group 22 for the SE3022 Case Study Project. No open-source license has been granted; all rights are reserved by the authors.
