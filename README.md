@@ -10,7 +10,6 @@ SwiftCare is an outpatient clinic management system. It takes a patient from the
 It is built as six independently deployable ASP.NET Core microservices behind a YARP API Gateway, with a React frontend, MySQL for storage and Kafka for events between services. It runs locally with Docker Compose and in production on Microsoft Azure.
 
 - **Production:** [swiftcare.me](https://swiftcare.me) (available during scheduled demo windows)
-- **Project board:** [Jira project SWC](https://swiftcare-app.atlassian.net/jira/software/projects/SWC/summary)
 - **Project video:** [SwiftCare summary on YouTube](https://youtu.be/85lzhulTAbY)
 
 ## Contents
@@ -291,7 +290,7 @@ Both environments are started only during approved demo windows to control cost.
 
 ## Contributing
 
-Branching, commit messages, pull requests and the definition of done are described in [CONTRIBUTING.md](CONTRIBUTING.md). In short: branch from `develop` with the Jira key in the branch name, use Conventional Commits, and open a pull request into `develop` that passes CI and is approved by the sprint's QA.
+Branching, commit messages, pull requests and the definition of done are described in [CONTRIBUTING.md](CONTRIBUTING.md). In short: branch from `develop`, use Conventional Commits, and open a pull request into `develop` that passes CI and has an approving review.
 
 ## Team
 
