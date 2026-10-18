@@ -26,7 +26,11 @@ public class ApiDocsRouteTests
         }
     }
 
-    private static HttpClient CreateClient(ApiGatewayWebApplicationFactory factory, bool? enabled, StubHandler? handler = null)
+    private static HttpClient CreateClient(
+        ApiGatewayWebApplicationFactory factory,
+        bool? enabled,
+        StubHandler? handler = null,
+        IReadOnlyDictionary<string, string?>? extra = null)
     {
         var configured = factory.WithWebHostBuilder(builder =>
         {
@@ -36,6 +40,11 @@ public class ApiDocsRouteTests
                 if (enabled is not null)
                 {
                     values["ApiDocs:Enabled"] = enabled.Value ? "true" : "false";
+                }
+
+                foreach (var (key, value) in extra ?? new Dictionary<string, string?>())
+                {
+                    values[key] = value;
                 }
 
                 config.AddInMemoryCollection(values);
@@ -110,6 +119,53 @@ public class ApiDocsRouteTests
         Assert.Contains("\"openapi\"", await response.Content.ReadAsStringAsync());
         var upstream = Assert.Single(handler.Requests);
         Assert.Equal("http://localhost:59999/openapi/v1.json", upstream.ToString());
+    }
+
+    // Each document comes from its own cluster, so a wrong or missing cluster name cannot hide.
+    [Theory]
+    [InlineData("auth", "auth-cluster", "auth-destination")]
+    [InlineData("patient", "patient-cluster", "patient-destination")]
+    [InlineData("queue", "queue-cluster", "queue-destination")]
+    [InlineData("medical-record", "medical-record-cluster", "medical-record-destination")]
+    [InlineData("prescription", "prescription-cluster", "prescription-destination")]
+    [InlineData("notification", "notification-cluster", "notification-destination")]
+    public async Task EachServiceDocumentComesFromItsOwnCluster(string service, string cluster, string destination)
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        var handler = new StubHandler(HttpStatusCode.OK);
+        var address = $"http://{service}.docs.test";
+        using var client = CreateClient(factory, enabled: true, handler, new Dictionary<string, string?>
+        {
+            [$"ReverseProxy:Clusters:{cluster}:Destinations:{destination}:Address"] = address
+        });
+
+        using var response = await client.GetAsync($"/openapi/{service}/v1.json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var upstream = Assert.Single(handler.Requests);
+        Assert.Equal($"{address}/openapi/v1.json", upstream.ToString());
+        Assert.Equal("/openapi/v1.json", upstream.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task DocsPageNamesTheApiAndEveryService()
+    {
+        using var factory = new ApiGatewayWebApplicationFactory();
+        using var client = CreateClient(factory, enabled: true);
+
+        var page = await client.GetStringAsync("/scalar");
+
+        Assert.Contains("SwiftCare API", page);
+        foreach (var (name, title) in new[]
+        {
+            ("auth", "AuthService"), ("patient", "PatientService"), ("queue", "QueueService"),
+            ("medical-record", "MedicalRecordService"), ("prescription", "PrescriptionService"),
+            ("notification", "NotificationService")
+        })
+        {
+            Assert.Contains(title, page);
+            Assert.Contains($"openapi/{name}/v1.json", page);
+        }
     }
 
     [Fact]

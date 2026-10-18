@@ -137,13 +137,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-// ApiDocs:Enabled publishes this service's OpenAPI document outside Development, so the gateway
-// can serve it on its public documentation pages. The document only describes the API; every
-// endpoint keeps its own authorization. The interactive page above stays Development-only.
-if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("ApiDocs:Enabled"))
-{
-    app.MapOpenApi();
-}
+if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("ApiDocs:Enabled")) { app.MapOpenApi(); }
 
 // Bounded so a slow or unreachable broker cannot hang application shutdown - the default
 // IProducer.Dispose() flush has no such bound.

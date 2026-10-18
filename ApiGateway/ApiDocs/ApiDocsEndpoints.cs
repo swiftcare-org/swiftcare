@@ -10,15 +10,16 @@ public static class ApiDocsEndpoints
 {
     public const string HttpClientName = "api-docs";
 
-    // Public document name, title and the gateway cluster that hosts the service.
+    // Public document name and title. The name also identifies the reverse-proxy cluster
+    // ("<name>-cluster" with destination "<name>-destination") that hosts the service.
     public static readonly IReadOnlyList<ApiDocsService> Services =
     [
-        new("auth", "AuthService", "auth-cluster", "auth-destination"),
-        new("patient", "PatientService", "patient-cluster", "patient-destination"),
-        new("queue", "QueueService", "queue-cluster", "queue-destination"),
-        new("medical-record", "MedicalRecordService", "medical-record-cluster", "medical-record-destination"),
-        new("prescription", "PrescriptionService", "prescription-cluster", "prescription-destination"),
-        new("notification", "NotificationService", "notification-cluster", "notification-destination")
+        new("auth", "AuthService"),
+        new("patient", "PatientService"),
+        new("queue", "QueueService"),
+        new("medical-record", "MedicalRecordService"),
+        new("prescription", "PrescriptionService"),
+        new("notification", "NotificationService")
     ];
 
     public static bool IsEnabled(IConfiguration configuration) =>
@@ -39,11 +40,8 @@ public static class ApiDocsEndpoints
                 return Results.NotFound();
             }
 
-            var address = configuration[$"ReverseProxy:Clusters:{target.Cluster}:Destinations:{target.Destination}:Address"];
-            if (string.IsNullOrWhiteSpace(address))
-            {
-                return Results.NotFound();
-            }
+            // The reverse proxy refuses to start without these addresses, so they always exist here.
+            var address = configuration[$"ReverseProxy:Clusters:{target.Cluster}:Destinations:{target.Destination}:Address"]!;
 
             var client = httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.GetAsync(
@@ -77,4 +75,9 @@ public static class ApiDocsEndpoints
     }
 }
 
-public sealed record ApiDocsService(string Name, string Title, string Cluster, string Destination);
+public sealed record ApiDocsService(string Name, string Title)
+{
+    public string Cluster => $"{Name}-cluster";
+
+    public string Destination => $"{Name}-destination";
+}
