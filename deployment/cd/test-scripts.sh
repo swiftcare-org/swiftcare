@@ -548,6 +548,54 @@ expect_success "a Cost Management failure does not fail the run" guard_cost FAKE
 expect_success "skips the report without a start date" guard_cost COST_SINCE=
 expect_failure "rejects a malformed start date" guard_cost COST_SINCE=18-10-2026
 
+echo "== frontend on a Container App"
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend STATIC_WEB_APP_NAME= \
+  expect_success "plan accepts a Container App frontend without a Static Web App" bash "$HERE/validate-config.sh" plan)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP= \
+  expect_failure "plan requires the frontend app name for a Container App frontend" bash "$HERE/validate-config.sh" plan)
+(STATIC_WEB_APP_NAME= expect_failure "plan still requires the site for Static Web Apps" bash "$HERE/validate-config.sh" plan)
+(FRONTEND_HOST=bucket expect_failure "rejects an unknown frontend host" bash "$HERE/validate-config.sh" plan)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend TARGET=production AZURE_STATIC_WEB_APPS_API_TOKEN= \
+  expect_success "frontend release needs no site token on a Container App" bash "$HERE/validate-config.sh" frontend)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend TARGET=development \
+  expect_failure "refuses a Container App frontend for development (no dev_team policy)" bash "$HERE/validate-config.sh" frontend)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend TARGET=production GHCR_TOKEN= \
+  expect_failure "frontend release on a Container App needs the registry credential" bash "$HERE/validate-config.sh" frontend)
+(AZURE_STATIC_WEB_APPS_API_TOKEN= expect_failure "frontend release on Static Web Apps still needs its token" bash "$HERE/validate-config.sh" frontend)
+reset
+expect_success "verify-target skips the site for a Container App frontend" \
+  env FRONTEND_HOST=container_app STATIC_WEB_APP_NAME= AZURE_LOCATION=eastasia AZURE_SUBSCRIPTION_ID=sub-test \
+  bash "$HERE/verify-target.sh" azure
+expect_not_logged "does not look for a Static Web App" "staticwebapp show"
+
+deploy_frontend() { env AZURE_FRONTEND_APP=swiftcare-prod-frontend FAKE_CURL_BODY="{\"sha\":\"$NEW\"}" "$@" bash "$HERE/deploy-frontend.sh"; }
+reset
+expect_success "creates the frontend app on first release" deploy_frontend
+expect_logged "creates it with public ingress on 8080" "containerapp create --resource-group rg --name swiftcare-prod-frontend"
+expect_logged "uses the release image" "ghcr.io/org/swiftcare-frontend:$NEW"
+expect_logged "lets it scale to zero" "--min-replicas 0 --max-replicas 2"
+expect_logged "scales on HTTP requests" "--scale-rule-type http"
+expect_logged "keeps external ingress" "containerapp ingress enable --resource-group rg --name swiftcare-prod-frontend --type external --target-port 8080"
+expect_equal "publishes the frontend address" "$(grep '^url=' "$GITHUB_OUTPUT" | cut -d= -f2-)" "https://swiftcare-prod-frontend.internal.example.test"
+: > "$FAKE_AZ_LOG"
+expect_success "updates the existing frontend app" deploy_frontend
+expect_logged "updates instead of creating" "containerapp update --resource-group rg --name swiftcare-prod-frontend"
+expect_not_logged "does not create it again" "containerapp create"
+echo Stopped > "$FAKE_AZ_STATE/swiftcare-prod-frontend.running"
+expect_success "starts a stopped frontend app" deploy_frontend
+expect_equal "the stopped app is running again" "$(cat "$FAKE_AZ_STATE/swiftcare-prod-frontend.running")" "Running"
+expect_failure "fails when the site keeps serving another commit" deploy_frontend FAKE_CURL_BODY="{\"sha\":\"$OLD\"}"
+expect_failure "fails when the site serves no version" deploy_frontend FAKE_CURL_BODY=
+expect_failure "needs the frontend app name" deploy_frontend AZURE_FRONTEND_APP=
+
+reset
+add_app swiftcare-prod-frontend "$OLD" Running 8080
+add_app swiftcare-prod-gateway "$OLD" Running 8000
+expect_success "the guard succeeds with the frontend running" \
+  env RESOURCE_GROUP=rg FRONTEND_APP=swiftcare-prod-frontend GITHUB_STEP_SUMMARY="" bash "$HERE/window-guard.sh" enforce
+expect_not_logged "the guard leaves the public frontend running" "containerapp stop --resource-group rg --name swiftcare-prod-frontend"
+expect_logged "the guard still stops the gateway" "containerapp stop --resource-group rg --name swiftcare-prod-gateway"
+
 echo "== record-result"
 record() { # record KEY JOB_STATUS DEPLOY ROLLBACK ROLLBACK_RESULT POST_SMOKE PREVIOUS
   KEY="$1" JOB_STATUS="$2" DEPLOY_OUTCOME="$3" ROLLBACK_OUTCOME="$4" ROLLBACK_RESULT="$5" POST_ROLLBACK_SMOKE="$6"     PREVIOUS_IMAGE="$7" DEPLOY_SHA=$NEW bash "$HERE/record-result.sh" "$WORK/results" > /dev/null

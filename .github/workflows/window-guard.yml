@@ -1,9 +1,9 @@
 name: Window guard
 
 # Hourly cost safety net for production. When the demo window is closed, expired or has no end
-# time, it stops every running app, the Kafka broker and MySQL; every run reports the spend since
-# the credit started. It never starts, creates, changes or deletes anything. Scheduled runs use the
-# workflow on the default branch.
+# time, it stops every running app except the public frontend (which scales to zero), the Kafka
+# broker and MySQL; every run reports the spend since the credit started. It never starts,
+# creates, changes or deletes anything. Scheduled runs use the workflow on the default branch.
 on:
   schedule:
     - cron: "23 * * * *"
@@ -71,6 +71,8 @@ jobs:
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       KAFKA_APP: ${{ vars.KAFKA_APP }}
       KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
+      # The public site scales to zero by itself, so the guard leaves it running.
+      FRONTEND_APP: ${{ vars.AZURE_FRONTEND_APP }}
       COST_SINCE: ${{ vars.GUARD_COST_SINCE }}
       COST_WARN_USD: ${{ vars.GUARD_COST_WARN_USD }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

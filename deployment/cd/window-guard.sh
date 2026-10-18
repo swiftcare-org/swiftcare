@@ -5,9 +5,10 @@
 # Usage: window-guard.sh decide|enforce|cost
 #   decide  : no Azure. WINDOW and WINDOW_UNTIL (the repository variables), ACTIVE_CD_RUNS (number
 #             of CD runs not yet completed). Writes act=true|false and reason to $GITHUB_OUTPUT.
-#   enforce : RESOURCE_GROUP, optional MYSQL_SERVER_NAME, KAFKA_APP and KAFKA_CONTAINER_GROUP, and
-#             DRY_RUN. Stops every running Container App in the group (Kafka last), the legacy
-#             Kafka container group and MySQL, then reads each one back.
+#   enforce : RESOURCE_GROUP, optional MYSQL_SERVER_NAME, KAFKA_APP, KAFKA_CONTAINER_GROUP and
+#             FRONTEND_APP, and DRY_RUN. Stops every running Container App in the group (Kafka
+#             last) except FRONTEND_APP, which scales to zero by itself and keeps the site public,
+#             then the legacy Kafka container group and MySQL, and reads the apps back.
 #   cost    : AZURE_SUBSCRIPTION_ID, COST_SINCE (YYYY-MM-DD) and optional COST_WARN_USD. Reports
 #             the subscription's actual cost since COST_SINCE and warns above the threshold.
 set -euo pipefail
@@ -71,7 +72,7 @@ enforce() {
   running=$(az containerapp list --resource-group "$RESOURCE_GROUP" \
     --query "[?properties.runningStatus=='Running'].name" --output tsv | tr -d '\r')
   for name in $running; do
-    [ "$name" = "${KAFKA_APP:-}" ] || stop_one app "$name"
+    [ "$name" = "${KAFKA_APP:-}" ] || [ "$name" = "${FRONTEND_APP:-}" ] || stop_one app "$name"
   done
   if [ -n "${KAFKA_APP:-}" ] && grep -qx "$KAFKA_APP" <<<"$running"; then
     stop_one app "$KAFKA_APP"
@@ -89,15 +90,16 @@ enforce() {
     [ "$state" != "Ready" ] || stop_one mysql "$MYSQL_SERVER_NAME"
   fi
 
-  # Read back: anything still running is reported, whatever the reason.
+  # Read back: anything still running apart from the frontend is reported, whatever the reason.
   if [ "${DRY_RUN:-false}" != "true" ]; then
     running=$(az containerapp list --resource-group "$RESOURCE_GROUP" \
-      --query "[?properties.runningStatus=='Running'].name" --output tsv | tr -d '\r')
+      --query "[?properties.runningStatus=='Running'].name" --output tsv | tr -d '\r' |
+      grep -vx -- "${FRONTEND_APP:-}" || true)
     if [ -n "$running" ]; then
       failures=$((failures + 1))
       summary "- Still running after stop: $(tr '\n' ' ' <<<"$running")"
     else
-      summary "- Read back: no Container App is running."
+      summary "- Read back: no Container App is running${FRONTEND_APP:+ except the frontend $FRONTEND_APP}."
     fi
   fi
 

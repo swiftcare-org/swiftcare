@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Read-only checks that the release targets the intended Azure resources.
 # Usage: verify-target.sh azure|data
-#   azure : subscription, resource group, Container Apps environment and Static Web App. The site
-#           is expected in STATIC_WEB_APP_LOCATION when set, otherwise in AZURE_LOCATION.
+#   azure : subscription, resource group, Container Apps environment and, unless FRONTEND_HOST is
+#           container_app, the Static Web App. The site is expected in STATIC_WEB_APP_LOCATION
+#           when set, otherwise in AZURE_LOCATION.
 #   data  : MySQL and Kafka (the KAFKA_APP Container App, or the legacy Kafka/ZooKeeper container
 #           group when KAFKA_APP is empty); needed only when a backend app is released.
 set -euo pipefail
@@ -23,8 +24,7 @@ require_location() {
 }
 
 verify_azure() {
-  require_values AZURE_LOCATION AZURE_SUBSCRIPTION_ID RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT \
-    STATIC_WEB_APP_NAME
+  require_values AZURE_LOCATION AZURE_SUBSCRIPTION_ID RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT
 
   local actual_subscription group_state environment_state environment_location static_app_location
   actual_subscription=$(az account show --query id --output tsv)
@@ -41,6 +41,13 @@ verify_azure() {
     --name "$CONTAINERAPPS_ENVIRONMENT" --query location --output tsv)
   require_location "Container Apps environment" "$environment_location"
 
+  # A Container App frontend is created by CD in the environment checked above.
+  if [ "${FRONTEND_HOST:-static_web_app}" = container_app ]; then
+    log "Azure target verified (frontend served from a Container App)."
+    return
+  fi
+
+  require_values STATIC_WEB_APP_NAME
   static_app_location=$(az staticwebapp show --resource-group "$RESOURCE_GROUP" \
     --name "$STATIC_WEB_APP_NAME" --query location --output tsv)
   # Static Web Apps is offered in fewer regions, so an environment may keep its site elsewhere
