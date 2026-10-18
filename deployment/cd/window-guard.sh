@@ -50,14 +50,18 @@ stop_one() {
     summary "- Would stop $kind $name (dry run)."
     return
   fi
+  local stopped=true
   case "$kind" in
-    app) az containerapp stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none ;;
-    container-group) az container stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none ;;
-    mysql) az mysql flexible-server stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none ;;
-  esac && summary "- Stopped $kind $name." || {
+    app) az containerapp stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none || stopped=false ;;
+    container-group) az container stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none || stopped=false ;;
+    mysql) az mysql flexible-server stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none || stopped=false ;;
+  esac
+  if [ "$stopped" = true ]; then
+    summary "- Stopped $kind $name."
+  else
     failures=$((failures + 1))
     summary "- Failed to stop $kind $name."
-  }
+  fi
 }
 
 enforce() {
