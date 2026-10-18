@@ -128,7 +128,9 @@ resource "azurerm_container_app" "kafka" {
   container_app_environment_id = local.container_apps_environment_id
   resource_group_name          = azurerm_resource_group.swiftcare.name
   revision_mode                = "Single"
-  tags                         = local.common_tags
+  # Azure places apps in the environment's built-in Consumption profile; naming it keeps plans clean.
+  workload_profile_name = "Consumption"
+  tags                  = local.common_tags
 
   template {
     # A single broker: a second replica would form a second, separate cluster.
