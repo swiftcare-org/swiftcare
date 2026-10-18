@@ -3,7 +3,8 @@
 # Usage: verify-target.sh azure|data
 #   azure : subscription, resource group, Container Apps environment and Static Web App. The site
 #           is expected in STATIC_WEB_APP_LOCATION when set, otherwise in AZURE_LOCATION.
-#   data  : MySQL and Kafka/ZooKeeper; needed only when a backend app is released.
+#   data  : MySQL and Kafka (the KAFKA_APP Container App, or the legacy Kafka/ZooKeeper container
+#           group when KAFKA_APP is empty); needed only when a backend app is released.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -48,28 +49,34 @@ verify_azure() {
   log "Azure target verified."
 }
 
-verify_data() {
-  require_values AZURE_LOCATION RESOURCE_GROUP MYSQL_SERVER_NAME MYSQL_FQDN KAFKA_CONTAINER_GROUP \
-    KAFKA_CONTAINER ZOOKEEPER_CONTAINER KAFKA_BOOTSTRAP_SERVERS
+# Kafka as one KRaft broker in a Container App (Terraform messaging_host = container_app).
+verify_kafka_app() {
+  local kafka_state kafka_location kafka_ingress
+  kafka_state=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$KAFKA_APP" \
+    --query properties.runningStatus --output tsv)
+  [ "$kafka_state" = "Running" ] ||
+    fail "Kafka app $KAFKA_APP is ${kafka_state:-missing}; start it for the window (az containerapp start)"
 
-  local mysql_state mysql_location actual_mysql_fqdn public_access
+  kafka_location=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$KAFKA_APP" \
+    --query location --output tsv)
+  require_location "Kafka app" "$kafka_location"
+
+  kafka_ingress=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$KAFKA_APP" \
+    --query "properties.configuration.ingress.{external:external,transport:transport}" --output json)
+  jq -e '.external == false and ((.transport // "") | ascii_downcase) == "tcp"' <<<"$kafka_ingress" >/dev/null ||
+    fail "Kafka app $KAFKA_APP must use internal TCP ingress"
+
+  case "$KAFKA_BOOTSTRAP_SERVERS" in
+    "$KAFKA_APP":*) ;;
+    *) fail "KAFKA_BOOTSTRAP_SERVERS must name the Kafka app $KAFKA_APP and its port" ;;
+  esac
+}
+
+# Kafka and ZooKeeper in a container group (Terraform messaging_host = container_group).
+verify_kafka_container_group() {
+  require_values KAFKA_CONTAINER_GROUP KAFKA_CONTAINER ZOOKEEPER_CONTAINER
+
   local messaging_state messaging_location messaging_ip_type container_name container_state kafka_zookeeper
-
-  mysql_state=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
-    --name "$MYSQL_SERVER_NAME" --query state --output tsv)
-  [ "$mysql_state" = "Ready" ] || fail "MySQL state is $mysql_state"
-
-  mysql_location=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
-    --name "$MYSQL_SERVER_NAME" --query location --output tsv)
-  require_location "MySQL flexible server" "$mysql_location"
-
-  actual_mysql_fqdn=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
-    --name "$MYSQL_SERVER_NAME" --query fullyQualifiedDomainName --output tsv)
-  [ "$actual_mysql_fqdn" = "$MYSQL_FQDN" ] || fail "MYSQL_FQDN does not match $MYSQL_SERVER_NAME"
-
-  public_access=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
-    --name "$MYSQL_SERVER_NAME" --query network.publicNetworkAccess --output tsv)
-  [ "$public_access" = "Disabled" ] || fail "MySQL public access is $public_access; expected Disabled"
 
   messaging_state=$(az container show --resource-group "$RESOURCE_GROUP" \
     --name "$KAFKA_CONTAINER_GROUP" --query instanceView.state --output tsv)
@@ -97,6 +104,31 @@ verify_data() {
     --output tsv)
   [ "$kafka_zookeeper" = "localhost:2181" ] ||
     fail "Kafka must use the ZooKeeper container at localhost:2181; found ${kafka_zookeeper:-no setting}"
+}
+
+verify_data() {
+  require_values AZURE_LOCATION RESOURCE_GROUP MYSQL_SERVER_NAME MYSQL_FQDN KAFKA_BOOTSTRAP_SERVERS
+
+  local mysql_state mysql_location actual_mysql_fqdn public_access
+
+  mysql_state=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
+    --name "$MYSQL_SERVER_NAME" --query state --output tsv)
+  [ "$mysql_state" = "Ready" ] || fail "MySQL state is $mysql_state"
+
+  mysql_location=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
+    --name "$MYSQL_SERVER_NAME" --query location --output tsv)
+  require_location "MySQL flexible server" "$mysql_location"
+
+  actual_mysql_fqdn=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
+    --name "$MYSQL_SERVER_NAME" --query fullyQualifiedDomainName --output tsv)
+  [ "$actual_mysql_fqdn" = "$MYSQL_FQDN" ] || fail "MYSQL_FQDN does not match $MYSQL_SERVER_NAME"
+
+  public_access=$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
+    --name "$MYSQL_SERVER_NAME" --query network.publicNetworkAccess --output tsv)
+  [ "$public_access" = "Disabled" ] || fail "MySQL public access is $public_access; expected Disabled"
+
+  # KAFKA_APP selects the Container App broker; without it the legacy container group is checked.
+  if [ -n "${KAFKA_APP:-}" ]; then verify_kafka_app; else verify_kafka_container_group; fi
 
   case "$KAFKA_BOOTSTRAP_SERVERS" in
     *localhost* | *127.0.0.1* | *kafka:29092*)

@@ -1,0 +1,98 @@
+name: Window guard
+
+# Hourly cost safety net for production. When the demo window is closed, expired or has no end
+# time, it stops every running app, the Kafka broker and MySQL; every run reports the spend since
+# the credit started. It never starts, creates, changes or deletes anything. Scheduled runs use the
+# workflow on the default branch.
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be stopped without stopping it
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: window-guard
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    name: Check the production window
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      act: ${{ steps.decide.outputs.act }}
+    steps:
+      - name: Check out the guard script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: deployment/cd
+
+      - name: Count CD runs that have not finished
+        id: runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow cd.yml --limit 30 \
+            --json status --jq '[.[] | select(.status != "completed")] | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to stop resources
+        id: decide
+        env:
+          WINDOW: ${{ vars.DEMO_WINDOW_PRODUCTION }}
+          WINDOW_UNTIL: ${{ vars.DEMO_WINDOW_PRODUCTION_UNTIL }}
+          ACTIVE_CD_RUNS: ${{ steps.runs.outputs.count }}
+        run: bash deployment/cd/window-guard.sh decide
+
+  guard:
+    name: Stop production resources and report spend
+    needs: decide
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Holds only the guard identity's IDs and resource names, no secrets, and has no reviewer so a
+    # scheduled run never waits for approval. The identity can only read and stop resources.
+    environment: azure-production-guard
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
+      KAFKA_APP: ${{ vars.KAFKA_APP }}
+      KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
+      COST_SINCE: ${{ vars.GUARD_COST_SINCE }}
+      COST_WARN_USD: ${{ vars.GUARD_COST_WARN_USD }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    steps:
+      - name: Check out the guard script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: deployment/cd
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Stop resources
+        if: needs.decide.outputs.act == 'true'
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors
+          bash deployment/cd/window-guard.sh enforce
+
+      - name: Report spend
+        if: always()
+        run: bash deployment/cd/window-guard.sh cost

@@ -30,6 +30,9 @@ case "$group $sub" in
     [ "$app" = "swiftcare-gateway" ] && external=true
     case "$query" in
       "") exit 0 ;;
+      location) echo "${FAKE_ENV_LOCATION:-East Asia}" ;;
+      *ingress*transport*) printf '{"external":%s,"transport":"%s"}
+' "${FAKE_KAFKA_EXTERNAL:-false}" "${FAKE_KAFKA_TRANSPORT:-Tcp}" ;;
       *runningStatus*latest*)
         # A scripted transient failure: the first readiness read fails once.
         if [ -n "${FAKE_AZ_FLAKY_ONCE:-}" ] && [ ! -f "$state/flaky.done" ]; then
@@ -74,6 +77,16 @@ case "$group $sub" in
     port=$(NAME=target-port arg "${all[@]}")
     [ -z "$port" ] || echo "$port" > "$state/$app.port" ;;
   "containerapp revision" | "containerapp registry" | "containerapp secret") exit 0 ;;
+  # Window guard: list running apps and stop them.
+  "containerapp list")
+    for file in "$state"/*.running; do
+      [ -e "$file" ] || continue
+      [ "$(cat "$file")" = Running ] && basename "$file" .running
+    done
+    exit 0 ;;
+  "containerapp stop")
+    [ "$app" != "${FAKE_STOP_FAILS:-}" ] || exit 1
+    echo Stopped > "$state/$app.running" ;;
   "containerapp job")
     case "${all[2]:-}" in
       show) [ -f "$state/job.$app" ] || exit 3 ;;
@@ -94,8 +107,30 @@ case "$group $sub" in
       *) echo "fake-az: unsupported containerapp env query: $query" >&2; exit 9 ;;
     esac ;;
   "staticwebapp show") echo "${FAKE_SWA_LOCATION:-East Asia}" ;;
+  # Data layer (verify-target.sh data) and the window guard.
+  "mysql flexible-server")
+    case "${all[2]:-}" in
+      show)
+        case "$query" in
+          state) cat "$state/mysql.state" 2>/dev/null || echo "${FAKE_MYSQL_STATE:-Ready}" ;;
+          location) echo "${FAKE_ENV_LOCATION:-East Asia}" ;;
+          fullyQualifiedDomainName) echo "${FAKE_MYSQL_FQDN:-mysql.example.test}" ;;
+          network.publicNetworkAccess) echo Disabled ;;
+          *) echo "fake-az: unsupported mysql query: $query" >&2; exit 9 ;;
+        esac ;;
+      stop) echo Stopped > "$state/mysql.state" ;;
+    esac ;;
+  "container show") cat "$state/group.state" 2>/dev/null || echo "${FAKE_GROUP_STATE:-Running}" ;;
+  "container stop") echo Stopped > "$state/group.state" ;;
   "rest "*)
     uri=$(NAME=uri arg "${all[@]}")
+    case "$uri" in
+      *CostManagement*)
+        [ -z "${FAKE_COST_FAILS:-}" ] || exit 1
+        printf '{"properties":{"rows":[[%s,"USD"]]}}
+' "${FAKE_COST:-12.346}"
+        exit 0 ;;
+    esac
     started="${uri#*/apps/}"; started="${started%%/*}"
     echo Running > "$state/$started.running" ;;
   *) echo "fake-az: unsupported call: $*" >&2; exit 9 ;;

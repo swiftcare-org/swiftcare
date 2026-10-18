@@ -172,3 +172,22 @@ ensure_running() {
   start_app "$app"
   wait_ready "$app" "$port" "$external"
 }
+
+# window_state OPEN UNTIL : print "open" or "closed: <reason>" for a demo window. A window is open
+# only when OPEN is exactly "true" and UNTIL is a UTC end time (YYYY-MM-DDTHH:MMZ, seconds optional)
+# that is in the future and at most WINDOW_MAX_HOURS (default 24) away, so a forgotten window
+# closes itself. WINDOW_NOW (epoch seconds) overrides the clock in tests.
+window_state() {
+  local open="$1" until="$2" now max_hours end
+  now="${WINDOW_NOW:-$(date -u +%s)}"
+  max_hours="${WINDOW_MAX_HOURS:-24}"
+  [ "$open" = "true" ] || { echo "closed: the window variable is not true"; return; }
+  [ -n "$until" ] || { echo "closed: no end time is set"; return; }
+  [[ "$until" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?Z$ ]] ||
+    { echo "closed: the end time is not in the form YYYY-MM-DDTHH:MMZ"; return; }
+  end=$(date -u -d "$until" +%s 2>/dev/null) || { echo "closed: the end time is not a valid date"; return; }
+  [ "$end" -gt "$now" ] || { echo "closed: the end time $until has passed"; return; }
+  [ $((end - now)) -le $((max_hours * 3600)) ] ||
+    { echo "closed: the end time $until is more than $max_hours hours away"; return; }
+  echo open
+}

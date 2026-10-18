@@ -116,6 +116,8 @@ jobs:
           TARGET_INPUT: ${{ inputs.target }}
           WINDOW_DEVELOPMENT: ${{ vars.DEMO_WINDOW_DEVELOPMENT }}
           WINDOW_PRODUCTION: ${{ vars.DEMO_WINDOW_PRODUCTION }}
+          WINDOW_DEVELOPMENT_UNTIL: ${{ vars.DEMO_WINDOW_DEVELOPMENT_UNTIL }}
+          WINDOW_PRODUCTION_UNTIL: ${{ vars.DEMO_WINDOW_PRODUCTION_UNTIL }}
         run: bash deployment/cd/resolve-target.sh
 
   manual-quality-gate:
@@ -170,6 +172,8 @@ jobs:
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
+      # KAFKA_APP selects the Kafka Container App; the three container-group values are the legacy host.
+      KAFKA_APP: ${{ vars.KAFKA_APP }}
       KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
       KAFKA_CONTAINER: ${{ vars.KAFKA_CONTAINER_NAME }}
       ZOOKEEPER_CONTAINER: ${{ vars.ZOOKEEPER_CONTAINER_NAME }}
