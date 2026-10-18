@@ -30,7 +30,11 @@ FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-swiftcare.me}"
 # Set FRONTEND_WWW_DOMAIN="" for an environment without a second domain (development).
 FRONTEND_WWW_DOMAIN="${FRONTEND_WWW_DOMAIN-www.swiftcare.me}"
 IMPORT_CUSTOM_DOMAINS="${IMPORT_CUSTOM_DOMAINS:-false}"
+# Set IMPORT_STATIC_WEB_APP=false where static_web_app_enabled = false (the production subscription).
+IMPORT_STATIC_WEB_APP="${IMPORT_STATIC_WEB_APP:-true}"
 IMPORT_MESSAGING="${IMPORT_MESSAGING:-true}"
+# MESSAGING_HOST matches the messaging_host variable: container_app (default) or container_group.
+MESSAGING_HOST="${MESSAGING_HOST:-container_app}"
 # Production joins development's Container Apps environment: set SHARED_RESOURCE_GROUP and
 # SHARED_VNET_NAME (swiftcare-rg and swiftcare-vnet) to import the peerings and DNS links instead
 # of an environment and its subnet.
@@ -112,7 +116,11 @@ if [[ -n "$SHARED_RESOURCE_GROUP" ]]; then
     "${MESSAGING_DNS_ID}/virtualNetworkLinks/messaging-shared-vnet-link"
 fi
 
-if [[ "$IMPORT_MESSAGING" == "true" ]]; then
+if [[ "$IMPORT_MESSAGING" == "true" && "$MESSAGING_HOST" == "container_app" ]]; then
+  import_if_missing 'azurerm_container_app.kafka[0]'     "${BASE}/Microsoft.App/containerApps/${NAME_PREFIX}-kafka"
+fi
+
+if [[ "$IMPORT_MESSAGING" == "true" && "$MESSAGING_HOST" == "container_group" ]]; then
   import_if_missing 'azurerm_public_ip.messaging[0]' "$PUBLIC_IP_ID"
   import_if_missing 'azurerm_nat_gateway.messaging[0]' "$NAT_ID"
   import_if_missing 'azurerm_nat_gateway_public_ip_association.messaging[0]' \
@@ -142,9 +150,11 @@ if az consumption budget show --resource-group "$RESOURCE_GROUP" --budget-name "
     "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}"
 fi
 
-import_if_missing azurerm_static_web_app.swiftcare "$STATIC_WEB_APP_ID"
+if [[ "$IMPORT_STATIC_WEB_APP" == "true" ]]; then
+  import_if_missing 'azurerm_static_web_app.swiftcare[0]' "$STATIC_WEB_APP_ID"
+fi
 
-if [[ "$IMPORT_CUSTOM_DOMAINS" == "true" ]]; then
+if [[ "$IMPORT_STATIC_WEB_APP" == "true" && "$IMPORT_CUSTOM_DOMAINS" == "true" ]]; then
   import_if_missing 'azurerm_static_web_app_custom_domain.apex[0]' \
     "${STATIC_WEB_APP_ID}/customDomains/${FRONTEND_DOMAIN}"
   if [[ -n "$FRONTEND_WWW_DOMAIN" ]]; then

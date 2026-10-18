@@ -116,6 +116,8 @@ jobs:
           TARGET_INPUT: ${{ inputs.target }}
           WINDOW_DEVELOPMENT: ${{ vars.DEMO_WINDOW_DEVELOPMENT }}
           WINDOW_PRODUCTION: ${{ vars.DEMO_WINDOW_PRODUCTION }}
+          WINDOW_DEVELOPMENT_UNTIL: ${{ vars.DEMO_WINDOW_DEVELOPMENT_UNTIL }}
+          WINDOW_PRODUCTION_UNTIL: ${{ vars.DEMO_WINDOW_PRODUCTION_UNTIL }}
         run: bash deployment/cd/resolve-target.sh
 
   manual-quality-gate:
@@ -167,9 +169,14 @@ jobs:
       STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
       # Optional: set when the Static Web App is in another region than AZURE_LOCATION.
       STATIC_WEB_APP_LOCATION: ${{ vars.AZURE_STATIC_WEB_APP_LOCATION }}
+      # static_web_app (default) or container_app (AZURE_FRONTEND_APP), where Static Web Apps is unavailable.
+      FRONTEND_HOST: ${{ vars.FRONTEND_HOST }}
+      AZURE_FRONTEND_APP: ${{ vars.AZURE_FRONTEND_APP }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
       MYSQL_SERVER_NAME: ${{ vars.MYSQL_SERVER_NAME }}
       MYSQL_FQDN: ${{ vars.MYSQL_FQDN }}
+      # KAFKA_APP selects the Kafka Container App; the three container-group values are the legacy host.
+      KAFKA_APP: ${{ vars.KAFKA_APP }}
       KAFKA_CONTAINER_GROUP: ${{ vars.KAFKA_CONTAINER_GROUP }}
       KAFKA_CONTAINER: ${{ vars.KAFKA_CONTAINER_NAME }}
       ZOOKEEPER_CONTAINER: ${{ vars.ZOOKEEPER_CONTAINER_NAME }}
@@ -742,14 +749,31 @@ jobs:
       needs.plan.outputs.frontend == 'true' &&
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: ${{ needs.target.outputs.environment }}
+    # packages and id-token are used only by the Container App host (FRONTEND_HOST=container_app).
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     env:
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
+      TARGET: ${{ needs.target.outputs.target }}
       GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
       FRONTEND_WWW_ORIGIN: ${{ vars.FRONTEND_WWW_ORIGIN }}
+      FRONTEND_HOST: ${{ vars.FRONTEND_HOST }}
       AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP }}
+      AZURE_FRONTEND_APP: ${{ vars.AZURE_FRONTEND_APP }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
     steps:
       - name: Check out the release commit
         uses: actions/checkout@v4
@@ -760,6 +784,7 @@ jobs:
         run: bash deployment/cd/validate-config.sh frontend
 
       - name: Set up Node.js
+        if: env.FRONTEND_HOST != 'container_app'
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
@@ -768,6 +793,7 @@ jobs:
 
       - name: Build against the deployed gateway
         id: build
+        if: env.FRONTEND_HOST != 'container_app'
         working-directory: frontend
         env:
           VITE_GATEWAY_URL: ${{ vars.GATEWAY_ORIGIN }}
@@ -781,12 +807,14 @@ jobs:
       # Development is limited to the dev_team role; production keeps the public configuration.
       # The step fails the job if the build output does not match the target.
       - name: Apply the access policy for the target
+        if: env.FRONTEND_HOST != 'container_app'
         env:
           TARGET: ${{ needs.target.outputs.target }}
         run: python3 -I deployment/cd/frontend_access.py apply "$TARGET" frontend/dist
 
       - name: Deploy to Azure Static Web Apps
         id: deploy
+        if: env.FRONTEND_HOST != 'container_app'
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
@@ -795,6 +823,49 @@ jobs:
           output_location: ""
           skip_app_build: true
           skip_api_build: true
+
+      # Container App host: the image builds the site against the deployed gateway and publishes the
+      # release commit in /version.json; the public production configuration applies.
+      - name: Log in to GitHub Container Registry
+        if: env.FRONTEND_HOST == 'container_app'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: env.FRONTEND_HOST == 'container_app'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the frontend image
+        if: env.FRONTEND_HOST == 'container_app'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            VITE_GATEWAY_URL=${{ vars.GATEWAY_ORIGIN }}
+            RELEASE_SHA=${{ needs.plan.outputs.release_sha }}
+          tags: ${{ env.IMAGE_REPOSITORY }}/swiftcare-frontend:${{ needs.plan.outputs.release_sha }}
+          cache-from: type=gha,scope=swiftcare-frontend
+          cache-to: type=gha,mode=max,scope=swiftcare-frontend
+
+      - name: Sign in to Azure with OIDC
+        if: env.FRONTEND_HOST == 'container_app'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the frontend Container App
+        if: env.FRONTEND_HOST == 'container_app'
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors
+          bash deployment/cd/deploy-frontend.sh
 
       - name: Record the result
         if: always()

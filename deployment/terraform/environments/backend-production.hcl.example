@@ -1,7 +1,8 @@
-# Production state: same storage account, separate key, so neither environment can read or
-# overwrite the other's state. Copy to backend-production.hcl (ignored) and set the real IDs.
+# Production state in the production subscription. Copy to backend-production.hcl (ignored) and
+# set the real IDs. Storage account names are global; the previous subscription still holds
+# swiftcaretfstate, so this backend uses its own account.
 resource_group_name  = "swiftcare-tfstate-rg"
-storage_account_name = "swiftcaretfstate"
+storage_account_name = "swiftcaretfstatesea"
 container_name       = "tfstate"
 key                  = "azure-production.tfstate"
 subscription_id      = "00000000-0000-0000-0000-000000000000"
