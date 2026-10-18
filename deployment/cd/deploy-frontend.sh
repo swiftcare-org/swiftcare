@@ -14,7 +14,14 @@ require_values RESOURCE_GROUP CONTAINERAPPS_ENVIRONMENT GHCR_USERNAME GHCR_TOKEN
 
 app="$AZURE_FRONTEND_APP"
 port=8080
-image="$IMAGE_REPOSITORY/swiftcare-frontend:$DEPLOY_SHA"
+# CD passes the digest of the image it just built. The tag alone is not enough: the gateway origin is
+# baked into the bundle, so a rebuild of the same commit with new settings keeps the same tag and
+# Container Apps would start no new revision.
+image="${FRONTEND_IMAGE:-$IMAGE_REPOSITORY/swiftcare-frontend:$DEPLOY_SHA}"
+case "$image" in
+  "$IMAGE_REPOSITORY"/swiftcare-frontend@sha256:* | "$IMAGE_REPOSITORY"/swiftcare-frontend:*) ;;
+  *) fail "FRONTEND_IMAGE must be a swiftcare-frontend image in $IMAGE_REPOSITORY" ;;
+esac
 # One replica handles a demo; a second absorbs a burst. Zero when nobody is using the site.
 scale=(--min-replicas 0 --max-replicas 2
   --scale-rule-name http-requests --scale-rule-type http --scale-rule-http-concurrency 50)

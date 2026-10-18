@@ -587,6 +587,10 @@ expect_equal "the stopped app is running again" "$(cat "$FAKE_AZ_STATE/swiftcare
 expect_failure "fails when the site keeps serving another commit" deploy_frontend FAKE_CURL_BODY="{\"sha\":\"$OLD\"}"
 expect_failure "fails when the site serves no version" deploy_frontend FAKE_CURL_BODY=
 expect_failure "needs the frontend app name" deploy_frontend AZURE_FRONTEND_APP=
+: > "$FAKE_AZ_LOG"
+expect_success "deploys the exact image digest CD built" deploy_frontend FRONTEND_IMAGE=ghcr.io/org/swiftcare-frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+expect_logged "updates the app to the digest, not the tag" "--image ghcr.io/org/swiftcare-frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+expect_failure "refuses an image from another repository" deploy_frontend FRONTEND_IMAGE=docker.io/other/frontend:latest
 
 reset
 add_app swiftcare-prod-frontend "$OLD" Running 8080
@@ -595,6 +599,24 @@ expect_success "the guard succeeds with the frontend running" \
   env RESOURCE_GROUP=rg FRONTEND_APP=swiftcare-prod-frontend GITHUB_STEP_SUMMARY="" bash "$HERE/window-guard.sh" enforce
 expect_not_logged "the guard leaves the public frontend running" "containerapp stop --resource-group rg --name swiftcare-prod-frontend"
 expect_logged "the guard still stops the gateway" "containerapp stop --resource-group rg --name swiftcare-prod-gateway"
+
+echo "== API docs switch (API_DOCS_ENABLED)"
+reset
+expect_success "deploys a service with the docs switch unset" bash "$HERE/deploy-service.sh" queue
+expect_logged "turns the service docs off by default" "ApiDocs__Enabled=false"
+reset
+(API_DOCS_ENABLED=TRUE expect_success "deploys with a non-exact value" bash "$HERE/deploy-service.sh" queue)
+expect_logged "treats anything but true as off" "ApiDocs__Enabled=false"
+reset
+(API_DOCS_ENABLED=true expect_success "deploys a service with the docs switch on" bash "$HERE/deploy-service.sh" queue)
+expect_logged "publishes the service document when on" "ApiDocs__Enabled=true"
+reset
+(API_DOCS_ENABLED=true GATEWAY_ORIGIN=https://api.example.test expect_success "deploys the gateway with the docs switch on" bash "$HERE/deploy-gateway.sh")
+expect_logged "turns the gateway docs pages on" "ApiDocs__Enabled=true"
+expect_logged "sends try-it calls to the public gateway" "ApiDocs__PublicBaseUrl=https://api.example.test"
+reset
+(API_DOCS_ENABLED=false expect_success "deploys the gateway with the docs switch off" bash "$HERE/deploy-gateway.sh")
+expect_logged "turns the gateway docs pages off" "ApiDocs__Enabled=false"
 
 echo "== record-result"
 record() { # record KEY JOB_STATUS DEPLOY ROLLBACK ROLLBACK_RESULT POST_SMOKE PREVIOUS

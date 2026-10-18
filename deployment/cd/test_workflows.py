@@ -136,6 +136,17 @@ class CdWorkflowTests(unittest.TestCase):
         self.assertIn("RELEASE_SHA=${{ needs.plan.outputs.release_sha }}", block)
         self.assertIn("bash deployment/cd/deploy-frontend.sh", block)
 
+    def test_every_backend_release_job_receives_the_api_docs_switch(self):
+        for job in ("deploy-auth", "deploy-services", "deploy-gateway"):
+            self.assertIn("API_DOCS_ENABLED: ${{ vars.API_DOCS_ENABLED }}", JOBS[job], job)
+        self.assertIn("GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}", JOBS["deploy-gateway"])
+
+    def test_container_app_frontend_is_deployed_by_digest(self):
+        # The same commit rebuilt with new settings keeps its tag, so only the digest is reliable.
+        block = JOBS["deploy-frontend"]
+        self.assertIn("id: frontend-image", block)
+        self.assertIn("FRONTEND_IMAGE: ${{ env.IMAGE_REPOSITORY }}/swiftcare-frontend@${{ steps.frontend-image.outputs.digest }}", block)
+
 
 GUARD_JOBS = jobs(GUARD)
 
