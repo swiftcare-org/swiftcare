@@ -103,8 +103,11 @@ public class NotificationRouteTests
     [Fact]
     public void NotificationClusterPointsAtTheServicesLocalPort()
     {
-        using var factory = new ApiGatewayWebApplicationFactory();
-        var configuration = factory.Services.GetRequiredService<IConfiguration>();
+        // Read the shipped settings: the test host deliberately redirects every backend
+        // to an unused port so route tests never depend on locally running services.
+        var settingsPath = Path.Combine(
+            Path.GetDirectoryName(typeof(Program).Assembly.Location)!, "appsettings.json");
+        var configuration = new ConfigurationBuilder().AddJsonFile(settingsPath).Build();
 
         Assert.Equal(
             "http://localhost:5005",
