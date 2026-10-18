@@ -7,7 +7,8 @@ FROM node:22-alpine AS build
 WORKDIR /source/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# No dependency needs an install script on Linux (only the macOS-only fsevents has one).
+RUN npm ci --ignore-scripts
 
 COPY frontend/ ./
 ARG VITE_GATEWAY_URL=http://localhost:8000
@@ -15,7 +16,8 @@ ARG RELEASE_SHA=unknown
 RUN VITE_GATEWAY_URL="$VITE_GATEWAY_URL" npm run build \
     && printf '{"sha":"%s"}\n' "$RELEASE_SHA" > dist/version.json
 
-FROM nginxinc/nginx-unprivileged:1.28-alpine AS runtime
+# The stable line receives security rebuilds; 1.28 is no longer updated and carried fixed nginx CVEs.
+FROM nginxinc/nginx-unprivileged:1.30-alpine AS runtime
 
 # curl is not in the base image and the HEALTHCHECK below needs it.
 # The upgrade applies OS security fixes the base image has not picked up yet.
