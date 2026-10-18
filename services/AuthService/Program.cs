@@ -95,6 +95,8 @@ if (app.Environment.IsDevelopment())
     await DevelopmentSeeder.SeedAsync(dbContext, app.Configuration, seederLogger);
 }
 
+if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("ApiDocs:Enabled")) { app.MapOpenApi(); }
+
 app.UseMiddleware<GatewaySecretMiddleware>();
 
 app.UseAuthorization();

@@ -191,3 +191,9 @@ window_state() {
     { echo "closed: the end time $until is more than $max_hours hours away"; return; }
   echo open
 }
+
+# api_docs_enabled : "true" only when API_DOCS_ENABLED is exactly true, otherwise "false". Drives
+# ApiDocs__Enabled on the services and the gateway (the public /scalar and /openapi pages).
+api_docs_enabled() {
+  if [ "${API_DOCS_ENABLED:-}" = "true" ]; then echo true; else echo false; fi
+}

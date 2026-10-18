@@ -27,6 +27,9 @@ settings=(
   "Gateway__InternalSecret=secretref:gateway-secret"
   "Cors__AllowedOrigins__0=$FRONTEND_ORIGIN"
   "Cors__AllowedOrigins__1=$FRONTEND_WWW_ORIGIN"
+  # Public /scalar and /openapi pages (API_DOCS_ENABLED); their "try it" calls go to GATEWAY_ORIGIN.
+  "ApiDocs__Enabled=$(api_docs_enabled)"
+  "ApiDocs__PublicBaseUrl=${GATEWAY_ORIGIN:-}"
 )
 secrets=("jwt-key=$JWT_SIGNING_KEY" "gateway-secret=$GATEWAY_INTERNAL_SECRET")
 

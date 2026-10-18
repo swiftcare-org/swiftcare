@@ -112,6 +112,8 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("ApiDocs:Enabled")) { app.MapOpenApi(); }
+
 app.UseMiddleware<GatewaySecretMiddleware>();
 
 app.UseAuthorization();
