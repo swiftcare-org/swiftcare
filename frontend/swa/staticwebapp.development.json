@@ -1,0 +1,47 @@
+{
+  "routes": [
+    {
+      "route": "/access-denied.html",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/version.json",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "route": "/.auth/login/aad",
+      "statusCode": 404
+    },
+    {
+      "route": "/.auth/login/twitter",
+      "statusCode": 404
+    },
+    {
+      "route": "/assets/*",
+      "allowedRoles": ["dev_team"]
+    },
+    {
+      "route": "/*.{css,js,mjs,map,json,png,jpg,jpeg,gif,svg,webp,ico,woff,woff2,ttf}",
+      "allowedRoles": ["dev_team"]
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["dev_team"],
+      "rewrite": "/index.html"
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/github?post_login_redirect_uri=.referrer",
+      "statusCode": 302
+    },
+    "403": {
+      "rewrite": "/access-denied.html"
+    }
+  },
+  "globalHeaders": {
+    "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+  }
+}

@@ -83,7 +83,7 @@ variable "mysql_subnet_prefixes" {
 }
 
 variable "messaging_subnet_prefixes" {
-  description = "Delegated subnet used by the Kafka and ZooKeeper container group."
+  description = "Delegated subnet used by the legacy Kafka and ZooKeeper container group (messaging_host = container_group)."
   type        = list(string)
   default     = ["10.20.3.0/27"]
 }
@@ -141,6 +141,12 @@ variable "mysql_backup_retention_days" {
   default     = 7
 }
 
+variable "static_web_app_enabled" {
+  description = "Create the Static Web App and its custom domains. Set false where Static Web Apps is not available (the production subscription); CD then serves the frontend from a Container App."
+  type        = bool
+  default     = true
+}
+
 variable "static_web_app_name" {
   description = "Globally unique Azure Static Web App name."
   type        = string
@@ -183,9 +189,37 @@ variable "frontend_www_domain" {
 }
 
 variable "messaging_enabled" {
-  description = "Whether the paid NAT Gateway and Kafka/ZooKeeper container group exist."
+  description = "Whether the Kafka broker exists (and, for the legacy container group host, its paid NAT gateway)."
   type        = bool
   default     = true
+}
+
+variable "messaging_host" {
+  description = "Where Kafka runs: container_app (one KRaft broker in the Container Apps environment, no NAT gateway, stoppable) or container_group (legacy Kafka and ZooKeeper container group behind a NAT gateway)."
+  type        = string
+  default     = "container_app"
+  validation {
+    condition     = contains(["container_app", "container_group"], var.messaging_host)
+    error_message = "messaging_host must be container_app or container_group."
+  }
+}
+
+variable "kafka_kraft_image" {
+  description = "Kafka image for the Container App broker; runs in KRaft mode without ZooKeeper."
+  type        = string
+  default     = "apache/kafka:3.9.0"
+}
+
+variable "kafka_app_cpu" {
+  description = "vCPU for the Kafka Container App. Measured broker use was about 0.005 vCPU."
+  type        = number
+  default     = 0.5
+}
+
+variable "kafka_app_memory" {
+  description = "Memory for the Kafka Container App; must form a valid Consumption pair with kafka_app_cpu (0.5 vCPU with 1Gi)."
+  type        = string
+  default     = "1Gi"
 }
 
 variable "zookeeper_image" {
@@ -250,6 +284,46 @@ variable "budget_start_date" {
   }
 }
 
+variable "subscription_budget_amount" {
+  description = "Budget for the whole subscription in the billing currency, normally the remaining Azure for Students credit. Set 0 to omit it."
+  type        = number
+  default     = 0
+  validation {
+    condition     = var.subscription_budget_amount >= 0
+    error_message = "subscription_budget_amount must be zero (no budget) or a positive amount."
+  }
+}
+
+variable "subscription_budget_time_grain" {
+  description = "Reset period of the subscription budget. Annually follows a one-off credit; Monthly suits a recurring allowance."
+  type        = string
+  default     = "Annually"
+  validation {
+    condition     = contains(["Monthly", "Quarterly", "Annually"], var.subscription_budget_time_grain)
+    error_message = "subscription_budget_time_grain must be Monthly, Quarterly or Annually."
+  }
+}
+
+variable "subscription_budget_start_date" {
+  description = "First day of the first subscription budget period, in UTC. Changing it replaces the budget."
+  type        = string
+  default     = "2026-10-01T00:00:00Z"
+  validation {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.subscription_budget_start_date))
+    error_message = "subscription_budget_start_date must be the first day of a month, for example 2026-10-01T00:00:00Z."
+  }
+}
+
+variable "availability_frequency" {
+  description = "Seconds between availability test runs. Each run in each location is billed, so 900 costs a third of 300; detection takes up to one interval."
+  type        = number
+  default     = 900
+  validation {
+    condition     = contains([300, 900], var.availability_frequency)
+    error_message = "availability_frequency must be 300 or 900 so the alert window can match it."
+  }
+}
+
 variable "availability_enabled" {
   description = "Enable both tests and alerts during the agreed uptime window; disabling retains resources."
   type        = bool
@@ -277,19 +351,19 @@ variable "availability_gateway_url" {
 }
 
 variable "availability_locations" {
-  description = "Azure availability population IDs, independent of the resource deployment region."
+  description = "Azure availability population IDs, independent of the resource deployment region. Microsoft recommends five; three keeps a demo environment cheaper."
   type        = list(string)
   default     = ["apac-sg-sin-azr", "apac-jp-kaw-edge", "emea-au-syd-edge", "emea-nl-ams-azr", "us-va-ash-azr"]
   validation {
-    condition = length(var.availability_locations) >= 5 && length(var.availability_locations) <= 16 && length(distinct(var.availability_locations)) == length(var.availability_locations) && alltrue([
+    condition = length(var.availability_locations) >= 3 && length(var.availability_locations) <= 16 && length(distinct(var.availability_locations)) == length(var.availability_locations) && alltrue([
       for location in var.availability_locations : contains(["emea-au-syd-edge", "latam-br-gru-edge", "us-fl-mia-edge", "apac-hk-hkn-azr", "us-va-ash-azr", "emea-ch-zrh-edge", "emea-fr-pra-edge", "apac-jp-kaw-edge", "emea-gb-db3-azr", "us-il-ch1-azr", "us-tx-sn1-azr", "apac-sg-sin-azr", "emea-se-sto-edge", "emea-nl-ams-azr", "us-ca-sjc-azr", "emea-ru-msa-edge"], location)
     ])
-    error_message = "Choose 5 to 16 distinct supported AzureCloud availability population IDs."
+    error_message = "Choose 3 to 16 distinct supported AzureCloud availability population IDs."
   }
 }
 
 variable "availability_failed_location_count" {
-  description = "Number of failed locations required for each target alert; default is three of five."
+  description = "Number of failed locations required for each target alert; default is three of five (use two of three with three locations)."
   type        = number
   default     = 3
   validation {
@@ -307,4 +381,19 @@ variable "availability_alert_emails" {
     condition     = length(var.availability_alert_emails) <= 100 && length(distinct(var.availability_alert_emails)) == length(var.availability_alert_emails) && alltrue([for email in var.availability_alert_emails : can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", email))])
     error_message = "Supply distinct valid email addresses, at most 100."
   }
+}
+
+variable "window_guard_enabled" {
+  description = "Create the window guard identity that the scheduled window-guard workflow uses to stop resources after a demo window."
+  type        = bool
+  default     = false
+}
+
+variable "window_guard_oidc_credentials" {
+  description = "GitHub OIDC credential names and subjects accepted by the window guard identity; use the guard's own GitHub Environment, never the deployment Environment."
+  type = map(object({
+    name    = string
+    subject = string
+  }))
+  default = {}
 }

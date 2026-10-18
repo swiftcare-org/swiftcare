@@ -32,11 +32,24 @@ check_azure_name() {
 # app_variables : the Environment variable that names each Container App.
 app_variables() { jq -r '(.services[].app_var), .gateway.app_var' "$MANIFEST"; }
 
+# Where the frontend runs: static_web_app (default) or container_app (AZURE_FRONTEND_APP).
+frontend_host="${FRONTEND_HOST:-static_web_app}"
+case "$frontend_host" in
+  static_web_app | container_app) ;;
+  *) fail "FRONTEND_HOST must be static_web_app or container_app" ;;
+esac
+
 case "$mode" in
   plan)
     mapfile -t apps < <(app_variables)
-    require_values "${azure_names[@]}" STATIC_WEB_APP_NAME FRONTEND_ORIGIN "${apps[@]}"
+    require_values "${azure_names[@]}" FRONTEND_ORIGIN "${apps[@]}"
     for variable in "${apps[@]}"; do check_azure_name "$variable" "${!variable}"; done
+    if [ "$frontend_host" = container_app ]; then
+      require_values AZURE_FRONTEND_APP
+      check_azure_name AZURE_FRONTEND_APP "$AZURE_FRONTEND_APP"
+    else
+      require_values STATIC_WEB_APP_NAME
+    fi
     ;;
 
   service)
@@ -71,7 +84,16 @@ case "$mode" in
     ;;
 
   frontend)
-    require_values GATEWAY_ORIGIN FRONTEND_ORIGIN AZURE_STATIC_WEB_APPS_API_TOKEN
+    require_values GATEWAY_ORIGIN FRONTEND_ORIGIN
+    if [ "$frontend_host" = container_app ]; then
+      # The development access policy (dev_team sign-in) exists only on Static Web Apps.
+      [ "${TARGET:-}" != development ] ||
+        fail "Development needs Static Web Apps for its dev_team access policy; use FRONTEND_HOST=static_web_app"
+      require_values "${azure_names[@]}" "${registry_names[@]}" IMAGE_REPOSITORY AZURE_FRONTEND_APP
+      check_azure_name AZURE_FRONTEND_APP "$AZURE_FRONTEND_APP"
+    else
+      require_values AZURE_STATIC_WEB_APPS_API_TOKEN
+    fi
     check_origin GATEWAY_ORIGIN
     check_origin FRONTEND_ORIGIN
     ;;

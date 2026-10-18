@@ -1,5 +1,10 @@
+# Kafka hosting. The default runs one KRaft broker (no ZooKeeper) as a Container App inside the
+# Container Apps environment: it needs no NAT gateway or public IP, is billed only while running and
+# can be stopped like an app. The legacy container group (Kafka and ZooKeeper behind a NAT gateway)
+# remains available with messaging_host = "container_group".
+
 resource "azurerm_public_ip" "messaging" {
-  count = var.messaging_enabled ? 1 : 0
+  count = local.messaging_container_group ? 1 : 0
 
   name                = local.messaging_public_ip_name
   location            = azurerm_resource_group.swiftcare.location
@@ -10,7 +15,7 @@ resource "azurerm_public_ip" "messaging" {
 }
 
 resource "azurerm_nat_gateway" "messaging" {
-  count = var.messaging_enabled ? 1 : 0
+  count = local.messaging_container_group ? 1 : 0
 
   name                    = local.messaging_nat_gateway_name
   location                = azurerm_resource_group.swiftcare.location
@@ -21,14 +26,14 @@ resource "azurerm_nat_gateway" "messaging" {
 }
 
 resource "azurerm_nat_gateway_public_ip_association" "messaging" {
-  count = var.messaging_enabled ? 1 : 0
+  count = local.messaging_container_group ? 1 : 0
 
   nat_gateway_id       = azurerm_nat_gateway.messaging[0].id
   public_ip_address_id = azurerm_public_ip.messaging[0].id
 }
 
 resource "azurerm_subnet_nat_gateway_association" "messaging" {
-  count = var.messaging_enabled ? 1 : 0
+  count = local.messaging_container_group ? 1 : 0
 
   subnet_id      = azurerm_subnet.messaging.id
   nat_gateway_id = azurerm_nat_gateway.messaging[0].id
@@ -48,7 +53,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "messaging" {
 }
 
 resource "azurerm_container_group" "messaging" {
-  count = var.messaging_enabled ? 1 : 0
+  count = local.messaging_container_group ? 1 : 0
 
   name                = local.messaging_container_group_name
   location            = azurerm_resource_group.swiftcare.location
@@ -107,11 +112,67 @@ resource "azurerm_container_group" "messaging" {
 }
 
 resource "azurerm_private_dns_a_record" "kafka" {
-  count = var.messaging_enabled ? 1 : 0
+  count = local.messaging_container_group ? 1 : 0
 
   name                = "kafka"
   private_dns_zone_id = azurerm_private_dns_zone.messaging.id
   ttl                 = 60
   records             = [azurerm_container_group.messaging[0].ip_address]
   tags                = local.common_tags
+}
+
+resource "azurerm_container_app" "kafka" {
+  count = local.messaging_container_app ? 1 : 0
+
+  name                         = local.kafka_app_name
+  container_app_environment_id = local.container_apps_environment_id
+  resource_group_name          = azurerm_resource_group.swiftcare.name
+  revision_mode                = "Single"
+  # Azure places apps in the environment's built-in Consumption profile; naming it keeps plans clean.
+  workload_profile_name = "Consumption"
+  tags                  = local.common_tags
+
+  template {
+    # A single broker: a second replica would form a second, separate cluster.
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "kafka"
+      image  = var.kafka_kraft_image
+      cpu    = var.kafka_app_cpu
+      memory = var.kafka_app_memory
+
+      dynamic "env" {
+        for_each = local.kafka_app_settings
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      readiness_probe {
+        transport = "TCP"
+        port      = 9092
+      }
+
+      liveness_probe {
+        transport = "TCP"
+        port      = 9092
+      }
+    }
+  }
+
+  # Internal TCP only: reachable from apps in the same environment, never from the internet.
+  ingress {
+    external_enabled = false
+    transport        = "tcp"
+    target_port      = 9092
+    exposed_port     = 9092
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
 }

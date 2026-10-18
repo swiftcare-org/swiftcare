@@ -5,7 +5,9 @@
 #   After CI on develop -> development. After CI on main -> production.
 #   Manual run          -> TARGET_INPUT (development by default); production only from main.
 # Environment: EVENT_NAME, RUN_BRANCH (workflow_run head branch), REF_NAME, TARGET_INPUT,
-# WINDOW_DEVELOPMENT and WINDOW_PRODUCTION (repository variables; "true" means open).
+# WINDOW_DEVELOPMENT and WINDOW_PRODUCTION (repository variables; "true" means open) and
+# WINDOW_DEVELOPMENT_UNTIL and WINDOW_PRODUCTION_UNTIL (the window's UTC end time; see
+# window_state in lib.sh).
 # Writes environment, target and proceed to $GITHUB_OUTPUT.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -33,15 +35,20 @@ case "${EVENT_NAME:-}" in
     ;;
 esac
 
-if [ "$target" = production ]; then window="${WINDOW_PRODUCTION:-}"; else window="${WINDOW_DEVELOPMENT:-}"; fi
+if [ "$target" = production ]; then
+  window="${WINDOW_PRODUCTION:-}" until="${WINDOW_PRODUCTION_UNTIL:-}"
+else
+  window="${WINDOW_DEVELOPMENT:-}" until="${WINDOW_DEVELOPMENT_UNTIL:-}"
+fi
 window_variable="DEMO_WINDOW_$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')"
+state=$(window_state "$window" "$until")
 
-if [ "$window" = "true" ]; then
+if [ "$state" = "open" ]; then
   proceed=true
-  message="Releasing to $target (azure-$target): the demo window is open."
+  message="Releasing to $target (azure-$target): the demo window is open until $until."
 else
   proceed=false
-  message="No release: the $target demo window is closed. Set the repository variable $window_variable to true for an approved window."
+  message="No release: the $target demo window is ${state}. For an approved window set the repository variables $window_variable to true and ${window_variable}_UNTIL to its UTC end time (YYYY-MM-DDTHH:MMZ)."
   printf '::notice::%s\n' "$message"
 fi
 

@@ -50,13 +50,13 @@ output "mysql_fqdn" {
 }
 
 output "static_web_app_name" {
-  description = "GitHub Environment value for AZURE_STATIC_WEB_APP_NAME."
-  value       = azurerm_static_web_app.swiftcare.name
+  description = "GitHub Environment value for AZURE_STATIC_WEB_APP_NAME (static_web_app_enabled only)."
+  value       = var.static_web_app_enabled ? azurerm_static_web_app.swiftcare[0].name : null
 }
 
 output "static_web_app_default_hostname" {
   description = "Azure-generated frontend hostname retained as a fallback."
-  value       = azurerm_static_web_app.swiftcare.default_host_name
+  value       = var.static_web_app_enabled ? azurerm_static_web_app.swiftcare[0].default_host_name : null
 }
 
 output "github_cd_client_id" {
@@ -74,22 +74,32 @@ output "kafka_bootstrap_servers" {
   value       = var.messaging_enabled ? local.kafka_bootstrap_servers : null
 }
 
+output "kafka_app_name" {
+  description = "GitHub Environment value for KAFKA_APP (messaging_host = container_app)."
+  value       = var.messaging_host == "container_app" ? local.kafka_app_name : null
+}
+
 output "messaging_container_group_name" {
-  description = "GitHub Environment value for KAFKA_CONTAINER_GROUP."
-  value       = local.messaging_container_group_name
+  description = "GitHub Environment value for KAFKA_CONTAINER_GROUP (messaging_host = container_group only)."
+  value       = var.messaging_host == "container_group" ? local.messaging_container_group_name : null
 }
 
 output "kafka_container_name" {
-  description = "GitHub Environment value for KAFKA_CONTAINER_NAME."
-  value       = "kafka"
+  description = "GitHub Environment value for KAFKA_CONTAINER_NAME (messaging_host = container_group only)."
+  value       = var.messaging_host == "container_group" ? "kafka" : null
 }
 
 output "zookeeper_container_name" {
-  description = "GitHub Environment value for ZOOKEEPER_CONTAINER_NAME."
-  value       = "zookeeper"
+  description = "GitHub Environment value for ZOOKEEPER_CONTAINER_NAME (messaging_host = container_group only)."
+  value       = var.messaging_host == "container_group" ? "zookeeper" : null
 }
 
 output "messaging_private_ip" {
-  description = "Current private IP of the ephemeral messaging container group."
-  value       = var.messaging_enabled ? azurerm_container_group.messaging[0].ip_address : null
+  description = "Current private IP of the ephemeral messaging container group (messaging_host = container_group only)."
+  value       = local.messaging_container_group ? azurerm_container_group.messaging[0].ip_address : null
+}
+
+output "window_guard_client_id" {
+  description = "AZURE_CLIENT_ID of the window guard's GitHub Environment (window_guard_enabled only)."
+  value       = var.window_guard_enabled ? azurerm_user_assigned_identity.window_guard[0].client_id : null
 }

@@ -420,10 +420,17 @@ expect_success "checks the shared environment's region in its own group" \
 unset CONTAINERAPPS_ENVIRONMENT_RESOURCE_GROUP
 
 echo "== resolve-target"
+# A fixed clock: 20 October 2026 10:00 UTC. Windows end at 18:00 the same day unless a test says otherwise.
+WINDOW_NOW=$(date -u -d 2026-10-20T10:00Z +%s)
+export WINDOW_NOW
+UNTIL_DEVELOPMENT=2026-10-20T18:00Z
+UNTIL_PRODUCTION=2026-10-20T18:00Z
 target_of() { # EVENT RUN_BRANCH REF_NAME TARGET_INPUT WINDOW_DEVELOPMENT WINDOW_PRODUCTION
   : > "$GITHUB_OUTPUT"
   if ! EVENT_NAME="$1" RUN_BRANCH="$2" REF_NAME="$3" TARGET_INPUT="$4" WINDOW_DEVELOPMENT="$5" \
-    WINDOW_PRODUCTION="$6" GITHUB_STEP_SUMMARY="" bash "$HERE/resolve-target.sh" > /dev/null 2>&1; then
+    WINDOW_PRODUCTION="$6" WINDOW_DEVELOPMENT_UNTIL="$UNTIL_DEVELOPMENT" \
+    WINDOW_PRODUCTION_UNTIL="$UNTIL_PRODUCTION" GITHUB_STEP_SUMMARY="" \
+    bash "$HERE/resolve-target.sh" > /dev/null 2>&1; then
     echo failed
     return
   fi
@@ -440,6 +447,154 @@ expect_equal "a manual production run from main is allowed" "$(target_of workflo
 expect_equal "a manual production run from another branch fails" "$(target_of workflow_dispatch '' develop production true true)" "failed"
 expect_equal "an unknown manual target fails" "$(target_of workflow_dispatch '' main staging true true)" "failed"
 expect_equal "CI on another branch fails" "$(target_of workflow_run feature/x feature/x '' true true)" "failed"
+UNTIL_PRODUCTION=""
+expect_equal "an open window without an end time counts as closed" "$(target_of workflow_run main main '' false true)" "azure-production false"
+UNTIL_PRODUCTION=2026-10-20T09:59Z
+expect_equal "an open window whose end time has passed counts as closed" "$(target_of workflow_run main main '' false true)" "azure-production false"
+UNTIL_PRODUCTION=2026-10-21T10:01Z
+expect_equal "an end time more than 24 hours away counts as closed" "$(target_of workflow_run main main '' false true)" "azure-production false"
+UNTIL_PRODUCTION=2026-10-20T18:00
+expect_equal "an end time without the UTC marker counts as closed" "$(target_of workflow_run main main '' false true)" "azure-production false"
+UNTIL_PRODUCTION=2026-10-20T18:00:00Z
+expect_equal "an end time with seconds is accepted" "$(target_of workflow_run main main '' false true)" "azure-production true"
+UNTIL_DEVELOPMENT=2026-10-20T09:00Z
+expect_equal "each environment uses its own end time" "$(target_of workflow_run main main '' true true)" "azure-production true"
+UNTIL_DEVELOPMENT=2026-10-20T18:00Z
+UNTIL_PRODUCTION=2026-10-20T18:00Z
+
+echo "== verify-target data (Kafka Container App)"
+verify_data() {
+  env AZURE_LOCATION=eastasia MYSQL_SERVER_NAME=mysql KAFKA_APP=swiftcare-prod-kafka \
+    KAFKA_BOOTSTRAP_SERVERS=swiftcare-prod-kafka:9092 "$@" bash "$HERE/verify-target.sh" data
+}
+reset
+add_app swiftcare-prod-kafka "$OLD" Running 9092
+expect_success "accepts a running internal TCP Kafka app" verify_data
+expect_not_logged "does not look for a container group" "container show"
+expect_failure "rejects a bootstrap address that is not the Kafka app" verify_data KAFKA_BOOTSTRAP_SERVERS=kafka.swiftcare.internal:9092
+expect_failure "rejects external Kafka ingress" verify_data FAKE_KAFKA_EXTERNAL=true
+expect_failure "rejects HTTP Kafka ingress" verify_data FAKE_KAFKA_TRANSPORT=Http
+expect_failure "rejects a Kafka app in another region" verify_data AZURE_LOCATION=southeastasia
+echo Stopped > "$FAKE_AZ_STATE/swiftcare-prod-kafka.running"
+expect_failure "rejects a stopped Kafka app" verify_data
+out=$(verify_data AZURE_LOCATION=eastasia 2>&1 || true)
+if grep -q 'az containerapp start' <<<"$out"; then ok "says how to start the Kafka app"; else bad "says how to start the Kafka app" "$out"; fi
+reset
+expect_failure "rejects a missing Kafka app" verify_data
+add_app swiftcare-prod-kafka "$OLD" Running 9092
+expect_failure "rejects MySQL that is not Ready" verify_data FAKE_MYSQL_STATE=Stopped
+expect_failure "requires the container group names when KAFKA_APP is empty" verify_data KAFKA_APP=
+
+echo "== window-guard"
+guard_decide() { # WINDOW UNTIL ACTIVE_CD_RUNS
+  : > "$GITHUB_OUTPUT"
+  WINDOW="$1" WINDOW_UNTIL="$2" ACTIVE_CD_RUNS="$3" GITHUB_STEP_SUMMARY="" \
+    bash "$HERE/window-guard.sh" decide > /dev/null 2>&1 || { echo failed; return; }
+  grep '^act=' "$GITHUB_OUTPUT" | cut -d= -f2
+}
+expect_equal "keeps an open window running" "$(guard_decide true 2026-10-20T18:00Z 0)" "false"
+expect_equal "stops a closed window" "$(guard_decide false 2026-10-20T18:00Z 0)" "true"
+expect_equal "stops an expired window" "$(guard_decide true 2026-10-20T09:00Z 0)" "true"
+expect_equal "stops an open window with no end time" "$(guard_decide true '' 0)" "true"
+expect_equal "waits while a CD run is active" "$(guard_decide false '' 1)" "false"
+
+guard() {
+  env RESOURCE_GROUP=rg MYSQL_SERVER_NAME=mysql KAFKA_APP=swiftcare-prod-kafka GITHUB_STEP_SUMMARY="" \
+    "$@" bash "$HERE/window-guard.sh" enforce
+}
+reset
+add_app swiftcare-prod-gateway "$OLD" Running 8000
+add_app swiftcare-prod-kafka "$OLD" Running 9092
+add_app swiftcare-prod-queue "$OLD" Running 5003
+add_app swiftcare-prod-auth "$OLD" Stopped 5000
+expect_success "a dry run succeeds" guard DRY_RUN=true
+expect_not_logged "a dry run stops no app" "containerapp stop"
+expect_not_logged "a dry run leaves MySQL running" "flexible-server stop"
+: > "$FAKE_AZ_LOG"
+expect_success "stops every running app, Kafka and MySQL" guard
+expect_logged "stops the gateway" "containerapp stop --resource-group rg --name swiftcare-prod-gateway"
+expect_logged "stops the queue service" "containerapp stop --resource-group rg --name swiftcare-prod-queue"
+expect_logged "stops the Kafka app" "containerapp stop --resource-group rg --name swiftcare-prod-kafka"
+expect_not_logged "leaves an already stopped app alone" "--name swiftcare-prod-auth"
+expect_logged "stops MySQL" "mysql flexible-server stop --resource-group rg --name mysql"
+expect_equal "stops Kafka after the apps" \
+  "$(grep 'containerapp stop' "$FAKE_AZ_LOG" | tail -1 | grep -c swiftcare-prod-kafka)" "1"
+expect_not_logged "never starts an app" "containerapp start"
+expect_not_logged "never deletes anything" "delete"
+: > "$FAKE_AZ_LOG"
+expect_success "a second run finds nothing to stop" guard
+expect_not_logged "stops nothing the second time" " stop "
+reset
+add_app swiftcare-prod-gateway "$OLD" Running 8000
+add_app swiftcare-prod-queue "$OLD" Running 5003
+expect_failure "reports a resource it could not stop" guard FAKE_STOP_FAILS=swiftcare-prod-gateway
+expect_logged "still stops the other apps after a failure" "containerapp stop --resource-group rg --name swiftcare-prod-queue"
+reset
+expect_success "stops a running legacy container group" guard KAFKA_APP= KAFKA_CONTAINER_GROUP=group
+expect_logged "stops the container group" "container stop --resource-group rg --name group"
+
+guard_cost() {
+  env AZURE_SUBSCRIPTION_ID=sub-test COST_SINCE=2026-10-18 GITHUB_STEP_SUMMARY="" CD_WAIT_INTERVAL=0 \
+    "$@" bash "$HERE/window-guard.sh" cost
+}
+reset
+out=$(guard_cost 2>&1)
+if grep -q 'USD 12.35' <<<"$out"; then ok "reports the spend rounded to cents"; else bad "reports the spend rounded to cents" "$out"; fi
+out=$(guard_cost COST_WARN_USD=10 2>&1)
+if grep -q '::warning::' <<<"$out"; then ok "warns above the threshold"; else bad "warns above the threshold" "$out"; fi
+out=$(guard_cost COST_WARN_USD=60 2>&1)
+if grep -q '::warning::' <<<"$out"; then bad "stays quiet below the threshold" "$out"; else ok "stays quiet below the threshold"; fi
+expect_success "a Cost Management failure does not fail the run" guard_cost FAKE_COST_FAILS=1
+expect_success "skips the report without a start date" guard_cost COST_SINCE=
+expect_failure "rejects a malformed start date" guard_cost COST_SINCE=18-10-2026
+
+echo "== frontend on a Container App"
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend STATIC_WEB_APP_NAME='' \
+  expect_success "plan accepts a Container App frontend without a Static Web App" bash "$HERE/validate-config.sh" plan)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP='' \
+  expect_failure "plan requires the frontend app name for a Container App frontend" bash "$HERE/validate-config.sh" plan)
+(STATIC_WEB_APP_NAME='' expect_failure "plan still requires the site for Static Web Apps" bash "$HERE/validate-config.sh" plan)
+(FRONTEND_HOST=bucket expect_failure "rejects an unknown frontend host" bash "$HERE/validate-config.sh" plan)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend TARGET=production AZURE_STATIC_WEB_APPS_API_TOKEN='' \
+  expect_success "frontend release needs no site token on a Container App" bash "$HERE/validate-config.sh" frontend)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend TARGET=development \
+  expect_failure "refuses a Container App frontend for development (no dev_team policy)" bash "$HERE/validate-config.sh" frontend)
+(FRONTEND_HOST=container_app AZURE_FRONTEND_APP=swiftcare-prod-frontend TARGET=production GHCR_TOKEN='' \
+  expect_failure "frontend release on a Container App needs the registry credential" bash "$HERE/validate-config.sh" frontend)
+(AZURE_STATIC_WEB_APPS_API_TOKEN='' expect_failure "frontend release on Static Web Apps still needs its token" bash "$HERE/validate-config.sh" frontend)
+reset
+expect_success "verify-target skips the site for a Container App frontend" \
+  env FRONTEND_HOST=container_app STATIC_WEB_APP_NAME='' AZURE_LOCATION=eastasia AZURE_SUBSCRIPTION_ID=sub-test \
+  bash "$HERE/verify-target.sh" azure
+expect_not_logged "does not look for a Static Web App" "staticwebapp show"
+
+deploy_frontend() { env AZURE_FRONTEND_APP=swiftcare-prod-frontend FAKE_CURL_BODY="{\"sha\":\"$NEW\"}" "$@" bash "$HERE/deploy-frontend.sh"; }
+reset
+expect_success "creates the frontend app on first release" deploy_frontend
+expect_logged "creates it with public ingress on 8080" "containerapp create --resource-group rg --name swiftcare-prod-frontend"
+expect_logged "uses the release image" "ghcr.io/org/swiftcare-frontend:$NEW"
+expect_logged "lets it scale to zero" "--min-replicas 0 --max-replicas 2"
+expect_logged "scales on HTTP requests" "--scale-rule-type http"
+expect_logged "keeps external ingress" "containerapp ingress enable --resource-group rg --name swiftcare-prod-frontend --type external --target-port 8080"
+expect_equal "publishes the frontend address" "$(grep '^url=' "$GITHUB_OUTPUT" | cut -d= -f2-)" "https://swiftcare-prod-frontend.internal.example.test"
+: > "$FAKE_AZ_LOG"
+expect_success "updates the existing frontend app" deploy_frontend
+expect_logged "updates instead of creating" "containerapp update --resource-group rg --name swiftcare-prod-frontend"
+expect_not_logged "does not create it again" "containerapp create"
+echo Stopped > "$FAKE_AZ_STATE/swiftcare-prod-frontend.running"
+expect_success "starts a stopped frontend app" deploy_frontend
+expect_equal "the stopped app is running again" "$(cat "$FAKE_AZ_STATE/swiftcare-prod-frontend.running")" "Running"
+expect_failure "fails when the site keeps serving another commit" deploy_frontend FAKE_CURL_BODY="{\"sha\":\"$OLD\"}"
+expect_failure "fails when the site serves no version" deploy_frontend FAKE_CURL_BODY=
+expect_failure "needs the frontend app name" deploy_frontend AZURE_FRONTEND_APP=
+
+reset
+add_app swiftcare-prod-frontend "$OLD" Running 8080
+add_app swiftcare-prod-gateway "$OLD" Running 8000
+expect_success "the guard succeeds with the frontend running" \
+  env RESOURCE_GROUP=rg FRONTEND_APP=swiftcare-prod-frontend GITHUB_STEP_SUMMARY="" bash "$HERE/window-guard.sh" enforce
+expect_not_logged "the guard leaves the public frontend running" "containerapp stop --resource-group rg --name swiftcare-prod-frontend"
+expect_logged "the guard still stops the gateway" "containerapp stop --resource-group rg --name swiftcare-prod-gateway"
 
 echo "== record-result"
 record() { # record KEY JOB_STATUS DEPLOY ROLLBACK ROLLBACK_RESULT POST_SMOKE PREVIOUS

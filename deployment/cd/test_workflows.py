@@ -1,4 +1,4 @@
-"""Structural checks on the CD workflow that a YAML linter does not catch."""
+"""Structural checks on the CD and window guard workflows that a YAML linter does not catch."""
 
 import json
 import re
@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = json.loads((ROOT / "deployment" / "cd" / "services.json").read_text(encoding="utf-8"))
 CD = (ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
+GUARD = (ROOT / ".github" / "workflows" / "window-guard.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
 def jobs(text):
@@ -103,6 +104,81 @@ class CdWorkflowTests(unittest.TestCase):
             options = re.findall(r"^          - (\S+)$", block.split("\n\n", 1)[0], re.M)
             for key in keys + extra:
                 self.assertIn(key, options, f"{input_name} lacks {key}")
+
+    def test_target_job_reads_both_window_end_times(self):
+        block = JOBS["target"]
+        self.assertIn("vars.DEMO_WINDOW_DEVELOPMENT_UNTIL", block)
+        self.assertIn("vars.DEMO_WINDOW_PRODUCTION_UNTIL", block)
+
+    def test_data_check_knows_the_kafka_app(self):
+        self.assertIn("KAFKA_APP: ${{ vars.KAFKA_APP }}", JOBS["plan"])
+
+    def test_plan_knows_the_frontend_host(self):
+        self.assertIn("FRONTEND_HOST: ${{ vars.FRONTEND_HOST }}", JOBS["plan"])
+        self.assertIn("AZURE_FRONTEND_APP: ${{ vars.AZURE_FRONTEND_APP }}", JOBS["plan"])
+
+    def test_each_frontend_step_belongs_to_one_host(self):
+        # Both hosts share one job, so every step after the configuration check names its host;
+        # only the result recording runs for both.
+        block = JOBS["deploy-frontend"]
+        steps = block.split("\n      - name: ")[1:]
+        shared = {"Check out the release commit", "Validate configuration", "Record the result", "Upload the result"}
+        for step in steps:
+            name = step.split("\n", 1)[0]
+            if name in shared:
+                continue
+            self.assertRegex(step, r"if: env\.FRONTEND_HOST (==|!=) 'container_app'", name)
+
+    def test_container_app_frontend_is_built_for_the_gateway_and_the_release(self):
+        block = JOBS["deploy-frontend"]
+        self.assertIn("file: frontend/Dockerfile", block)
+        self.assertIn("VITE_GATEWAY_URL=${{ vars.GATEWAY_ORIGIN }}", block)
+        self.assertIn("RELEASE_SHA=${{ needs.plan.outputs.release_sha }}", block)
+        self.assertIn("bash deployment/cd/deploy-frontend.sh", block)
+
+
+GUARD_JOBS = jobs(GUARD)
+
+
+class WindowGuardWorkflowTests(unittest.TestCase):
+    def test_runs_hourly_and_on_demand(self):
+        self.assertRegex(GUARD, r'(?m)^    - cron: "\d+ \* \* \* \*"$')
+        self.assertIn("  workflow_dispatch:\n", GUARD)
+
+    def test_manual_runs_default_to_a_dry_run(self):
+        block = GUARD[GUARD.index("      dry_run:\n"):]
+        self.assertIn("        default: true", block.split("\n\n", 1)[0])
+
+    def test_workflow_grants_nothing_by_default(self):
+        self.assertIn("\npermissions: {}\n", GUARD)
+
+    def test_decision_needs_no_azure_and_no_environment(self):
+        block = GUARD_JOBS["decide"]
+        self.assertIsNone(re.search(r"(?m)^    environment:", block))
+        self.assertNotIn("id-token", block)
+        self.assertNotIn("secrets.", block)
+        self.assertIn("vars.DEMO_WINDOW_PRODUCTION_UNTIL", block)
+        self.assertIn("bash deployment/cd/window-guard.sh decide", block)
+
+    def test_guard_uses_only_its_own_environment_and_no_secrets(self):
+        # The deployment Environment holds every secret and needs a reviewer; the guard must not use it.
+        block = GUARD_JOBS["guard"]
+        self.assertIn("    environment: azure-production-guard\n", block)
+        self.assertNotIn("secrets.", GUARD)
+        self.assertNotIn("environment: azure-production\n", GUARD)
+
+    def test_guard_stops_only_after_the_decision(self):
+        block = GUARD_JOBS["guard"]
+        self.assertIn("    needs: decide\n", block)
+        stop = block[block.index("      - name: Stop resources"):].split("\n      - name:", 1)[0]
+        self.assertIn("if: needs.decide.outputs.act == 'true'", stop)
+
+    def test_guard_leaves_the_public_frontend_running(self):
+        self.assertIn("FRONTEND_APP: ${{ vars.AZURE_FRONTEND_APP }}", GUARD_JOBS["guard"])
+
+    def test_scheduled_runs_are_never_dry_runs(self):
+        self.assertIn("DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}",
+                      GUARD_JOBS["guard"])
 
 
 if __name__ == "__main__":

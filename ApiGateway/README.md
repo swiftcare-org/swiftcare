@@ -12,6 +12,16 @@ The single entry point for the React frontend. Every client request goes through
 - CORS restricted to the frontend's dev origin (`http://localhost:5173`).
 - `GET /health` — liveness/readiness check, open to anonymous requests.
 
+## Session and clinical visit validation
+
+`SessionValidationMiddleware` checks every authenticated request's session with AuthService before it is forwarded, so signing out or deactivating an account takes effect immediately. A rejected session returns `401`; if AuthService cannot be reached, the request returns `503` and is not forwarded.
+
+`ClinicalVisitValidationMiddleware` (SWC-154) validates consultation creation, prescription creation and no-prescription decisions before forwarding the write. Consultation creation requires an active queue assignment owned by the authenticated doctor with the same patient. Prescription outcomes require a completed consultation owned by that doctor with matching patient and queue identifiers. The patient must still exist.
+
+Invalid identifiers return `400`; a missing, mismatched, unfinished or unowned visit returns `422`; unavailable authoritative validation returns `503` without forwarding the write. QueueService and MedicalRecordService provide gateway-secret-protected internal visit lookups. No public gateway route exposes those lookups, and no service reads another service's database.
+
+Deploy the two lookup endpoints before updating the gateway. No schema migration is needed. Validation uses the existing YARP cluster destinations, including Azure overrides. This closes the deferred cross-service validation scope recorded in issue #48.
+
 ## Port
 
 `8000` (see `Properties/launchSettings.json`).
