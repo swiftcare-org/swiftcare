@@ -137,6 +137,8 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+if (!app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("ApiDocs:Enabled")) { app.MapOpenApi(); }
+
 // Bounded so a slow or unreachable broker cannot hang application shutdown - the default
 // IProducer.Dispose() flush has no such bound.
 app.Lifetime.ApplicationStopping.Register(() =>

@@ -40,6 +40,8 @@ while IFS= read -r template; do
   settings+=("$(expand "$template")")
 done < <(jq -r --slurpfile manifest "$MANIFEST" \
   '($manifest[0].common.env + (.extra_env // []))[]' <<<"$entry")
+# Publishes /openapi/v1.json for the gateway's public docs pages (API_DOCS_ENABLED).
+settings+=("ApiDocs__Enabled=$(api_docs_enabled)")
 
 if app_exists "$app"; then
   az containerapp registry set \

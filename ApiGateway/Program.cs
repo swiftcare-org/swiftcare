@@ -1,4 +1,5 @@
 using System.Text;
+using ApiGateway.ApiDocs;
 using ApiGateway.Middleware;
 using ApiGateway.Models;
 using ApiGateway.Security;
@@ -109,6 +110,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddSingleton<RevokedTokenStore>();
 builder.Services.AddHttpClient<IClinicalVisitValidator, ClinicalVisitValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHttpClient<ISessionValidator, SessionValidator>(client => client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddHttpClient(ApiDocsEndpoints.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
 
 var app = builder.Build();
 
@@ -174,6 +176,12 @@ app.UseMiddleware<ClinicalVisitValidationMiddleware>();
 app.UseMiddleware<GatewayForwardingMiddleware>();
 
 app.MapHealthChecks("/health");
+
+if (ApiDocsEndpoints.IsEnabled(app.Configuration))
+{
+    app.MapApiDocs();
+}
+
 app.MapReverseProxy();
 
 app.Run();

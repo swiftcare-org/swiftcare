@@ -270,6 +270,8 @@ jobs:
       SERVICE_IMAGE: ${{ fromJSON(needs.plan.outputs.service_meta)['AuthService'].image }}
       SERVICE_DOCKERFILE: ${{ fromJSON(needs.plan.outputs.service_meta)['AuthService'].dockerfile }}
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
+      # "true" publishes the API docs (/scalar, /openapi); anything else removes them on release.
+      API_DOCS_ENABLED: ${{ vars.API_DOCS_ENABLED }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -437,6 +439,8 @@ jobs:
       SERVICE_IMAGE: ${{ fromJSON(needs.plan.outputs.service_meta)[matrix.service].image }}
       SERVICE_DOCKERFILE: ${{ fromJSON(needs.plan.outputs.service_meta)[matrix.service].dockerfile }}
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
+      # "true" publishes the API docs (/scalar, /openapi); anything else removes them on release.
+      API_DOCS_ENABLED: ${{ vars.API_DOCS_ENABLED }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -651,6 +655,9 @@ jobs:
       AZURE_NOTIFICATION_APP: ${{ vars.AZURE_NOTIFICATION_APP }}
       AZURE_PRESCRIPTION_APP: ${{ vars.AZURE_PRESCRIPTION_APP }}
       DEPLOY_SHA: ${{ needs.plan.outputs.release_sha }}
+      # "true" publishes the API docs (/scalar, /openapi); anything else removes them on release.
+      API_DOCS_ENABLED: ${{ vars.API_DOCS_ENABLED }}
+      GATEWAY_ORIGIN: ${{ vars.GATEWAY_ORIGIN }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       JWT_ISSUER: ${{ vars.JWT_ISSUER }}
@@ -839,6 +846,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push the frontend image
+        id: frontend-image
         if: env.FRONTEND_HOST == 'container_app'
         uses: docker/build-push-action@v6
         with:
@@ -863,6 +871,10 @@ jobs:
 
       - name: Deploy the frontend Container App
         if: env.FRONTEND_HOST == 'container_app'
+        env:
+          # The gateway origin is baked into the bundle, so a rebuild of the same commit with new
+          # settings keeps the same tag; deploying by digest always rolls out the image just built.
+          FRONTEND_IMAGE: ${{ env.IMAGE_REPOSITORY }}/swiftcare-frontend@${{ steps.frontend-image.outputs.digest }}
         run: |
           az extension add --name containerapp --upgrade --only-show-errors
           bash deployment/cd/deploy-frontend.sh
