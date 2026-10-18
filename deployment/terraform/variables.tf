@@ -141,6 +141,12 @@ variable "mysql_backup_retention_days" {
   default     = 7
 }
 
+variable "static_web_app_enabled" {
+  description = "Create the Static Web App and its custom domains. Set false where Static Web Apps is not available (the production subscription); CD then serves the frontend from a Container App."
+  type        = bool
+  default     = true
+}
+
 variable "static_web_app_name" {
   description = "Globally unique Azure Static Web App name."
   type        = string

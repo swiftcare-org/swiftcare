@@ -12,11 +12,10 @@ sprint_name = "sprint-4"
 name_prefix         = "swiftcare-prod"
 resource_group_name = "swiftcare-prod-rg"
 # MySQL server names are global DNS names; the previous subscription still holds swiftcare-prod-mysql.
-mysql_server_name   = "swiftcare-prod-mysql-sea"
-static_web_app_name = "swiftcare-prod-web"
-# Static Web Apps is not offered in any allowed region. The site needs a policy exemption for this
-# resource group (see the README) and runs in East Asia; CD reads AZURE_STATIC_WEB_APP_LOCATION.
-static_web_app_location = "eastasia"
+mysql_server_name = "swiftcare-prod-mysql-sea"
+# Static Web Apps is not offered in any allowed region and the region rule cannot be exempted, so
+# CD serves the frontend from the Container App swiftcare-prod-frontend (FRONTEND_HOST=container_app).
+static_web_app_enabled = false
 
 virtual_network_address_space  = ["10.30.0.0/16"]
 container_apps_subnet_prefixes = ["10.30.0.0/23"]
@@ -27,11 +26,8 @@ messaging_subnet_prefixes      = ["10.30.3.0/27"]
 messaging_enabled = true
 messaging_host    = "container_app"
 
-# Enable after the DNS records point here and the policy exemption allows the site.
+# Static Web App domains only; the frontend Container App's domains are bound like the gateway's.
 frontend_custom_domains_enabled = false
-frontend_domain                 = "swiftcare.me"
-frontend_domain_validation_type = "dns-txt-token"
-frontend_www_domain             = "www.swiftcare.me"
 
 # Only the azure-production GitHub Environment can sign in as the deployment identity.
 github_oidc_credentials = {

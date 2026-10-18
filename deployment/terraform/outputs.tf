@@ -50,13 +50,13 @@ output "mysql_fqdn" {
 }
 
 output "static_web_app_name" {
-  description = "GitHub Environment value for AZURE_STATIC_WEB_APP_NAME."
-  value       = azurerm_static_web_app.swiftcare.name
+  description = "GitHub Environment value for AZURE_STATIC_WEB_APP_NAME (static_web_app_enabled only)."
+  value       = var.static_web_app_enabled ? azurerm_static_web_app.swiftcare[0].name : null
 }
 
 output "static_web_app_default_hostname" {
   description = "Azure-generated frontend hostname retained as a fallback."
-  value       = azurerm_static_web_app.swiftcare.default_host_name
+  value       = var.static_web_app_enabled ? azurerm_static_web_app.swiftcare[0].default_host_name : null
 }
 
 output "github_cd_client_id" {

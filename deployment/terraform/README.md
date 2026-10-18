@@ -14,13 +14,14 @@ Terraform owns stable infrastructure:
 - `swiftcare-appinsights` (Application Insights, workspace-based on `swiftcare-logs`)
 - `swiftcare-aca-env`
 - the Kafka broker: by default one KRaft Kafka Container App (`<prefix>-kafka`, internal TCP ingress) in the Container Apps environment; with `messaging_host = "container_group"` the legacy Kafka/ZooKeeper Container Instance, NAT Gateway, public IP and private DNS record
-- `swiftcare-web` and its frontend custom domains
+- `swiftcare-web` and its frontend custom domains, where `static_web_app_enabled = true` (development)
 - `swiftcare-github-cd`, its federated credentials and scoped Contributor assignment
 - the optional window guard identity (`<prefix>-window-guard`), its federated credentials, a read-and-stop custom role on the resource group and Cost Management Reader on the subscription (`guard.tf`)
 
 The CD workflow owns deployable application state:
 
 - Gateway, AuthService, PatientService, QueueService, MedicalRecordService, PrescriptionService and NotificationService Container Apps
+- the frontend Container App (`AZURE_FRONTEND_APP`, image from `frontend/Dockerfile`) where `FRONTEND_HOST=container_app` (production)
 - database migration and administrator-bootstrap jobs
 - application images, revisions, ingress and secrets
 - operational ownership of the gateway; its `api.swiftcare.me` hostname/certificate binding is currently a manual prerequisite, not a CD step
@@ -129,17 +130,18 @@ The sprint subscription was disabled on 18 October 2026 after its USD 100 credit
 - New global names where the disabled subscription still holds the old ones: the MySQL server (`swiftcare-prod-mysql-sea`) and the state storage account (`swiftcaretfstatesea`).
 - Kafka runs as one KRaft Container App (`messaging_host = "container_app"`); there is no NAT gateway or messaging public IP.
 - The operator is the subscription Owner, so `deployment_role_assignment_enabled = true` and the window guard identity are created by the same apply.
-- Static Web Apps is offered only in `westus2`, `centralus`, `eastus2`, `westeurope` and `eastasia`, none of which the policy allows. Before the first apply, the Owner exempts the resource group from the region assignment and the site runs in `eastasia` (`static_web_app_location`, and `AZURE_STATIC_WEB_APP_LOCATION` in the GitHub Environment).
+- Static Web Apps is offered only in `westus2`, `centralus`, `eastus2`, `westeurope` and `eastasia`, none of which the policy allows. The region rule is the system assignment `sys.regionrestriction`, and Azure refuses exemptions for system assignments (`Cannot create exemption for system policy assignments`, tried on 18 October 2026), so no Static Web App can exist in this subscription. Production sets `static_web_app_enabled = false` and CD serves the frontend from a Container App instead (below).
 
-The exemption is an Owner action outside Terraform, scoped to the application resource group (create the empty group first):
+Register the resource providers once per subscription, because the provider block does not register them: `Microsoft.App`, `Microsoft.ContainerInstance`, `Microsoft.DBforMySQL`, `Microsoft.Insights`, `Microsoft.AlertsManagement`, `Microsoft.ManagedIdentity`, `Microsoft.Network`, `Microsoft.OperationalInsights`, `Microsoft.Storage`, `Microsoft.Web`, `Microsoft.Consumption` and `Microsoft.CostManagement` (all Registered in this subscription on 18 October 2026).
 
-```powershell
-$sub = "<subscription-id>"
-$assignment = az policy assignment list --subscription $sub --query "[?displayName=='Allowed resource deployment regions'].id | [0]" -o tsv
-az policy exemption create --name swiftcare-prod-web-region --scope "/subscriptions/$sub/resourceGroups/swiftcare-prod-rg" --policy-assignment $assignment --exemption-category Waiver --display-name "Static Web Apps region for swiftcare-prod-web" --description "Static Web Apps is not offered in an allowed region."
-```
+The state backend `swiftcare-tfstate-rg` / `swiftcaretfstatesea` / `tfstate` exists in this subscription (created 18 October 2026): StorageV2, LRS, HTTPS only, TLS 1.2, no public blob access, shared keys disabled (Azure AD only), blob versioning and 30-day blob and container soft delete.
 
-If the exemption is refused, keep the site disabled and choose another frontend host before the domain cut-over. Register the resource providers once per subscription, because the provider block does not register them: `Microsoft.App`, `Microsoft.ContainerInstance`, `Microsoft.DBforMySQL`, `Microsoft.Insights`, `Microsoft.AlertsManagement`, `Microsoft.ManagedIdentity`, `Microsoft.Network`, `Microsoft.OperationalInsights`, `Microsoft.Storage`, `Microsoft.Web` and `Microsoft.Consumption`.
+#### Production frontend on a Container App
+
+- **Image:** `frontend/Dockerfile` builds the Vite site with `VITE_GATEWAY_URL` set to `GATEWAY_ORIGIN` and writes the release commit to `/version.json`, then serves it from unprivileged nginx on port 8080 (`frontend/nginx/`). nginx keeps the Static Web Apps behavior: the same security headers on every response (plus `nosniff`, a referrer policy and HSTS), fingerprinted `/assets` cached for a year, missing static files as 404 and every other path falling back to `index.html`. `/version.json` is never cached, because the release planner reads the running commit there.
+- **Release:** with `FRONTEND_HOST=container_app` and `AZURE_FRONTEND_APP` in the GitHub Environment, the CD frontend job pushes `swiftcare-frontend:<commit>` to GHCR and runs `deployment/cd/deploy-frontend.sh`: create or update the app with external ingress on 8080, 0.25 vCPU and 0.5 GiB, 0 to 2 replicas on an HTTP rule, then wait until the app's Azure address serves the release commit. `AZURE_STATIC_WEB_APPS_API_TOKEN` and `AZURE_STATIC_WEB_APP_NAME` are not used. The `dev_team` sign-in policy exists only on Static Web Apps, so CD refuses this host for development.
+- **Cost and availability:** the app scales to zero when idle and the window guard leaves it running, so the site stays public between windows (the login page then reaches a stopped gateway) and costs almost nothing while nobody uses it. The first request after an idle period waits a few seconds for a replica.
+- **Domains:** bound manually like the gateway, after the first release. `www.swiftcare.me` is a CNAME to the app's FQDN with an `asuid.www` TXT record; the apex `swiftcare.me` is an A record to the environment's static IP with an `asuid` TXT record (`az containerapp env show --query "properties.{ip:staticIp,verification:customDomainConfiguration.customDomainVerificationId}"`). Keep each record DNS only in Cloudflare while Azure issues its managed certificate (`az containerapp hostname bind --validation-method CNAME` for www, `HTTP` for the apex), then turn the proxy back on. The GHCR pull token must be able to read the new private package `swiftcare-frontend`.
 
 ## Initialize the backend
 
