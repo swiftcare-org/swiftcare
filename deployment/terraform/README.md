@@ -13,9 +13,10 @@ Terraform owns stable infrastructure:
 - `swiftcare-logs`
 - `swiftcare-appinsights` (Application Insights, workspace-based on `swiftcare-logs`)
 - `swiftcare-aca-env`
-- the Kafka/ZooKeeper Container Instance, NAT Gateway, public IP and private DNS record
+- the Kafka broker: by default one KRaft Kafka Container App (`<prefix>-kafka`, internal TCP ingress) in the Container Apps environment; with `messaging_host = "container_group"` the legacy Kafka/ZooKeeper Container Instance, NAT Gateway, public IP and private DNS record
 - `swiftcare-web` and its frontend custom domains
 - `swiftcare-github-cd`, its federated credentials and scoped Contributor assignment
+- the optional window guard identity (`<prefix>-window-guard`), its federated credentials, a read-and-stop custom role on the resource group and Cost Management Reader on the subscription (`guard.tf`)
 
 The CD workflow owns deployable application state:
 
@@ -27,7 +28,7 @@ The CD workflow owns deployable application state:
 Do not add CD-owned resources to this Terraform state without an explicit ownership decision.
 CD reconciles apps/jobs/images/ingress/secrets but has no custom-domain certificate command.
 Cloudflare DNS/proxy settings, SQL users/grants, and GitHub Environment/protection settings are also manual.
-Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`, and a monthly resource-group budget in `cost.tf`. The `swiftcare_notification` database is defined in `database.tf` and, like the other databases, is created empty: its scoped SQL user and grants, and the Notification Container App, migration job and secrets, are created outside Terraform (SQL user manually from inside the VNet, app and job by CD).
+Terraform defines SWC-132 availability tests, an action group and failure alerts in `availability.tf`, a monthly resource-group budget and an optional subscription budget in `cost.tf`. The `swiftcare_notification` database is defined in `database.tf` and, like the other databases, is created empty: its scoped SQL user and grants, and the Notification Container App, migration job and secrets, are created outside Terraform (SQL user manually from inside the VNet, app and job by CD).
 
 ## Prerequisites
 
@@ -118,6 +119,27 @@ az role assignment delete --assignee <operator-object-id> --role "User Access Ad
 ```
 
 Domain order: add the `dev.swiftcare.me` and `api-dev.swiftcare.me` records first and move development to them (tfvars values in the development example), which releases `swiftcare.me` and `www.swiftcare.me`; then point those records at production and set `frontend_custom_domains_enabled = true` in production. A domain can be attached to only one Static Web App at a time. The gateway hostnames are bound manually on each gateway Container App, as before.
+
+### Production-only subscription (from 18 October 2026)
+
+The sprint subscription was disabled on 18 October 2026 after its USD 100 credit was used, mostly by Kafka/ZooKeeper container groups and NAT gateways left running between windows. Production alone is rebuilt in a separate Azure for Students subscription; development is not recreated. `environments/production.tfvars.example` and `environments/backend-production.hcl.example` describe that layout:
+
+- Region `southeastasia`, the closest region its policy allows (`malaysiawest`, `uaenorth`, `southeastasia`, `indonesiacentral`, `austriaeast`).
+- Production creates its own Container Apps environment (`shared_container_apps_environment` unset), so `shared.tf` creates nothing.
+- New global names where the disabled subscription still holds the old ones: the MySQL server (`swiftcare-prod-mysql-sea`) and the state storage account (`swiftcaretfstatesea`).
+- Kafka runs as one KRaft Container App (`messaging_host = "container_app"`); there is no NAT gateway or messaging public IP.
+- The operator is the subscription Owner, so `deployment_role_assignment_enabled = true` and the window guard identity are created by the same apply.
+- Static Web Apps is offered only in `westus2`, `centralus`, `eastus2`, `westeurope` and `eastasia`, none of which the policy allows. Before the first apply, the Owner exempts the resource group from the region assignment and the site runs in `eastasia` (`static_web_app_location`, and `AZURE_STATIC_WEB_APP_LOCATION` in the GitHub Environment).
+
+The exemption is an Owner action outside Terraform, scoped to the application resource group (create the empty group first):
+
+```powershell
+$sub = "<subscription-id>"
+$assignment = az policy assignment list --subscription $sub --query "[?displayName=='Allowed resource deployment regions'].id | [0]" -o tsv
+az policy exemption create --name swiftcare-prod-web-region --scope "/subscriptions/$sub/resourceGroups/swiftcare-prod-rg" --policy-assignment $assignment --exemption-category Waiver --display-name "Static Web Apps region for swiftcare-prod-web" --description "Static Web Apps is not offered in an allowed region."
+```
+
+If the exemption is refused, keep the site disabled and choose another frontend host before the domain cut-over. Register the resource providers once per subscription, because the provider block does not register them: `Microsoft.App`, `Microsoft.ContainerInstance`, `Microsoft.DBforMySQL`, `Microsoft.Insights`, `Microsoft.AlertsManagement`, `Microsoft.ManagedIdentity`, `Microsoft.Network`, `Microsoft.OperationalInsights`, `Microsoft.Storage`, `Microsoft.Web` and `Microsoft.Consumption`.
 
 ## Initialize the backend
 
@@ -232,8 +254,9 @@ Every application has optional Azure Monitor OpenTelemetry registration and a di
 
 `availability.tf` defines separate standard tests for `https://swiftcare.me` and `https://api.swiftcare.me/health`, linked to this Application Insights resource.
 AzureRM creates the required hidden-link tag from `application_insights_id`; declare only ordinary project tags so refresh does not propose repeated hidden-link tag updates.
-Both run every five minutes from Southeast Asia, Japan East, Australia East, West Europe and East US, using retries, TLS validation, a 30-second timeout and exact HTTP 200 without redirects or dependent requests.
-Each target has a severity-1 alert when at least three locations fail, evaluated every minute over a five-minute window, with automatic resolution and the shared email action group.
+Both run every `availability_frequency` seconds (default 900; 300 was used until October 2026) from `availability_locations` (default Southeast Asia, Japan East, Australia East, West Europe and East US; at least three), using retries, TLS validation, a 30-second timeout and exact HTTP 200 without redirects or dependent requests.
+Each target has a severity-1 alert when at least `availability_failed_location_count` locations fail, evaluated every minute over a window equal to the test interval (5 or 15 minutes), with automatic resolution and the shared email action group.
+Every run in every location is billed: two tests from five locations every five minutes cost about USD 2.23 a day in October 2026, so the production example uses three locations every 15 minutes (about a fifth of that) and keeps the tests disabled outside demo windows.
 Set `availability_alert_emails` only in gitignored `terraform.tfvars`; the sensitive list defaults empty and enabled monitoring refuses to plan without recipients.
 Change notification targets by updating that local input and reviewing/applying a new saved plan; do not edit receivers manually in Azure.
 Recipients must complete Azure's email verification when required; an Enabled receiver can still be VerificationPending and unable to receive alerts.
@@ -479,6 +502,12 @@ The list must not contain `swiftcare-sqluser-tmp`. If it does, delete it with `a
 
 Measured spend for `swiftcare-rg` from 1 to 12 October 2026 was about USD 54.50: Container Instances (Kafka and ZooKeeper) 36.78, NAT Gateway 11.61, Azure Monitor 4.46, network and DNS the rest; MySQL and Log Analytics showed no charge. The messaging layer charges around the clock even when every app is stopped, so it is the largest cost while the demo is OFF.
 
+By 18 October the subscription had been billed USD 99.45 and was disabled: Container Instances 61.97, NAT Gateway 20.13, public IPs 7.10, Azure Monitor 4.46, Container Apps 4.28 and DNS 1.49. The broker was about 99% idle (about 4 millicores of 1.5 vCPU and 600 MB of 3 GB, flat 1.3 KB/s traffic), so the cost came from reserved capacity left running, not from message volume. Three controls address it:
+
+- **Kafka as a Container App** (`messaging_host = "container_app"`, the default): one KRaft broker with 0.5 vCPU and 1 GiB, no ZooKeeper, NAT gateway or public IP, billed only while running. It is stopped and started like the apps (`az containerapp stop|start`), so a window no longer needs a Terraform plan to remove or recreate messaging. Its data stays ephemeral: topics and offsets are lost on restart, exactly as with the container group, and topics are auto-created. Apps reach it as `<prefix>-kafka:9092`, which is `KAFKA_BOOTSTRAP_SERVERS`; set `KAFKA_APP` in the GitHub Environment so CD checks the app instead of a container group. Not yet proven on Azure: the first window must show check-in to queue delivery through this broker before the container group is considered retired.
+- **Subscription budget** (`subscription_budget_amount`, annual by default) with alerts at 25, 50, 75 and 90 percent of actual spend and above 100 percent of forecast, sized to the remaining credit.
+- **Window guard** (`.github/workflows/window-guard.yml`, identity in `guard.tf`): every hour, when the production window is closed, expired or has no end time, it stops every running Container App in the resource group (Kafka last), a legacy messaging container group and MySQL, then reads the apps back. Every run reports the subscription's spend since `GUARD_COST_SINCE` and warns above `GUARD_COST_WARN_USD`. It waits while a CD run is unfinished and never starts, creates, changes or deletes anything.
+
 ### Monthly budget
 
 `cost.tf` defines `swiftcare-monthly-budget` on the resource group: `budget_monthly_amount` (default 30, in the billing currency; 0 removes it) with e-mail notifications at 50, 80 and 100 percent of actual spend and above 100 percent of forecast spend. Recipients are `availability_alert_emails` from ignored tfvars plus the subscription Owner role. A budget only alerts; it never stops resources. `budget_start_date` must be the first day of a month and changing it replaces the budget. Verify after apply with `az consumption budget list --subscription <id> --resource-group swiftcare-rg -o table`.
@@ -521,7 +550,9 @@ Check no CD run is active or queued, dependencies are ready, all seven apps have
 Use a reviewed saved Terraform plan with `availability_enabled=true` to resume the two tests and two alerts during the approved window.
 Before the window ends, apply a reviewed saved plan with `availability_enabled=false`, verify both tests and both alerts report disabled, then stop and verify all seven apps.
 The disabled resources remain provisioned for the next window; the action group and telemetry are retained.
-This schedule is an operator procedure, not an implemented automatic scheduler.
+Opening a window now also needs its end time: set `DEMO_WINDOW_<ENV>_UNTIL` to a UTC time (`YYYY-MM-DDTHH:MMZ`) at most 24 hours ahead. CD refuses to release without a valid future end time, and the window guard stops the environment within an hour of it passing. Starting a window is still an operator procedure (start MySQL, then the Kafka app with `az containerapp start`, then release or start the apps); closing it is enforced by the guard.
+
+The guard runs from the default branch with its own GitHub Environment `azure-production-guard`, which holds only `AZURE_CLIENT_ID` (the `window_guard_client_id` output), `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `MYSQL_SERVER_NAME`, `KAFKA_APP`, `GUARD_COST_SINCE` and `GUARD_COST_WARN_USD`, no secrets and no reviewer, restricted to the default branch. Its identity can only read and stop resources, so a misuse can at worst stop the environment. GitHub pauses scheduled workflows in a repository with no activity for 60 days; check the guard's last run before relying on it. Test it with a manual run (dry run by default) after the first apply.
 Changing backend locks requires a separately authorized checked lock ID; never bypass locking with `-lock=false`.
 
 ### Cloudflare change and verification

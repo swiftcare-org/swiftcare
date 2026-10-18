@@ -31,6 +31,8 @@ FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-swiftcare.me}"
 FRONTEND_WWW_DOMAIN="${FRONTEND_WWW_DOMAIN-www.swiftcare.me}"
 IMPORT_CUSTOM_DOMAINS="${IMPORT_CUSTOM_DOMAINS:-false}"
 IMPORT_MESSAGING="${IMPORT_MESSAGING:-true}"
+# MESSAGING_HOST matches the messaging_host variable: container_app (default) or container_group.
+MESSAGING_HOST="${MESSAGING_HOST:-container_app}"
 # Production joins development's Container Apps environment: set SHARED_RESOURCE_GROUP and
 # SHARED_VNET_NAME (swiftcare-rg and swiftcare-vnet) to import the peerings and DNS links instead
 # of an environment and its subnet.
@@ -112,7 +114,11 @@ if [[ -n "$SHARED_RESOURCE_GROUP" ]]; then
     "${MESSAGING_DNS_ID}/virtualNetworkLinks/messaging-shared-vnet-link"
 fi
 
-if [[ "$IMPORT_MESSAGING" == "true" ]]; then
+if [[ "$IMPORT_MESSAGING" == "true" && "$MESSAGING_HOST" == "container_app" ]]; then
+  import_if_missing 'azurerm_container_app.kafka[0]'     "${BASE}/Microsoft.App/containerApps/${NAME_PREFIX}-kafka"
+fi
+
+if [[ "$IMPORT_MESSAGING" == "true" && "$MESSAGING_HOST" == "container_group" ]]; then
   import_if_missing 'azurerm_public_ip.messaging[0]' "$PUBLIC_IP_ID"
   import_if_missing 'azurerm_nat_gateway.messaging[0]' "$NAT_ID"
   import_if_missing 'azurerm_nat_gateway_public_ip_association.messaging[0]' \

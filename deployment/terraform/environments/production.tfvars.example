@@ -1,41 +1,39 @@
-# Production environment (swiftcare-prod-rg) in the same subscription. Copy to production.tfvars
-# (ignored). Every Azure name differs from development; database names stay the same because
-# each environment has its own MySQL server.
+# Production environment (swiftcare-prod-rg) in its own Azure for Students subscription. Copy to
+# production.tfvars (ignored) and set the real subscription ID. Production is the only environment
+# in this subscription, so it creates its own Container Apps environment.
 subscription_id = "00000000-0000-0000-0000-000000000000"
 environment     = "azure-production"
 
-location    = "eastasia"
+# The subscription's region policy allows malaysiawest, uaenorth, southeastasia, indonesiacentral
+# and austriaeast; southeastasia is the closest to the users.
+location    = "southeastasia"
 sprint_name = "sprint-4"
 
 name_prefix         = "swiftcare-prod"
 resource_group_name = "swiftcare-prod-rg"
-mysql_server_name   = "swiftcare-prod-mysql"
+# MySQL server names are global DNS names; the previous subscription still holds swiftcare-prod-mysql.
+mysql_server_name   = "swiftcare-prod-mysql-sea"
 static_web_app_name = "swiftcare-prod-web"
+# Static Web Apps is not offered in any allowed region. The site needs a policy exemption for this
+# resource group (see the README) and runs in East Asia; CD reads AZURE_STATIC_WEB_APP_LOCATION.
+static_web_app_location = "eastasia"
 
-# The subscription allows one Container Apps environment in total, so production's apps join
-# development's environment. Production keeps its own network, data, messaging, identity, secrets
-# and site; the networks are peered so the shared environment reaches production's MySQL and Kafka.
-shared_container_apps_environment = {
-  name                 = "swiftcare-aca-env"
-  resource_group_name  = "swiftcare-rg"
-  virtual_network_name = "swiftcare-vnet"
-}
+virtual_network_address_space  = ["10.30.0.0/16"]
+container_apps_subnet_prefixes = ["10.30.0.0/23"]
+mysql_subnet_prefixes          = ["10.30.2.0/28"]
+messaging_subnet_prefixes      = ["10.30.3.0/27"]
 
-# Must not overlap development (10.20.0.0/16) because the networks are peered.
-virtual_network_address_space = ["10.30.0.0/16"]
-mysql_subnet_prefixes         = ["10.30.2.0/28"]
-messaging_subnet_prefixes     = ["10.30.3.0/27"]
+# One KRaft broker as a Container App: no NAT gateway, stopped with the apps between windows.
+messaging_enabled = true
+messaging_host    = "container_app"
 
-# Demo windows only.
-messaging_enabled = false
-
-# Enable after development has released swiftcare.me and the DNS records point here.
+# Enable after the DNS records point here and the policy exemption allows the site.
 frontend_custom_domains_enabled = false
 frontend_domain                 = "swiftcare.me"
 frontend_domain_validation_type = "dns-txt-token"
 frontend_www_domain             = "www.swiftcare.me"
 
-# Only the azure-production GitHub Environment can sign in as this identity.
+# Only the azure-production GitHub Environment can sign in as the deployment identity.
 github_oidc_credentials = {
   standard = {
     name    = "github-azure-production"
@@ -47,13 +45,32 @@ github_oidc_credentials = {
   }
 }
 
-# Role definitions and assignments need the subscription Owner: Contributor on swiftcare-prod-rg
-# and a read-and-join role on the shared environment. Keep false until the Owner has created both.
-deployment_role_assignment_enabled = false
+# The operator is the subscription Owner here, so Terraform creates the role assignments.
+deployment_role_assignment_enabled = true
 
-availability_enabled      = false
-availability_alert_emails = []
-availability_frontend_url = "https://swiftcare.me"
-availability_gateway_url  = "https://api.swiftcare.me/health"
+# Stops apps, Kafka and MySQL after each window; only its own Environment can sign in as it.
+window_guard_enabled = true
+window_guard_oidc_credentials = {
+  standard = {
+    name    = "github-azure-production-guard"
+    subject = "repo:swiftcare-org/swiftcare:environment:azure-production-guard"
+  }
+  customized = {
+    name    = "github-id-azure-production-guard"
+    subject = "repo:swiftcare-org@317644346/swiftcare@1336209668:environment:azure-production-guard"
+  }
+}
 
-budget_monthly_amount = 30
+availability_enabled               = false
+availability_alert_emails          = []
+availability_frontend_url          = "https://swiftcare.me"
+availability_gateway_url           = "https://api.swiftcare.me/health"
+availability_frequency             = 900
+availability_locations             = ["apac-sg-sin-azr", "apac-hk-hkn-azr", "apac-jp-kaw-edge"]
+availability_failed_location_count = 2
+
+# The remaining credit for the whole subscription, plus the resource group's monthly budget.
+subscription_budget_amount     = 100
+subscription_budget_time_grain = "Annually"
+subscription_budget_start_date = "2026-10-01T00:00:00Z"
+budget_monthly_amount          = 30

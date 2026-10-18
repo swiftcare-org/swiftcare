@@ -3,6 +3,9 @@ locals {
     frontend = var.availability_frontend_url
     gateway  = var.availability_gateway_url
   }
+
+  # The alert window covers one full test interval so each evaluation sees a result.
+  availability_alert_window = var.availability_frequency == 900 ? "PT15M" : "PT5M"
 }
 
 resource "azurerm_application_insights_standard_web_test" "availability" {
@@ -13,7 +16,7 @@ resource "azurerm_application_insights_standard_web_test" "availability" {
   application_insights_id = azurerm_application_insights.swiftcare.id
   geo_locations           = var.availability_locations
   enabled                 = var.availability_enabled
-  frequency               = 300
+  frequency               = var.availability_frequency
   timeout                 = 30
   retry_enabled           = true
   description             = "Public ${each.key} HTTPS availability; gateway health proves liveness only."
@@ -68,7 +71,7 @@ resource "azurerm_monitor_metric_alert" "availability" {
   enabled                  = var.availability_enabled
   severity                 = 1
   frequency                = "PT1M"
-  window_size              = "PT5M"
+  window_size              = local.availability_alert_window
   auto_mitigate            = true
   tags                     = local.common_tags
 
