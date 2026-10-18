@@ -57,7 +57,9 @@ public sealed class ApiGatewayWebApplicationFactory : WebApplicationFactory<Prog
                 ["ReverseProxy:Clusters:auth-cluster:Destinations:auth-destination:Address"] = "http://localhost:59999",
                 ["ReverseProxy:Clusters:patient-cluster:Destinations:patient-destination:Address"] = "http://localhost:59999",
                 ["ReverseProxy:Clusters:queue-cluster:Destinations:queue-destination:Address"] = "http://localhost:59999",
-                ["ReverseProxy:Clusters:medical-record-cluster:Destinations:medical-record-destination:Address"] = "http://localhost:59999"
+                ["ReverseProxy:Clusters:medical-record-cluster:Destinations:medical-record-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:prescription-cluster:Destinations:prescription-destination:Address"] = "http://localhost:59999",
+                ["ReverseProxy:Clusters:notification-cluster:Destinations:notification-destination:Address"] = "http://localhost:59999"
             });
         });
     }
