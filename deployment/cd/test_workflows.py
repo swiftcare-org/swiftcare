@@ -136,6 +136,18 @@ class CdWorkflowTests(unittest.TestCase):
         self.assertIn("RELEASE_SHA=${{ needs.plan.outputs.release_sha }}", block)
         self.assertIn("bash deployment/cd/deploy-frontend.sh", block)
 
+    def test_jobs_after_plan_survive_a_skipped_quality_gate(self):
+        # Automatic releases skip the manual quality gate. A job whose condition lacks always()
+        # is then skipped too, so every job that depends on plan must say always() and check
+        # plan's own result.
+        for job, block in JOBS.items():
+            needs = re.search(r"(?m)^    needs: (.*)$", block)
+            if not needs or "plan" not in needs.group(1) or job == "summary":
+                continue
+            condition = block.split("    if: ", 1)[1].split("\n    runs-on:", 1)[0]
+            self.assertIn("always()", condition, job)
+            self.assertIn("needs.plan.result == 'success'", condition, job)
+
     def test_every_backend_release_job_receives_the_api_docs_switch(self):
         for job in ("deploy-auth", "deploy-services", "deploy-gateway"):
             self.assertIn("API_DOCS_ENABLED: ${{ vars.API_DOCS_ENABLED }}", JOBS[job], job)
