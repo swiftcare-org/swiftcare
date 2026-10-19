@@ -84,9 +84,6 @@ case "$group $sub" in
       [ "$(cat "$file")" = Running ] && basename "$file" .running
     done
     exit 0 ;;
-  "containerapp stop")
-    [ "$app" != "${FAKE_STOP_FAILS:-}" ] || exit 1
-    echo Stopped > "$state/$app.running" ;;
   "containerapp job")
     case "${all[2]:-}" in
       show) [ -f "$state/job.$app" ] || exit 3 ;;
@@ -131,7 +128,13 @@ case "$group $sub" in
 ' "${FAKE_COST:-12.346}"
         exit 0 ;;
     esac
-    started="${uri#*/apps/}"; started="${started%%/*}"
-    echo Running > "$state/$started.running" ;;
+    # Start and stop go through the management API: the CLI has no app start or stop command.
+    target="${uri#*/apps/}"; target="${target%%/*}"
+    case "$uri" in
+      */stop\?*)
+        [ "$target" != "${FAKE_STOP_FAILS:-}" ] || exit 1
+        echo Stopped > "$state/$target.running" ;;
+      *) echo Running > "$state/$target.running" ;;
+    esac ;;
   *) echo "fake-az: unsupported call: $*" >&2; exit 9 ;;
 esac
