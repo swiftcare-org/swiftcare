@@ -52,7 +52,14 @@ stop_one() {
   fi
   local stopped=true
   case "$kind" in
-    app) az containerapp stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none || stopped=false ;;
+    # The Azure CLI has no "containerapp stop" for apps (only for jobs), so call the management
+    # API directly, as start_app in lib.sh does for starting.
+    app)
+      app_id=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$name" --query id --output tsv | tr -d '\r') &&
+        [ -n "$app_id" ] &&
+        az rest --method post --uri "https://management.azure.com${app_id}/stop?api-version=2024-03-01" --output none ||
+        stopped=false
+      ;;
     container-group) az container stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none || stopped=false ;;
     mysql) az mysql flexible-server stop --resource-group "$RESOURCE_GROUP" --name "$name" --output none || stopped=false ;;
   esac

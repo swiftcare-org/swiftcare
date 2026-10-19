@@ -255,7 +255,10 @@ jobs:
   deploy-auth:
     name: Release AuthService
     needs: [target, plan]
+    # always(): plan runs after a skipped manual quality gate on automatic releases, and a job
+    # without it is skipped whenever any upstream job was skipped.
     if: >-
+      always() && needs.plan.result == 'success' &&
       needs.plan.outputs.auth == 'true' && !inputs.plan_only
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -587,7 +590,10 @@ jobs:
   gateway-image:
     name: Build ApiGateway image
     needs: plan
-    if: needs.plan.outputs.gateway == 'true' && !inputs.plan_only
+    # always(): see deploy-auth; otherwise automatic releases never build the gateway.
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      needs.plan.outputs.gateway == 'true' && !inputs.plan_only
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:

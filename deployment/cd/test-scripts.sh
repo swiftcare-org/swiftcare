@@ -508,27 +508,29 @@ add_app swiftcare-prod-kafka "$OLD" Running 9092
 add_app swiftcare-prod-queue "$OLD" Running 5003
 add_app swiftcare-prod-auth "$OLD" Stopped 5000
 expect_success "a dry run succeeds" guard DRY_RUN=true
-expect_not_logged "a dry run stops no app" "containerapp stop"
+expect_not_logged "a dry run stops no app" "/stop?"
 expect_not_logged "a dry run leaves MySQL running" "flexible-server stop"
 : > "$FAKE_AZ_LOG"
 expect_success "stops every running app, Kafka and MySQL" guard
-expect_logged "stops the gateway" "containerapp stop --resource-group rg --name swiftcare-prod-gateway"
-expect_logged "stops the queue service" "containerapp stop --resource-group rg --name swiftcare-prod-queue"
-expect_logged "stops the Kafka app" "containerapp stop --resource-group rg --name swiftcare-prod-kafka"
+expect_logged "stops the gateway through the management API" "apps/swiftcare-prod-gateway/stop?api-version="
+expect_logged "stops the queue service" "apps/swiftcare-prod-queue/stop?api-version="
+expect_logged "stops the Kafka app" "apps/swiftcare-prod-kafka/stop?api-version="
+expect_not_logged "never calls the missing containerapp stop command" "containerapp stop"
 expect_not_logged "leaves an already stopped app alone" "--name swiftcare-prod-auth"
 expect_logged "stops MySQL" "mysql flexible-server stop --resource-group rg --name mysql"
 expect_equal "stops Kafka after the apps" \
-  "$(grep 'containerapp stop' "$FAKE_AZ_LOG" | tail -1 | grep -c swiftcare-prod-kafka)" "1"
+  "$(grep '/stop?' "$FAKE_AZ_LOG" | tail -1 | grep -c swiftcare-prod-kafka)" "1"
 expect_not_logged "never starts an app" "containerapp start"
 expect_not_logged "never deletes anything" "delete"
 : > "$FAKE_AZ_LOG"
 expect_success "a second run finds nothing to stop" guard
-expect_not_logged "stops nothing the second time" " stop "
+expect_not_logged "stops no app the second time" "/stop?"
+expect_not_logged "stops no server the second time" " stop "
 reset
 add_app swiftcare-prod-gateway "$OLD" Running 8000
 add_app swiftcare-prod-queue "$OLD" Running 5003
 expect_failure "reports a resource it could not stop" guard FAKE_STOP_FAILS=swiftcare-prod-gateway
-expect_logged "still stops the other apps after a failure" "containerapp stop --resource-group rg --name swiftcare-prod-queue"
+expect_logged "still stops the other apps after a failure" "apps/swiftcare-prod-queue/stop?api-version="
 reset
 expect_success "stops a running legacy container group" guard KAFKA_APP= KAFKA_CONTAINER_GROUP=group
 expect_logged "stops the container group" "container stop --resource-group rg --name group"
@@ -597,8 +599,8 @@ add_app swiftcare-prod-frontend "$OLD" Running 8080
 add_app swiftcare-prod-gateway "$OLD" Running 8000
 expect_success "the guard succeeds with the frontend running" \
   env RESOURCE_GROUP=rg FRONTEND_APP=swiftcare-prod-frontend GITHUB_STEP_SUMMARY="" bash "$HERE/window-guard.sh" enforce
-expect_not_logged "the guard leaves the public frontend running" "containerapp stop --resource-group rg --name swiftcare-prod-frontend"
-expect_logged "the guard still stops the gateway" "containerapp stop --resource-group rg --name swiftcare-prod-gateway"
+expect_not_logged "the guard leaves the public frontend running" "apps/swiftcare-prod-frontend/stop"
+expect_logged "the guard still stops the gateway" "apps/swiftcare-prod-gateway/stop?api-version="
 
 echo "== API docs switch (API_DOCS_ENABLED)"
 reset
